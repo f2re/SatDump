@@ -94,7 +94,7 @@ make -j"${JOBS}"
 make install
 
 [[ -x "${PREFIX}/bin/cmake" ]] || die "Установка CMake завершилась без исполняемого файла."
-log_ok "Установлен $(${PREFIX}/bin/cmake --version | head -n1)"
+log_ok "Установлен $("${PREFIX}/bin/cmake" --version | head -n1)"
 cat <<EOF
 
 Добавьте CMake в текущую сессию:
