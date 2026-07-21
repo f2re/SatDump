@@ -15,7 +15,7 @@ PORTABLE_DIR="${SOURCE_DIR}/scripts/astra/portable"
 # shellcheck source=lock.env
 source "${PORTABLE_DIR}/lock.env"
 
-log() { printf '[portable] %s\n' "$*"; }
+log() { printf '[portable] %s\n' "$*" >&2; }
 fail() { printf '[portable] ERROR: %s\n' "$*" >&2; exit 1; }
 
 [[ "${JOBS}" =~ ^[1-9][0-9]*$ ]] || fail "SATDUMP_JOBS должен быть положительным целым числом."
