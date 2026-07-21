@@ -90,7 +90,7 @@ fetch_archive() {
 
     output="${ASTRA_CACHE_DIR}/${archive}"
     if [[ ! -s "${output}" ]]; then
-        log_info "Загрузка ${url}"
+        log_info "Загрузка ${url}" >&2
         if command_exists curl; then
             curl --fail --location --retry 3 --output "${output}.part" "${url}"
         elif command_exists wget; then
@@ -149,7 +149,7 @@ build_nng() {
 }
 
 build_volk() {
-    if pkg-config --exists volk 2>/dev/null && "${FORCE}" == "0"; then
+    if pkg-config --exists volk 2>/dev/null && [[ "${FORCE}" == "0" ]]; then
         log_ok "VOLK уже доступен: $(pkg-config --modversion volk)"
         return
     fi

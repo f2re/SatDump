@@ -224,8 +224,11 @@ find_cmake() {
 
 apt_package_available() {
     local package="$1"
+    local candidate=""
     command_exists apt-cache || return 1
-    apt-cache show "${package}" >/dev/null 2>&1
+
+    candidate="$(apt-cache policy "${package}" 2>/dev/null | awk '/^[[:space:]]*Candidate:/ { print $2; exit }')"
+    [[ -n "${candidate}" && "${candidate}" != "(none)" ]]
 }
 
 first_available_package() {

@@ -107,7 +107,9 @@ namespace lua_utils
         lua["image_load_jpeg"] = (void (*)(image::Image &, std::string))(&image::load_jpeg);
         lua["image_save_jpeg"] = &image::save_jpeg;
         lua["image_load_img"] = (void (*)(image::Image &, std::string))(&image::load_img);
-        lua["image_save_img"] = &image::save_img;
+        // save_img also has a const convenience overload for presentation output;
+        // Lua must bind the original mutable signature explicitly.
+        lua["image_save_img"] = (void (*)(image::Image &, std::string, bool))(&image::save_img);
     }
 
     void bindImageTypes(sol::state &lua)
@@ -121,10 +123,10 @@ namespace lua_utils
     void bindGeoTypes(sol::state &lua)
     {
         sol::usertype<geodetic::geodetic_coords_t> type = lua.new_usertype<geodetic::geodetic_coords_t>("geodetic_coords_t",
-                                                                                                        sol::constructors<
-                                                                                                            geodetic::geodetic_coords_t(),
-                                                                                                            geodetic::geodetic_coords_t(double, double, double),
-                                                                                                            geodetic::geodetic_coords_t(double, double, double, bool)>());
+                                                                                                         sol::constructors<
+                                                                                                             geodetic::geodetic_coords_t(),
+                                                                                                             geodetic::geodetic_coords_t(double, double, double),
+                                                                                                             geodetic::geodetic_coords_t(double, double, double, bool)>());
 
         type["toDegs"] = &geodetic::geodetic_coords_t::toDegs;
         type["toRads"] = &geodetic::geodetic_coords_t::toRads;
