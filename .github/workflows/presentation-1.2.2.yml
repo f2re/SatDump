@@ -45,10 +45,11 @@ jobs:
 
       - name: ShellCheck
         run: |
+          set -o pipefail
           shellcheck \
             --external-sources \
             --exclude=SC1091,SC2034 \
-            scripts/astra/*.sh
+            scripts/astra/*.sh 2>&1 | tee shellcheck.log
 
       - name: Check documentation entry points
         run: |
@@ -61,8 +62,18 @@ jobs:
           test -s docs/ru/PRESENTATION.md
           test -s docs/ru/PRESENTATION_LAYOUTS.md
           test -s docs/ru/ASTRA_VALIDATION.md
+          test -s docs/ru/REVIEW_PRESENTATION.md
           test -s docs/ru/DEPLOYMENT.md
           test -s docs/ru/TROUBLESHOOTING.md
+
+      - name: Upload shell diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shellcheck-diagnostics
+          path: shellcheck.log
+          if-no-files-found: ignore
+          retention-days: 14
 
   astra-compatibility:
     name: Astra ${{ matrix.astra }} compatible headless build
@@ -100,10 +111,13 @@ jobs:
         env:
           ASTRA_VERSION_OVERRIDE: ${{ matrix.astra }}
         run: |
+          set -o pipefail
+          build_dir="${GITHUB_WORKSPACE}/build/astra-${{ matrix.astra }}-ci"
+          mkdir -p "${build_dir}"
           bash scripts/astra/build.sh \
             --profile headless \
-            --build-dir "${GITHUB_WORKSPACE}/build/astra-${{ matrix.astra }}-ci" \
-            --jobs 2
+            --build-dir "${build_dir}" \
+            --jobs 2 2>&1 | tee "${build_dir}/build.log"
 
       - name: Validate orientation and visual products
         run: |
@@ -140,6 +154,7 @@ jobs:
         with:
           name: astra-${{ matrix.astra }}-build-diagnostics
           path: |
+            build/astra-${{ matrix.astra }}-ci/build.log
             build/astra-${{ matrix.astra }}-ci/CMakeCache.txt
             build/astra-${{ matrix.astra }}-ci/CMakeFiles/CMakeOutput.log
             build/astra-${{ matrix.astra }}-ci/CMakeFiles/CMakeError.log
