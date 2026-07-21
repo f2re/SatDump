@@ -90,7 +90,7 @@ fetch_archive() {
 
     output="${ASTRA_CACHE_DIR}/${archive}"
     if [[ ! -s "${output}" ]]; then
-        log_info "Загрузка ${url}"
+        log_info "Загрузка ${url}" >&2
         if command_exists curl; then
             curl --fail --location --retry 3 --output "${output}.part" "${url}"
         elif command_exists wget; then
