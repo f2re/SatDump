@@ -17,7 +17,8 @@ namespace satdump
         std::string line2;
     };
 
-    inline void to_json(nlohmann::json &j, const TLE &v)
+    template <typename JsonType>
+    inline void write_tle_json(JsonType &j, const TLE &v)
     {
         j["norad"] = v.norad;
         j["name"] = v.name;
@@ -25,12 +26,33 @@ namespace satdump
         j["line2"] = v.line2;
     }
 
+    template <typename JsonType>
+    inline void read_tle_json(const JsonType &j, TLE &v)
+    {
+        v.norad = j["norad"].template get<int>();
+        v.name = j["name"].template get<std::string>();
+        v.line1 = j["line1"].template get<std::string>();
+        v.line2 = j["line2"].template get<std::string>();
+    }
+
+    inline void to_json(nlohmann::json &j, const TLE &v)
+    {
+        write_tle_json(j, v);
+    }
+
+    inline void to_json(nlohmann::ordered_json &j, const TLE &v)
+    {
+        write_tle_json(j, v);
+    }
+
     inline void from_json(const nlohmann::json &j, TLE &v)
     {
-        v.norad = j["norad"].get<int>();
-        v.name = j["name"].get<std::string>();
-        v.line1 = j["line1"].get<std::string>();
-        v.line2 = j["line2"].get<std::string>();
+        read_tle_json(j, v);
+    }
+
+    inline void from_json(const nlohmann::ordered_json &j, TLE &v)
+    {
+        read_tle_json(j, v);
     }
 
     struct TLEsUpdatedEvent
