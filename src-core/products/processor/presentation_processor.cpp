@@ -1,6 +1,5 @@
 #include "presentation_processor.h"
 
-#include "common/calibration.h"
 #include "common/image/io.h"
 #include "core/config.h"
 #include "logger.h"
@@ -11,9 +10,9 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
-#include <regex>
 #include <set>
 #include <sstream>
+#include <utility>
 
 namespace satdump
 {
@@ -63,8 +62,8 @@ namespace satdump
 
             std::string lowercase(std::string value)
             {
-                std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c)
-                               { return (char)std::tolower(c); });
+                std::transform(value.begin(), value.end(), value.begin(), [](unsigned char character)
+                               { return (char)std::tolower(character); });
                 return value;
             }
 
@@ -86,25 +85,25 @@ namespace satdump
                 return output;
             }
 
-            std::string json_scalar_to_string(const nlohmann::json &value)
+            std::string scalar_to_string(const nlohmann::json &value)
             {
                 if (value.is_string())
                     return value.get<std::string>();
                 if (value.is_boolean())
                     return value.get<bool>() ? "true" : "false";
-                if (value.is_number_integer())
-                    return std::to_string(value.get<long long>());
                 if (value.is_number_unsigned())
                     return std::to_string(value.get<unsigned long long>());
+                if (value.is_number_integer())
+                    return std::to_string(value.get<long long>());
                 if (value.is_number_float())
                     return format_number(value.get<double>(), 3);
                 return "";
             }
 
-            const nlohmann::json *at_path(const nlohmann::json &root, std::initializer_list<const char *> path)
+            const nlohmann::json *lookup_path(const nlohmann::json &root, const std::vector<std::string> &path)
             {
                 const nlohmann::json *current = &root;
-                for (const char *part : path)
+                for (const std::string &part : path)
                 {
                     if (!current->is_object() || !current->contains(part))
                         return nullptr;
@@ -121,29 +120,19 @@ namespace satdump
                 {
                     for (const std::vector<std::string> &path : paths)
                     {
-                        const nlohmann::json *current = root;
-                        bool valid = true;
-                        for (const std::string &part : path)
+                        const nlohmann::json *value = lookup_path(*root, path);
+                        if (value != nullptr)
                         {
-                            if (!current->is_object() || !current->contains(part))
-                            {
-                                valid = false;
-                                break;
-                            }
-                            current = &((*current)[part]);
-                        }
-                        if (valid)
-                        {
-                            const std::string value = json_scalar_to_string(*current);
-                            if (!value.empty())
-                                return value;
+                            const std::string text = scalar_to_string(*value);
+                            if (!text.empty())
+                                return text;
                         }
                     }
                 }
                 return "";
             }
 
-            bool json_bool_value(const nlohmann::json &value, bool fallback)
+            bool bool_value(const nlohmann::json &value, bool fallback)
             {
                 try
                 {
@@ -165,8 +154,7 @@ namespace satdump
                     try
                     {
                         Color color = {value[0].get<double>(), value[1].get<double>(), value[2].get<double>()};
-                        const double maximum = std::max(color[0], std::max(color[1], color[2]));
-                        if (maximum > 1.0)
+                        if (std::max(color[0], std::max(color[1], color[2])) > 1.0)
                         {
                             color[0] /= 255.0;
                             color[1] /= 255.0;
@@ -185,7 +173,7 @@ namespace satdump
                 if (value.is_string())
                 {
                     std::string text = value.get<std::string>();
-                    if (!text.empty() && text[0] == '#')
+                    if (!text.empty() && text.front() == '#')
                         text.erase(text.begin());
                     if (text.size() == 6)
                     {
@@ -201,7 +189,6 @@ namespace satdump
                         }
                     }
                 }
-
                 return fallback;
             }
 
@@ -215,13 +202,13 @@ namespace satdump
                 char quote = '\0';
                 std::string current;
 
-                for (size_t i = 0; i < value.size(); i++)
+                for (size_t index = 0; index < value.size(); index++)
                 {
-                    const char character = value[i];
+                    const char character = value[index];
                     if (quoted)
                     {
                         current.push_back(character);
-                        if (character == quote && (i == 0 || value[i - 1] != '\\'))
+                        if (character == quote && (index == 0 || value[index - 1] != '\\'))
                             quoted = false;
                         continue;
                     }
@@ -266,31 +253,83 @@ namespace satdump
                 return output;
             }
 
-            std::vector<std::string> extract_channel_tokens(const std::string &expression)
+            bool identifier_character(char character)
             {
+                const unsigned char value = (unsigned char)character;
+                return std::isalnum(value) || character == '_' || character == '.';
+            }
+
+            struct ChannelTokenCandidate
+            {
+                std::string token;
+                int image_index = -1;
+            };
+
+            std::vector<ChannelTokenCandidate> channel_candidates(ImageProducts &products)
+            {
+                std::vector<ChannelTokenCandidate> output;
+                for (size_t index = 0; index < products.images.size(); index++)
+                {
+                    output.push_back({"cch" + products.images[index].channel_name, (int)index});
+                    output.push_back({"ch" + products.images[index].channel_name, (int)index});
+                }
+                std::sort(output.begin(), output.end(), [](const ChannelTokenCandidate &left, const ChannelTokenCandidate &right)
+                          {
+                              if (left.token.size() != right.token.size())
+                                  return left.token.size() > right.token.size();
+                              return left.token < right.token;
+                          });
+                return output;
+            }
+
+            std::vector<std::string> extract_channel_tokens(ImageProducts &products, const std::string &expression)
+            {
+                const std::vector<ChannelTokenCandidate> candidates = channel_candidates(products);
                 std::vector<std::string> output;
                 std::set<std::string> seen;
-                const std::regex channel_regex("(cch|ch)([A-Za-z0-9_.-]+)");
-                for (std::sregex_iterator iterator(expression.begin(), expression.end(), channel_regex), end; iterator != end; ++iterator)
+
+                for (size_t position = 0; position < expression.size(); position++)
                 {
-                    const std::string token = (*iterator)[0].str();
-                    if (seen.insert(token).second)
-                        output.push_back(token);
+                    if (position > 0 && identifier_character(expression[position - 1]))
+                        continue;
+
+                    const ChannelTokenCandidate *match = nullptr;
+                    for (const ChannelTokenCandidate &candidate : candidates)
+                    {
+                        if (position + candidate.token.size() > expression.size())
+                            continue;
+                        if (expression.compare(position, candidate.token.size(), candidate.token) != 0)
+                            continue;
+
+                        const size_t end = position + candidate.token.size();
+                        if (end < expression.size() && identifier_character(expression[end]))
+                            continue;
+
+                        match = &candidate;
+                        break;
+                    }
+
+                    if (match != nullptr)
+                    {
+                        if (seen.insert(match->token).second)
+                            output.push_back(match->token);
+                        position += match->token.size() - 1;
+                    }
                 }
                 return output;
             }
 
             int channel_index(ImageProducts &products, const std::string &token)
             {
-                std::string channel = token;
-                if (channel.rfind("cch", 0) == 0)
-                    channel = channel.substr(3);
-                else if (channel.rfind("ch", 0) == 0)
-                    channel = channel.substr(2);
+                std::string name = token;
+                if (name.rfind("cch", 0) == 0)
+                    name = name.substr(3);
+                else if (name.rfind("ch", 0) == 0)
+                    name = name.substr(2);
 
-                for (size_t i = 0; i < products.images.size(); i++)
-                    if (products.images[i].channel_name == channel)
-                        return (int)i;
+                for (size_t index = 0; index < products.images.size(); index++)
+                    if (products.images[index].channel_name == name)
+                        return (int)index;
                 return -1;
             }
 
@@ -298,11 +337,18 @@ namespace satdump
             {
                 if (index < 0 || index >= (int)products.images.size())
                     return "";
-                const double wavenumber = products.get_wavenumber(index);
-                if (!std::isfinite(wavenumber) || wavenumber <= 0.0)
+                try
+                {
+                    const double wavenumber = products.get_wavenumber(index);
+                    if (!std::isfinite(wavenumber) || wavenumber <= 0.0)
+                        return "";
+                    const double wavelength_um = 10000.0 / wavenumber;
+                    return format_number(wavelength_um, wavelength_um < 10.0 ? 2 : 1) + " мкм";
+                }
+                catch (const std::exception &)
+                {
                     return "";
-                const double wavelength_um = 10000.0 / wavenumber;
-                return format_number(wavelength_um, wavelength_um < 10.0 ? 2 : 1) + " мкм";
+                }
             }
 
             std::string calibrated_quantity(const ImageCompositeCfg &composite, const std::string &token)
@@ -332,16 +378,11 @@ namespace satdump
             std::string describe_token(ImageProducts &products, const ImageCompositeCfg &composite, const std::string &token)
             {
                 const int index = channel_index(products, token);
-                std::string channel_name = token;
-                if (index >= 0)
-                    channel_name = "канал " + products.images[index].channel_name;
-
+                std::string output = index >= 0 ? "канал " + products.images[index].channel_name : token;
                 const std::string wavelength = wavelength_label(products, index);
-                const std::string quantity = calibrated_quantity(composite, token);
-
-                std::string output = channel_name;
                 if (!wavelength.empty())
                     output += " · " + wavelength;
+                const std::string quantity = calibrated_quantity(composite, token);
                 if (!quantity.empty())
                     output += " · " + quantity;
                 return output;
@@ -372,7 +413,7 @@ namespace satdump
                 return "IN " + std::to_string(index + 1);
             }
 
-            std::vector<std::string> composite_output_expressions(const ImageCompositeCfg &composite)
+            std::vector<std::string> output_expressions(const ImageCompositeCfg &composite)
             {
                 if (!composite.equation.empty())
                 {
@@ -382,7 +423,6 @@ namespace satdump
                         expression = expression.substr(last_semicolon + 1);
                     return split_top_level(expression, ',');
                 }
-
                 if (!composite.channels.empty())
                     return split_top_level(composite.channels, ',');
                 return {};
@@ -393,22 +433,21 @@ namespace satdump
                 LegendSpec legend;
                 legend.kind = LegendKind::Composite;
 
-                std::vector<std::string> expressions = composite_output_expressions(composite);
+                const std::vector<std::string> expressions = output_expressions(composite);
                 const bool explicit_rgb = expressions.size() == 3 || expressions.size() == 4;
                 legend.title = explicit_rgb ? "Состав RGB-композита" : "Состав многоканального композита";
                 legend.subtitle = "Спектральные каналы, физические величины и формулы, формирующие результирующий цвет";
 
                 if (explicit_rgb)
                 {
-                    for (size_t i = 0; i < expressions.size(); i++)
+                    for (size_t index = 0; index < expressions.size(); index++)
                     {
                         CompositeComponent component;
-                        component.component = component_label(i, expressions.size());
-                        component.formula = collapse_spaces(expressions[i]);
+                        component.component = component_label(index, expressions.size());
+                        component.formula = collapse_spaces(expressions[index]);
 
-                        const std::vector<std::string> tokens = extract_channel_tokens(expressions[i]);
                         std::vector<std::string> descriptions;
-                        for (const std::string &token : tokens)
+                        for (const std::string &token : extract_channel_tokens(products, expressions[index]))
                             descriptions.push_back(describe_token(products, composite, token));
                         component.description = join(descriptions, " + ");
                         if (component.description.empty())
@@ -420,22 +459,27 @@ namespace satdump
                 }
                 else
                 {
-                    std::string source = !composite.channels.empty() ? composite.channels : composite.equation;
-                    std::vector<std::string> tokens = extract_channel_tokens(source);
-                    if (tokens.empty())
+                    const std::string source = !composite.channels.empty() ? composite.channels : composite.equation;
+                    std::vector<std::string> tokens = extract_channel_tokens(products, source);
+                    if (!tokens.empty())
                     {
-                        for (const std::string &expression : expressions)
-                            tokens.push_back(expression);
+                        for (size_t index = 0; index < tokens.size(); index++)
+                        {
+                            CompositeComponent component;
+                            component.component = component_label(index, tokens.size());
+                            component.description = describe_token(products, composite, tokens[index]);
+                            legend.components.push_back(component);
+                        }
                     }
-
-                    for (size_t i = 0; i < tokens.size(); i++)
+                    else
                     {
-                        CompositeComponent component;
-                        component.component = component_label(i, tokens.size());
-                        component.description = describe_token(products, composite, tokens[i]);
-                        if (component.description.empty())
-                            component.description = collapse_spaces(tokens[i]);
-                        legend.components.push_back(component);
+                        for (size_t index = 0; index < expressions.size(); index++)
+                        {
+                            CompositeComponent component;
+                            component.component = component_label(index, expressions.size());
+                            component.description = collapse_spaces(expressions[index]);
+                            legend.components.push_back(component);
+                        }
                     }
                 }
 
@@ -463,7 +507,6 @@ namespace satdump
                     transformations.push_back("цветовая LUT");
                 if (!transformations.empty())
                     legend.notes.push_back("Визуальная обработка: " + join(transformations, ", ") + ".");
-
                 return legend;
             }
 
@@ -477,13 +520,35 @@ namespace satdump
                     {1.00, {0.988235, 0.905882, 0.145098}}};
             }
 
+            void read_explicit_components(const nlohmann::json &legend_json, LegendSpec &legend)
+            {
+                if (!legend_json.contains("components") || !legend_json["components"].is_array())
+                    return;
+
+                legend.components.clear();
+                for (const nlohmann::json &component_json : legend_json["components"])
+                {
+                    if (!component_json.is_object())
+                        continue;
+                    CompositeComponent component;
+                    component.component = component_json.value("component", "IN");
+                    component.channel = component_json.value("channel", "");
+                    component.spectral_range = component_json.value("spectral_range", "");
+                    component.quantity = component_json.value("quantity", "");
+                    component.formula = component_json.value("formula", "");
+                    component.description = component_json.value("description", "");
+                    if (component_json.contains("color"))
+                        component.marker_color = parse_color(component_json["color"], component.marker_color);
+                    legend.components.push_back(component);
+                }
+            }
+
             LegendSpec explicit_legend(const nlohmann::json &legend_json, LegendSpec fallback)
             {
                 if (!legend_json.is_object())
                     return fallback;
 
-                std::string kind = legend_json.value("kind", "");
-                kind = lowercase(kind);
+                const std::string kind = lowercase(legend_json.value("kind", ""));
                 if (kind == "continuous")
                     fallback.kind = LegendKind::Continuous;
                 else if (kind == "categorical" || kind == "discrete")
@@ -502,23 +567,25 @@ namespace satdump
 
                 if (fallback.kind == LegendKind::Continuous)
                 {
+                    fallback.components.clear();
+                    fallback.categories.clear();
                     fallback.color_stops.clear();
                     if (legend_json.contains("colors") && legend_json["colors"].is_array())
                     {
                         const nlohmann::json &colors = legend_json["colors"];
-                        for (size_t i = 0; i < colors.size(); i++)
+                        for (size_t index = 0; index < colors.size(); index++)
                         {
                             ColorStop stop;
-                            if (colors[i].is_object())
+                            stop.position = colors.size() <= 1 ? 0.0 : (double)index / (double)(colors.size() - 1);
+                            if (colors[index].is_object())
                             {
-                                stop.position = colors[i].value("position", colors.size() <= 1 ? 0.0 : (double)i / (double)(colors.size() - 1));
-                                if (colors[i].contains("color"))
-                                    stop.color = parse_color(colors[i]["color"], {0.5, 0.5, 0.5});
+                                stop.position = colors[index].value("position", stop.position);
+                                if (colors[index].contains("color"))
+                                    stop.color = parse_color(colors[index]["color"], {0.5, 0.5, 0.5});
                             }
                             else
                             {
-                                stop.position = colors.size() <= 1 ? 0.0 : (double)i / (double)(colors.size() - 1);
-                                stop.color = parse_color(colors[i], {0.5, 0.5, 0.5});
+                                stop.color = parse_color(colors[index], {0.5, 0.5, 0.5});
                             }
                             fallback.color_stops.push_back(stop);
                         }
@@ -534,19 +601,22 @@ namespace satdump
                         for (const nlohmann::json &tick_json : legend_json["ticks"])
                         {
                             LegendTick tick;
-                            if (tick_json.is_object())
+                            if (tick_json.is_number())
+                            {
+                                const double value = tick_json.get<double>();
+                                tick.position = maximum == minimum ? 0.0 : (value - minimum) / (maximum - minimum);
+                                tick.label = format_number(value, 1);
+                            }
+                            else if (tick_json.is_object())
                             {
                                 if (tick_json.contains("position"))
                                     tick.position = tick_json["position"].get<double>();
                                 else if (tick_json.contains("value") && maximum != minimum)
                                     tick.position = (tick_json["value"].get<double>() - minimum) / (maximum - minimum);
-                                tick.label = tick_json.value("label", tick_json.contains("value") ? format_number(tick_json["value"].get<double>(), 1) : "");
-                            }
-                            else if (tick_json.is_number())
-                            {
-                                const double value = tick_json.get<double>();
-                                tick.position = maximum == minimum ? 0.0 : (value - minimum) / (maximum - minimum);
-                                tick.label = format_number(value, 1);
+                                if (tick_json.contains("label") && tick_json["label"].is_string())
+                                    tick.label = tick_json["label"].get<std::string>();
+                                else if (tick_json.contains("value"))
+                                    tick.label = format_number(tick_json["value"].get<double>(), 1);
                             }
                             fallback.ticks.push_back(tick);
                         }
@@ -554,30 +624,46 @@ namespace satdump
                     if (fallback.ticks.empty())
                     {
                         const int count = std::max(2, legend_json.value("tick_count", 8));
-                        for (int i = 0; i < count; i++)
+                        for (int index = 0; index < count; index++)
                         {
-                            const double position = count <= 1 ? 0.0 : (double)i / (double)(count - 1);
+                            const double position = count <= 1 ? 0.0 : (double)index / (double)(count - 1);
                             fallback.ticks.push_back({position, format_number(minimum + (maximum - minimum) * position, 1)});
                         }
                     }
                 }
                 else if (fallback.kind == LegendKind::Categorical)
                 {
+                    fallback.components.clear();
+                    fallback.color_stops.clear();
+                    fallback.ticks.clear();
                     fallback.categories.clear();
                     if (legend_json.contains("categories") && legend_json["categories"].is_array())
                     {
                         for (const nlohmann::json &entry_json : legend_json["categories"])
                         {
+                            if (!entry_json.is_object())
+                                continue;
                             CategoryEntry entry;
-                            if (entry_json.is_object())
-                            {
-                                entry.label = entry_json.value("label", "Без названия");
-                                if (entry_json.contains("color"))
-                                    entry.color = parse_color(entry_json["color"], {0.5, 0.5, 0.5});
-                                fallback.categories.push_back(entry);
-                            }
+                            entry.label = entry_json.value("label", "Без названия");
+                            if (entry_json.contains("color"))
+                                entry.color = parse_color(entry_json["color"], {0.5, 0.5, 0.5});
+                            fallback.categories.push_back(entry);
                         }
                     }
+                }
+                else if (fallback.kind == LegendKind::Composite)
+                {
+                    fallback.color_stops.clear();
+                    fallback.ticks.clear();
+                    fallback.categories.clear();
+                    read_explicit_components(legend_json, fallback);
+                }
+                else
+                {
+                    fallback.color_stops.clear();
+                    fallback.ticks.clear();
+                    fallback.categories.clear();
+                    fallback.components.clear();
                 }
 
                 if (legend_json.contains("notes") && legend_json["notes"].is_array())
@@ -624,7 +710,6 @@ namespace satdump
                         maximum = std::max(maximum, timestamp);
                     }
                 }
-
                 if (!std::isfinite(minimum) && products.has_product_timestamp())
                     minimum = maximum = (double)products.get_product_timestamp();
                 return {minimum, maximum};
@@ -678,16 +763,16 @@ namespace satdump
                 return "Спутниковый продукт";
             }
 
-            std::vector<std::string> all_used_channels(const ImageCompositeCfg &composite)
+            std::vector<std::string> used_channels(ImageProducts &products, const ImageCompositeCfg &composite)
             {
-                std::string source = !composite.channels.empty() ? composite.channels : composite.equation;
-                return extract_channel_tokens(source);
+                const std::string source = !composite.channels.empty() ? composite.channels : composite.equation;
+                return extract_channel_tokens(products, source);
             }
 
             std::string channel_summary(ImageProducts &products, const ImageCompositeCfg &composite)
             {
                 std::vector<std::string> values;
-                for (const std::string &token : all_used_channels(composite))
+                for (const std::string &token : used_channels(products, composite))
                 {
                     const int index = channel_index(products, token);
                     if (index < 0)
@@ -759,18 +844,14 @@ namespace satdump
                     if (presentation.is_boolean())
                         return presentation.get<bool>();
                     if (presentation.is_object() && presentation.contains("enabled"))
-                        return json_bool_value(presentation["enabled"], true);
+                        return bool_value(presentation["enabled"], true);
                 }
-
                 if (config::main_cfg.contains("satdump_general") && config::main_cfg["satdump_general"].contains("presentation_enabled"))
-                    return json_bool_value(config::main_cfg["satdump_general"]["presentation_enabled"], true);
+                    return bool_value(config::main_cfg["satdump_general"]["presentation_enabled"], true);
             }
             catch (const std::exception &)
             {
             }
-
-            // This fork is dedicated to presentation-ready imagery. Existing
-            // products remain untouched; the extra output is enabled by default.
             return true;
         }
 
@@ -789,16 +870,15 @@ namespace satdump
             spec.pass.product = product_name;
             spec.pass.acquisition_time = format_interval(timestamp_range(timestamps, products));
 
-            const nlohmann::json empty_json;
             const std::string direction = first_path_string(products.contents, product_metadata,
                                                              {{"acquisition", "pass", "direction"}, {"pass", "direction"}, {"pass_direction"}});
-            const std::string max_elevation = first_path_string(products.contents, product_metadata,
-                                                                 {{"acquisition", "pass", "max_elevation_deg"}, {"pass", "max_elevation_deg"}, {"max_elevation_deg"}});
+            const std::string maximum_elevation = first_path_string(products.contents, product_metadata,
+                                                                     {{"acquisition", "pass", "max_elevation_deg"}, {"pass", "max_elevation_deg"}, {"max_elevation_deg"}});
             std::vector<std::string> pass_parts;
             if (!direction.empty())
                 pass_parts.push_back(direction);
-            if (!max_elevation.empty())
-                pass_parts.push_back("макс. высота " + max_elevation + "°");
+            if (!maximum_elevation.empty())
+                pass_parts.push_back("макс. высота " + maximum_elevation + "°");
             spec.pass.pass_summary = join(pass_parts, " · ");
 
             if (products.has_tle() && products.get_tle().norad > 0)
@@ -827,7 +907,7 @@ namespace satdump
             try
             {
                 if (products.has_proj_cfg() && products.get_proj_cfg().contains("type"))
-                    spec.pass.details.push_back({"Проекция", json_scalar_to_string(products.get_proj_cfg()["type"])});
+                    spec.pass.details.push_back({"Проекция", scalar_to_string(products.get_proj_cfg()["type"])});
             }
             catch (const std::exception &)
             {
@@ -879,7 +959,6 @@ namespace satdump
                         spec.theme.accent = parse_color(theme["accent"], spec.theme.accent);
                 }
             }
-
             return spec;
         }
 
