@@ -56,8 +56,8 @@ jobs:
 
       - name: Install checks
         run: |
-          sudo apt-get update
-          sudo apt-get install -y shellcheck
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
 
       - name: Bash syntax
         run: |
@@ -65,12 +65,27 @@ jobs:
             | xargs -0 -n1 bash -n
 
       - name: ShellCheck errors
+        shell: bash
         run: |
+          set +e
           find scripts/astra -type f -name '*.sh' -print0 \
             | xargs -0 shellcheck \
                 --severity=error \
                 --external-sources \
-                --exclude=SC1091
+                --exclude=SC1091 \
+            > shellcheck.log 2>&1
+          status=$?
+          cat shellcheck.log
+          exit "${status}"
+
+      - name: Upload ShellCheck diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: portable-shellcheck-log
+          path: shellcheck.log
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Verify pinned profile
         run: |
