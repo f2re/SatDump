@@ -9,6 +9,7 @@ BUILD_DIR=""
 INSTALL_PREFIX="${SATDUMP_INSTALL_PREFIX:-${HOME}/.local/opt/satdump-1.2.2}"
 JOBS="$(jobs_count)"
 CLEAN=0
+CLEAN_PREFIX=0
 DO_INSTALL=0
 RUN_TESTS=1
 ENABLE_OPENCL=0
@@ -31,12 +32,13 @@ usage() {
   --with-ziq                      Включить ZIQ/libzstd
   --without-tests                 Не собирать smoke-тесты
   --clean                         Удалить каталог сборки перед конфигурацией
+  --clean-prefix                  Перед install безопасно очистить SatDump-prefix
   --install                       Выполнить cmake --install после сборки
   -h, --help                      Показать справку
 
 Примеры:
   bash scripts/astra/build-native.sh --profile headless
-  bash scripts/astra/build-native.sh --profile desktop --sdr rtl --install
+  bash scripts/astra/build-native.sh --profile desktop --sdr rtl --clean --clean-prefix --install
   bash scripts/astra/build-native.sh --profile headless -- -DPLUGIN_FY3=ON
 EOF
 }
@@ -53,6 +55,7 @@ while (( $# > 0 )); do
         --with-ziq) ENABLE_ZIQ=1; shift ;;
         --without-tests) RUN_TESTS=0; shift ;;
         --clean) CLEAN=1; shift ;;
+        --clean-prefix) CLEAN_PREFIX=1; shift ;;
         --install) DO_INSTALL=1; shift ;;
         --) shift; EXTRA_CMAKE_ARGS+=("$@"); break ;;
         -h|--help) usage; exit 0 ;;
@@ -73,6 +76,8 @@ case "${BUILD_TYPE}" in
     *) die "Допустимые типы сборки: Release, RelWithDebInfo, Debug" ;;
 esac
 [[ "${JOBS}" =~ ^[1-9][0-9]*$ ]] || die "--jobs должен быть положительным целым числом."
+[[ "${CLEAN_PREFIX}" == "0" || "${DO_INSTALL}" == "1" ]] \
+    || die "--clean-prefix применяется только вместе с --install."
 
 ASTRA_VERSION="$(detect_astra_version)"
 if [[ -z "${BUILD_DIR}" ]]; then
@@ -262,28 +267,101 @@ export LD_LIBRARY_PATH="${BUILD_DIR}:${BUILD_DIR}/plugins:${ASTRA_DEPS_PREFIX}/l
 EOF
 chmod +x "${BUILD_DIR}/astra-env.sh"
 
+install_command() {
+    if [[ -d "${INSTALL_PREFIX}" && -w "${INSTALL_PREFIX}" ]]; then
+        "$@"
+    elif [[ ! -e "${INSTALL_PREFIX}" && -w "$(dirname "${INSTALL_PREFIX}")" ]]; then
+        "$@"
+    elif command_exists sudo; then
+        sudo env LD_LIBRARY_PATH="${LD_LIBRARY_PATH}" "$@"
+    else
+        die "Нет прав на ${INSTALL_PREFIX}; выберите пользовательский --prefix или выполните установку от администратора."
+    fi
+}
+
+validate_clean_prefix() {
+    local resolved base nonempty=0
+    resolved="$(readlink -m "${INSTALL_PREFIX}")"
+    base="$(basename "${resolved}")"
+
+    case "${resolved}" in
+        /|/usr|/usr/local|/opt|/var|/home|/root|"${HOME}")
+            die "Отказ очищать опасный install prefix: ${resolved}"
+            ;;
+    esac
+    [[ "${base}" == satdump* ]] \
+        || die "Для --clean-prefix basename должен начинаться с satdump: ${resolved}"
+    [[ ! -L "${INSTALL_PREFIX}" ]] \
+        || die "--clean-prefix запрещён для символьной ссылки: ${INSTALL_PREFIX}"
+
+    if [[ -d "${resolved}" ]]; then
+        [[ -z "$(find "${resolved}" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]] || nonempty=1
+        if [[ "${nonempty}" == "1" && \
+              ! -f "${resolved}/.satdump-install-root" && \
+              ! -x "${resolved}/bin/satdump" && \
+              ! -d "${resolved}/share/satdump" ]]; then
+            die "Каталог не похож на SatDump-install и не будет очищен: ${resolved}"
+        fi
+    elif [[ -e "${resolved}" ]]; then
+        die "Install prefix существует и не является каталогом: ${resolved}"
+    fi
+
+    printf '%s\n' "${resolved}"
+}
+
+clean_install_prefix() {
+    local resolved
+    resolved="$(validate_clean_prefix)"
+    log_warn "Очистка versioned SatDump-prefix: ${resolved}"
+    if [[ -d "${resolved}" ]]; then
+        if [[ -w "${resolved}" ]]; then
+            find "${resolved}" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+        elif command_exists sudo; then
+            sudo find "${resolved}" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+        else
+            die "Нет прав для очистки ${resolved}."
+        fi
+    fi
+}
+
+write_install_marker() {
+    local temporary
+    temporary="$(mktemp "${TMPDIR:-/tmp}/satdump-install-marker.XXXXXX")"
+    cat > "${temporary}" <<EOF
+profile=satdump-native
+version=1.2.2
+astra=${ASTRA_VERSION}
+build_type=${BUILD_TYPE}
+source=$(git -C "${SATDUMP_ROOT}" rev-parse HEAD 2>/dev/null || printf unknown)
+EOF
+    install_command install -m 0644 "${temporary}" "${INSTALL_PREFIX}/.satdump-install-root"
+    rm -f "${temporary}"
+}
+
 if [[ "${DO_INSTALL}" == "1" ]]; then
     log_info "Установка в ${INSTALL_PREFIX}"
+
+    if [[ "${CLEAN_PREFIX}" == "1" ]]; then
+        clean_install_prefix
+    fi
 
     if [[ "${INSTALL_PREFIX}" == "${HOME}"/* ]]; then
         mkdir -p "${INSTALL_PREFIX}"
     fi
 
-    if [[ -d "${INSTALL_PREFIX}" && -w "${INSTALL_PREFIX}" ]]; then
-        "${CMAKE_EXECUTABLE}" --install "${BUILD_DIR}"
-    elif command_exists sudo; then
-        sudo env LD_LIBRARY_PATH="${LD_LIBRARY_PATH}" "${CMAKE_EXECUTABLE}" --install "${BUILD_DIR}"
-    else
-        die "Нет прав на ${INSTALL_PREFIX}; выберите пользовательский --prefix или выполните установку от администратора."
-    fi
+    install_command "${CMAKE_EXECUTABLE}" --install "${BUILD_DIR}"
+    write_install_marker
     log_ok "SatDump установлен в ${INSTALL_PREFIX}"
 fi
 
 log_ok "Native-сборка завершена: ${BUILD_DIR}"
 cat <<EOF
 
-Подготовить пользовательское установленное дерево и проверить версию:
-  bash scripts/astra/run.sh --build-dir "${BUILD_DIR}" --prefix "${INSTALL_PREFIX}" --prepare -- version
+Проверить установленное дерево и версию:
+  bash scripts/astra/run.sh --prefix "${INSTALL_PREFIX}" -- version
+
+Повторная чистая установка в versioned prefix:
+  bash scripts/astra/build.sh --mode native --profile ${PROFILE} --build-dir "${BUILD_DIR}" --prefix "${INSTALL_PREFIX}" --clean-prefix --install
 
 Переносимый бандл с контролируемой glibc:
   bash scripts/astra/build.sh --mode portable-glibc224 --profile reference
