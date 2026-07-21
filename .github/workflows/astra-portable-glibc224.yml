@@ -1,0 +1,181 @@
+name: Astra portable glibc 2.24
+
+on:
+  pull_request:
+    branches:
+      - release/1.2.2
+    paths:
+      - "scripts/astra/**"
+      - "src-core/satdump_vars.cpp"
+      - ".github/workflows/astra-portable-glibc224.yml"
+      - "docs/ru/PORTABLE_ASTRA.md"
+  push:
+    branches:
+      - release/1.2.2
+    paths:
+      - "scripts/astra/**"
+      - "src-core/satdump_vars.cpp"
+      - ".github/workflows/astra-portable-glibc224.yml"
+  workflow_dispatch:
+    inputs:
+      run_full_build:
+        description: "Собрать полный Debian Stretch/glibc 2.24 бандл"
+        required: true
+        default: false
+        type: boolean
+      plugin_profile:
+        description: "Набор плагинов"
+        required: true
+        default: reference
+        type: choice
+        options:
+          - reference
+          - meteor
+      allow_unsigned_archive:
+        description: "Разрешить legacy archive mode, если strict debootstrap недоступен"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: astra-portable-glibc224-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  profile-lint:
+    name: Portable profile lint and safety guards
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install checks
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: Bash syntax
+        run: |
+          find scripts/astra -type f -name '*.sh' -print0 \
+            | xargs -0 -n1 bash -n
+
+      - name: ShellCheck errors
+        run: |
+          find scripts/astra -type f -name '*.sh' -print0 \
+            | xargs -0 shellcheck \
+                --severity=error \
+                --external-sources \
+                --exclude=SC1091
+
+      - name: Verify pinned profile
+        run: |
+          grep -q 'SATDUMP_PORTABLE_GLIBC_BASELINE="2.24"' scripts/astra/portable/lock.env
+          grep -q 'SATDUMP_PORTABLE_GCC_VERSION="9.5.0"' scripts/astra/portable/lock.env
+          grep -q 'SATDUMP_PORTABLE_CMAKE_VERSION="3.27.9"' scripts/astra/portable/lock.env
+          grep -q 'SATDUMP_PORTABLE_NNG_VERSION="1.8.0"' scripts/astra/portable/lock.env
+          grep -q 'SATDUMP_PORTABLE_NNG_COMMIT="29b73962b939a6fbbf6ea8d5d7680bb06d0eeb99"' scripts/astra/portable/lock.env
+
+      - name: Reject mixed 2.x source tree
+        run: |
+          test ! -e src-core/products/image_product.cpp
+          test ! -e src-core/angelscript
+          test ! -e plugins/firstparty_support
+          test ! -e plugins/metopsg_support
+          grep -q 'project(SatDump VERSION "1.2.2")' CMakeLists.txt
+
+      - name: Verify build mode dispatcher
+        run: |
+          bash scripts/astra/build.sh --help | grep -q portable-glibc224
+          bash scripts/astra/build-native.sh --help | grep -q headless
+          bash scripts/astra/portable/build.sh --help | grep -q reference
+
+  portable-build:
+    name: Exact Stretch/glibc 2.24 portable build
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_full_build }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 300
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install chroot tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            debootstrap \
+            debian-archive-keyring \
+            rsync \
+            xz-utils \
+            binutils
+
+      - name: Cache verified source archives
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/satdump-portable
+          key: satdump-portable-sources-v1-gcc9.5-cmake3.27.9-nng1.8
+
+      - name: Build portable bundle
+        shell: bash
+        run: |
+          args=(
+            --mode portable-glibc224
+            --profile "${{ inputs.plugin_profile }}"
+            --rootfs /var/lib/satdump-build/stretch-amd64
+            --work-dir "${GITHUB_WORKSPACE}/build/portable-glibc224"
+            --output-dir "${GITHUB_WORKSPACE}/dist/astra-portable"
+            --cache-dir "${HOME}/.cache/satdump-portable"
+            --jobs 2
+            --clean-rootfs
+          )
+
+          if [[ "${{ inputs.allow_unsigned_archive }}" == "true" ]]; then
+            args+=(--allow-unsigned-archive)
+          fi
+
+          bash scripts/astra/build.sh "${args[@]}"
+
+      - name: Validate generated bundle
+        shell: bash
+        run: |
+          bundle="dist/astra-portable/satdump-1.2.2-presentation-${{ inputs.plugin_profile }}-glibc224-x86_64"
+          archive="${bundle}.tar.gz"
+          test -s "${archive}"
+          test -s "${archive}.sha256"
+          test -s "${bundle}/PORTABLE-MANIFEST.txt"
+          bash scripts/astra/portable/validate-bundle.sh "${bundle}"
+          grep -q '^glibc_allowed_max=2.24$' "${bundle}/PORTABLE-MANIFEST.txt"
+
+      - name: Upload portable bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: satdump-1.2.2-${{ inputs.plugin_profile }}-glibc224
+          path: |
+            dist/astra-portable/*.tar.gz
+            dist/astra-portable/*.sha256
+            dist/astra-portable/*/PORTABLE-MANIFEST.txt
+            dist/astra-portable/*/portable-version.log
+            dist/astra-portable/*/portable-plugin-probe.log
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: portable-glibc224-diagnostics
+          path: |
+            build/portable-glibc224/**/CMakeCache.txt
+            build/portable-glibc224/**/CMakeOutput.log
+            build/portable-glibc224/**/CMakeError.log
+            dist/astra-portable/*/portable-version.log
+            dist/astra-portable/*/portable-plugin-probe.log
+          if-no-files-found: ignore
+          retention-days: 14
