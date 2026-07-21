@@ -6,6 +6,13 @@
 
 namespace image
 {
+    struct TextSize
+    {
+        int width = 0;
+        int height = 0;
+        int line_height = 0;
+    };
+
     class TextDrawer
     {
     protected:
@@ -35,6 +42,7 @@ namespace image
         ~TextDrawer();
         void init_font(std::string font_path);                                                               // Init the font
         bool font_ready() { return has_font; }                                                               // Is the font ready?
+        TextSize measure_text(int size, const std::string &text);                                            // Measure text using the same metrics as draw_text
         void draw_text(Image &img, int xs0, int ys0, std::vector<double> color, int size, std::string text); // Draw text onto the image
     };
 }
