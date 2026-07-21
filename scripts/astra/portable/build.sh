@@ -84,8 +84,30 @@ else
     die "Portable-сборка требует root для chroot/mount. Установите sudo или запустите от root."
 fi
 
-for command in debootstrap chroot mount umount rsync tar gzip sha256sum; do
-    command_exists "${command}" || die "Не найдена команда ${command}. Установите debootstrap, debian-archive-keyring, rsync и build tools."
+for command in debootstrap chroot mount umount findmnt rsync tar gzip sha256sum readlink; do
+    command_exists "${command}" || die "Не найдена команда ${command}. Установите debootstrap, debian-archive-keyring, util-linux, rsync и build tools."
+done
+
+absolute_path() {
+    readlink -m "$1"
+}
+
+ROOTFS="$(absolute_path "${ROOTFS}")"
+WORK_DIR="$(absolute_path "${WORK_DIR}")"
+OUTPUT_DIR="$(absolute_path "${OUTPUT_DIR}")"
+CACHE_DIR="$(absolute_path "${CACHE_DIR}")"
+SOURCE_REAL="$(readlink -f "${SATDUMP_ROOT}")"
+
+paths_overlap() {
+    local left="${1%/}/"
+    local right="${2%/}/"
+    [[ "${left}" == "${right}"* || "${right}" == "${left}"* ]]
+}
+
+for host_path in "${SOURCE_REAL}" "${WORK_DIR}" "${OUTPUT_DIR}" "${CACHE_DIR}"; do
+    if paths_overlap "${ROOTFS}" "${host_path}"; then
+        die "rootfs и bind-mounted каталог не должны пересекаться: ${ROOTFS} ↔ ${host_path}"
+    fi
 done
 
 ensure_directory "${WORK_DIR}"
@@ -94,6 +116,24 @@ ensure_directory "${CACHE_DIR}"
 if [[ -n "${OFFLINE_DIR}" ]]; then
     [[ -d "${OFFLINE_DIR}" ]] || die "Не найден offline-dir: ${OFFLINE_DIR}"
     OFFLINE_DIR="$(readlink -f "${OFFLINE_DIR}")"
+    if paths_overlap "${ROOTFS}" "${OFFLINE_DIR}"; then
+        die "offline-dir не должен находиться внутри rootfs и наоборот."
+    fi
+fi
+
+unmount_rootfs_tree() {
+    [[ -e "${ROOTFS}" ]] || return 0
+    mapfile -t stale_mounts < <(findmnt -R -n -o TARGET "${ROOTFS}" 2>/dev/null | tac || true)
+    local target
+    for target in "${stale_mounts[@]}"; do
+        [[ -n "${target}" ]] || continue
+        log_warn "Отключение оставшегося mount: ${target}"
+        "${SUDO[@]}" umount -l "${target}" || die "Не удалось отключить ${target}"
+    done
+}
+
+if [[ "${CLEAN_ROOTFS}" == "1" ]]; then
+    unmount_rootfs_tree
 fi
 
 PREPARE_ARGS=(
@@ -107,7 +147,6 @@ PREPARE_ARGS=(
 [[ "${PREPARE_ONLY}" == "0" ]] || exit 0
 
 ROOTFS="$(readlink -f "${ROOTFS}")"
-SOURCE_REAL="$(readlink -f "${SATDUMP_ROOT}")"
 WORK_REAL="$(readlink -f "${WORK_DIR}")"
 OUTPUT_REAL="$(readlink -f "${OUTPUT_DIR}")"
 CACHE_REAL="$(readlink -f "${CACHE_DIR}")"
@@ -142,6 +181,10 @@ cleanup_mounts() {
     done
 }
 trap cleanup_mounts EXIT INT TERM
+
+# Перед новым запуском устраняем следы прерванной предыдущей сборки, но не
+# удаляем сам rootfs/toolchain.
+unmount_rootfs_tree
 
 mount_rbind /dev "${ROOTFS}/dev"
 mount_rbind /sys "${ROOTFS}/sys"
@@ -185,9 +228,10 @@ fi
 cleanup_mounts
 trap - EXIT INT TERM
 
-# Артефакты создавались root внутри chroot; возвращаем их пользователю, который
-# запустил сборку. Системный rootfs и toolchain остаются root-owned.
-"${SUDO[@]}" chown -R "${OWNER_UID}:${OWNER_GID}" "${WORK_REAL}" "${OUTPUT_REAL}"
+# Артефакты и кэш создавались root внутри chroot; возвращаем их пользователю,
+# который запустил сборку. Системный rootfs и toolchain остаются root-owned.
+"${SUDO[@]}" chown -R "${OWNER_UID}:${OWNER_GID}" \
+    "${WORK_REAL}" "${OUTPUT_REAL}" "${CACHE_REAL}"
 
 log_ok "Portable-бандл собран: ${OUTPUT_REAL}"
 log_info "Проверка на целевой Astra: bash scripts/astra/portable/validate-bundle.sh '${OUTPUT_REAL}/satdump-1.2.2-presentation-${PLUGIN_PROFILE}-glibc224-x86_64'"
