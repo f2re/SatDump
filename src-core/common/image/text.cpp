@@ -12,8 +12,13 @@
 #ifndef _MSC_VER
 #pragma GCC diagnostic pop
 #endif
-#include <iostream>
+
+#include <algorithm>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include <fstream>
+#include <iostream>
 
 #include "logger.h"
 
@@ -55,6 +60,64 @@ namespace image
         has_font = true;
     }
 
+    TextSize TextDrawer::measure_text(int s, const std::string &text)
+    {
+        TextSize result;
+        if (!has_font || s <= 0)
+            return result;
+
+        const float scale = stbtt_ScaleForPixelHeight(&font.fontp, s);
+        result.line_height = std::max(1, (int)std::ceil(scale * (font.asc - font.dsc + font.lg)));
+
+        if (text.empty())
+            return result;
+
+        int current_width = 0;
+        int max_width = 0;
+        int line_count = 1;
+
+        std::vector<char> cstr(text.c_str(), text.c_str() + text.size() + 1);
+        char *cursor = cstr.data();
+        char *end = cstr.data() + cstr.size();
+
+        while (cursor < end)
+        {
+            int codepoint = 0;
+            try
+            {
+                codepoint = utf8::next(cursor, end);
+            }
+            catch (utf8::invalid_utf8 &)
+            {
+                break;
+            }
+
+            if (codepoint == '\0')
+                break;
+
+            if (codepoint == '\r')
+                continue;
+
+            if (codepoint == '\n')
+            {
+                max_width = std::max(max_width, current_width);
+                current_width = 0;
+                line_count++;
+                continue;
+            }
+
+            const int glyph = stbtt_FindGlyphIndex(&font.fontp, codepoint);
+            int advance = 0;
+            int left_side_bearing = 0;
+            stbtt_GetGlyphHMetrics(&font.fontp, glyph, &advance, &left_side_bearing);
+            current_width += (int)std::ceil(scale * advance);
+        }
+
+        result.width = std::max(max_width, current_width);
+        result.height = line_count * result.line_height;
+        return result;
+    }
+
     void TextDrawer::draw_text(Image &img, int xs0, int ys0, std::vector<double> color, int s, std::string text)
     {
         if (!has_font)
@@ -65,16 +128,17 @@ namespace image
         int CP = 0;
         std::vector<char> cstr(text.c_str(), text.c_str() + text.size() + 1);
         char *c = cstr.data();
+        char *end = cstr.data() + cstr.size();
         float SF = stbtt_ScaleForPixelHeight(&font.fontp, s);
         int BL = SF * font.y1;
 
         char_el info;
 
-        while (c < c + cstr.size())
+        while (c < end)
         {
             try
             {
-                info.char_nb = utf8::next(c, c + cstr.size());
+                info.char_nb = utf8::next(c, end);
             }
             catch (utf8::invalid_utf8 &)
             {
@@ -97,6 +161,7 @@ namespace image
                 {
                     if (font.chars[k].size != s)
                     {
+                        free(font.chars[k].bitmap);
                         font.chars.erase(font.chars.begin() + k);
                         break;
                     }
@@ -107,7 +172,6 @@ namespace image
 
             if (!f)
             {
-                // bitmap = stbtt_GetGlyphBitmap(&font.fontp, 0, SF, info.char_nb, &info.w, &info.h, 0, 0);
                 info.glyph_nb = stbtt_FindGlyphIndex(&font.fontp, info.char_nb);
                 stbtt_GetGlyphBox(&font.fontp, info.glyph_nb, &info.cx0, &info.cy0, &info.cx1, &info.cy1);
                 stbtt_GetGlyphBitmapBox(&font.fontp, info.glyph_nb, SF, SF, &info.ix0, &info.iy0, &info.ix1, &info.iy1);
@@ -126,10 +190,11 @@ namespace image
                 for (int i = 0; i < info.w; ++i)
                 {
                     unsigned char m = info.bitmap[pos];
-                    int x = xs0 + i + CP + SF * info.lsb, y = j + BL - info.cy1 * SF + ys0;
-                    unsigned int pos2 = y * img.width() + x;
-                    if (m != 0 && pos2 < img.width() * img.height())
+                    int x = xs0 + i + CP + SF * info.lsb;
+                    int y = j + BL - info.cy1 * SF + ys0;
+                    if (m != 0 && x >= 0 && y >= 0 && x < (int)img.width() && y < (int)img.height())
                     {
+                        size_t pos2 = (size_t)y * img.width() + (size_t)x;
                         float mf = m / 255.0;
                         std::vector<double> col = {(color[0] - img.getf(0, pos2)) * mf + img.getf(0, pos2),
                                                    img.channels() > 1 ? ((color[1] - img.getf(1, pos2)) * mf + img.getf(1, pos2)) : 1,
@@ -139,8 +204,6 @@ namespace image
                     }
                     pos++;
                 }
-            // if (!f)
-            // stbtt_FreeBitmap(bitmap, font.fontp.userdata);
 
             CP += SF * info.advance;
         }
