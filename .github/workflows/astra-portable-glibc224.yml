@@ -162,7 +162,9 @@ jobs:
             args+=(--allow-unsigned-archive)
           fi
 
-          bash scripts/astra/build.sh "${args[@]}"
+          set -o pipefail
+          bash scripts/astra/build.sh "${args[@]}" \
+            2>&1 | tee portable-full-build.log
 
       - name: Validate generated bundle
         shell: bash
@@ -196,6 +198,7 @@ jobs:
         with:
           name: portable-glibc224-diagnostics
           path: |
+            portable-full-build.log
             build/portable-glibc224/**/CMakeCache.txt
             build/portable-glibc224/**/CMakeOutput.log
             build/portable-glibc224/**/CMakeError.log
