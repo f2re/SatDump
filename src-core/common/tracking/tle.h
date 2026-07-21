@@ -17,7 +17,11 @@ namespace satdump
         std::string line2;
     };
 
-    inline void to_json(nlohmann::json &j, const TLE &v)
+    // Keep the serializer generic so both nlohmann::json and
+    // nlohmann::ordered_json can store TLE metadata. SatDump 1.2.2 originally
+    // accepted only json, while projection/GCP configuration uses ordered_json.
+    template <typename BasicJsonType>
+    inline void to_json(BasicJsonType &j, const TLE &v)
     {
         j["norad"] = v.norad;
         j["name"] = v.name;
@@ -25,12 +29,13 @@ namespace satdump
         j["line2"] = v.line2;
     }
 
-    inline void from_json(const nlohmann::json &j, TLE &v)
+    template <typename BasicJsonType>
+    inline void from_json(const BasicJsonType &j, TLE &v)
     {
-        v.norad = j["norad"].get<int>();
-        v.name = j["name"].get<std::string>();
-        v.line1 = j["line1"].get<std::string>();
-        v.line2 = j["line2"].get<std::string>();
+        v.norad = j.at("norad").template get<int>();
+        v.name = j.at("name").template get<std::string>();
+        v.line1 = j.at("line1").template get<std::string>();
+        v.line2 = j.at("line2").template get<std::string>();
     }
 
     struct TLEsUpdatedEvent
