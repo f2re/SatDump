@@ -10,7 +10,7 @@ namespace image
         }
     }
 
-    bool has_metadata(Image &img)
+    bool has_metadata(const Image &img)
     {
         return img.metadata_obj != nullptr;
     }
@@ -35,7 +35,7 @@ namespace image
             delete ((nlohmann::json *)img.metadata_obj);
     }
 
-    bool has_metadata_proj_cfg(Image &img)
+    bool has_metadata_proj_cfg(const Image &img)
     {
         return img.metadata_obj != nullptr && get_metadata(img).contains("proj_cfg");
     }
