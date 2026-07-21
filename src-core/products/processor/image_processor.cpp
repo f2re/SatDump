@@ -1,5 +1,6 @@
 #include "processor.h"
 #include "presentation_processor.h"
+#include "presentation_outputs.h"
 
 #include "logger.h"
 #include "../dataset.h"
@@ -77,7 +78,16 @@ namespace satdump
             overlay_handler.apply(retimg, proj_func);
         }
 
+        // Image::to_rgba() reallocates the pixel buffer in SatDump 1.2.2 and does
+        // not preserve metadata. Keep the target projection so north-up checks and
+        // downstream presentation sidecars remain reliable.
+        nlohmann::json target_proj_cfg;
+        const bool has_target_proj_cfg = image::has_metadata_proj_cfg(retimg);
+        if (has_target_proj_cfg)
+            target_proj_cfg = image::get_metadata_proj_cfg(retimg);
         retimg.to_rgba();
+        if (has_target_proj_cfg)
+            image::set_metadata_proj_cfg(retimg, target_proj_cfg);
 
         return retimg;
     }
@@ -160,24 +170,27 @@ namespace satdump
                                        (rgb_image.channels() == 1 ? "_" : "_rgb_") +
                                        initial_name;
 
-                    const bool make_presentation = product_presentation::enabled(composite_preset);
+                    const product_presentation::OutputSettings presentation_settings = product_presentation::resolve_output_settings(composite_preset);
                     bool presentation_saved = false;
-                    auto save_presentation = [&](const image::Image &source, const std::string &variant, const std::string &path)
+                    auto save_presentation = [&](const image::Image &source, const std::string &variant, const std::string &base_path)
                     {
-                        if (!make_presentation || presentation_saved || source.size() == 0)
+                        if (!presentation_settings.enabled || presentation_saved || source.size() == 0)
                             return;
                         if (!ensure_presentation_font())
                             return;
 
-                        image::presentation::PresentationSpec spec = product_presentation::build_spec(
+                        product_presentation::OutputResult output = product_presentation::save_outputs(
+                            source,
+                            presentation_text,
                             *img_products,
                             cfg,
                             composite_preset,
                             compo.key(),
                             final_timestamps,
                             final_metadata,
-                            variant);
-                        presentation_saved = product_presentation::save(source, presentation_text, spec, path);
+                            variant,
+                            base_path);
+                        presentation_saved = output.any();
                     };
 
                     bool geo_correct = composite_preset.contains("geo_correct") && composite_preset["geo_correct"].get<bool>();
@@ -261,17 +274,17 @@ namespace satdump
                         {
                             const std::string suffix = overlay_handler.enabled() ? "_corrected_map" : "_corrected";
                             const std::string variant = overlay_handler.enabled() ? "геокоррекция · картографические слои" : "геокоррекция";
-                            save_presentation(rgb_image_corr, variant, product_path + "/" + name + suffix + "_annotated.png");
+                            save_presentation(rgb_image_corr, variant, product_path + "/" + name + suffix);
                         }
                         else
                         {
                             const std::string suffix = overlay_handler.enabled() ? "_map" : "";
                             const std::string variant = overlay_handler.enabled() ? "композит · картографические слои" : "композит";
-                            save_presentation(rgb_image, variant, product_path + "/" + name + suffix + "_annotated.png");
+                            save_presentation(rgb_image, variant, product_path + "/" + name + suffix);
                         }
                     }
 
-                    // Free corrected image memory after its presentation has been generated.
+                    // Free corrected image memory after its presentations have been generated.
                     if (geo_correct)
                         rgb_image_corr.clear();
 
@@ -289,15 +302,15 @@ namespace satdump
                         image::save_img(retimg, product_path + "/rgb_" + name + "_projected" + fmt);
                         save_presentation(retimg,
                                           "географическая проекция · картографические слои",
-                                          product_path + "/rgb_" + name + "_projected_annotated.png");
+                                          product_path + "/rgb_" + name + "_projected");
                     }
 
-                    // A malformed projection must not suppress the annotated product.
+                    // A malformed projection must not suppress the annotated products.
                     if (!presentation_saved)
                     {
                         const std::string variant = overlay_handler.enabled() ? "композит · картографические слои" : "композит";
                         const std::string suffix = overlay_handler.enabled() ? "_map" : "";
-                        save_presentation(rgb_image, variant, product_path + "/" + name + suffix + "_annotated.png");
+                        save_presentation(rgb_image, variant, product_path + "/" + name + suffix);
                     }
 
                     if (img_products->contents.contains("autocomposite_cache_enabled") && img_products->contents["autocomposite_cache_enabled"].get<bool>())
@@ -355,22 +368,22 @@ namespace satdump
                     image::save_img(retimg, product_path + "/channel_" + img.channel_name + "_projected" + fmt);
 
                     const nlohmann::json channel_preset = instrument_viewer_settings["project_channels"];
-                    if (product_presentation::enabled(channel_preset) && ensure_presentation_font())
+                    const product_presentation::OutputSettings output_settings = product_presentation::resolve_output_settings(channel_preset);
+                    if (output_settings.enabled && ensure_presentation_font())
                     {
                         ImageCompositeCfg channel_cfg;
                         channel_cfg.channels = "ch" + img.channel_name;
-                        image::presentation::PresentationSpec spec = product_presentation::build_spec(
+                        product_presentation::save_outputs(
+                            retimg,
+                            presentation_text,
                             *img_products,
                             channel_cfg,
                             channel_preset,
                             "Канал " + img.channel_name,
                             channel_timestamps,
                             channel_metadata,
-                            "географическая проекция · одиночный канал");
-                        product_presentation::save(retimg,
-                                                   presentation_text,
-                                                   spec,
-                                                   product_path + "/channel_" + img.channel_name + "_projected_annotated.png");
+                            "географическая проекция · одиночный канал",
+                            product_path + "/channel_" + img.channel_name + "_projected");
                     }
                 }
                 catch (std::exception &e)
