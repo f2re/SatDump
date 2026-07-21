@@ -1,0 +1,130 @@
+-- The C compiler identification is GNU 9.5.0
+-- The CXX compiler identification is GNU 9.5.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /opt/gcc9/bin/gcc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /opt/gcc9/bin/g++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+Compiling with OpenMP support!
+-- Found ZSTD: /usr/lib/x86_64-linux-gnu/libzstd.so  
+-- Commit has tag (). Assume release build
+-- Looking for CL_VERSION_3_0
+-- Looking for CL_VERSION_3_0 - not found
+-- Looking for CL_VERSION_2_2
+-- Looking for CL_VERSION_2_2 - not found
+-- Looking for CL_VERSION_2_1
+-- Looking for CL_VERSION_2_1 - not found
+-- Looking for CL_VERSION_2_0
+-- Looking for CL_VERSION_2_0 - not found
+-- Looking for CL_VERSION_1_2
+-- Looking for CL_VERSION_1_2 - not found
+-- Looking for CL_VERSION_1_1
+-- Looking for CL_VERSION_1_1 - not found
+-- Looking for CL_VERSION_1_0
+-- Looking for CL_VERSION_1_0 - not found
+-- Could NOT find OpenCL (missing: OpenCL_LIBRARY OpenCL_INCLUDE_DIR) 
+OpenCL NOT found or disabled!
+-- Performing Test STD_HAS_FILESYSTEM
+-- Performing Test STD_HAS_FILESYSTEM - Success
+-- Found PkgConfig: /usr/bin/pkg-config (found version "0.29") 
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Failed
+-- Looking for pthread_create in pthreads
+-- Looking for pthread_create in pthreads - not found
+-- Looking for pthread_create in pthread
+-- Looking for pthread_create in pthread - found
+-- Found Threads: TRUE  
+-- Could NOT find Armadillo (missing: ARMADILLO_INCLUDE_DIR) 
+-- Found JEMALLOC library: /usr/lib/x86_64-linux-gnu/libjemalloc.so
+-- Found JEMALLOC headers: /usr/include
+-- Checking for module 'volk'
+--   Found volk, version 1.3
+-- Performing Test VOLK_HAS_ALLOC
+-- Performing Test VOLK_HAS_ALLOC - Failed
+-- VOLK does not have volk_alloc.hh, including volk_includes
+-- Found ZLIB: /usr/lib/x86_64-linux-gnu/libz.so (found version "1.2.8")  
+-- Found PNG: /usr/lib/x86_64-linux-gnu/libpng.so (found version "1.6.28") 
+-- Checking for module 'fftw3f'
+--   Found fftw3f, version 3.3.5
+-- Found CURL: /usr/lib/x86_64-linux-gnu/libcurl.so (found version "7.52.1")  
+-- Building with curl!
+-- Performing Test VOLK_HAS_volk_32fc_x2_add_32fc
+-- Performing Test VOLK_HAS_volk_32fc_x2_add_32fc - Failed
+Could not find HDF5 libraries. Geonetcast HDF5 processing disabled!
+-- Checking for module 'hdf5'
+--   Found hdf5, version 1.8.13
+-- Try SSE41 C flag = [ ]
+-- Performing Test HAVE_SSE41
+-- Performing Test HAVE_SSE41 - Failed
+-- Try SSE41 C flag = [-march=corei7]
+-- Performing Test HAVE_SSE41
+-- Performing Test HAVE_SSE41 - Success
+-- Found SSE41: -march=corei7  
+-- Performing Test HAVE_SSE41_MM_INSERT_EPI64
+-- Performing Test HAVE_SSE41_MM_INSERT_EPI64 - Success
+-- Performing Test HAVE_SSE41_MM_EXTRACT_EPI64
+-- Performing Test HAVE_SSE41_MM_EXTRACT_EPI64 - Success
+Found SSE features, enabling building SSE code for DVB
+Found SSE41 features, enabling SSE41 plugin
+-- Try NEON C flag = [ ]
+-- Performing Test HAVE_NEON
+-- Performing Test HAVE_NEON - Failed
+-- Try NEON C flag = [-mfpu=neon]
+-- Performing Test HAVE_NEON
+-- Performing Test HAVE_NEON - Failed
+-- Try NEON C flag = [-mfpu=neon -mfloat-abi=softfp]
+-- Performing Test HAVE_NEON
+-- Performing Test HAVE_NEON - Failed
+-- Could NOT find NEON (missing: NEON_C_FLAGS) 
+NEON Features not found! This is only an error on ARM CPUs that should support NEON
+-- Performing Test C_HAS_AVX_1
+-- Performing Test C_HAS_AVX_1 - Failed
+-- Performing Test C_HAS_AVX_2
+-- Performing Test C_HAS_AVX_2 - Success
+-- Performing Test C_HAS_AVX2_1
+-- Performing Test C_HAS_AVX2_1 - Failed
+-- Performing Test C_HAS_AVX2_2
+-- Performing Test C_HAS_AVX2_2 - Success
+-- Performing Test C_HAS_AVX512_1
+-- Performing Test C_HAS_AVX512_1 - Failed
+-- Performing Test C_HAS_AVX512_2
+-- Performing Test C_HAS_AVX512_2 - Success
+-- Performing Test CXX_HAS_AVX_1
+-- Performing Test CXX_HAS_AVX_1 - Failed
+-- Performing Test CXX_HAS_AVX_2
+-- Performing Test CXX_HAS_AVX_2 - Success
+-- Performing Test CXX_HAS_AVX2_1
+-- Performing Test CXX_HAS_AVX2_1 - Failed
+-- Performing Test CXX_HAS_AVX2_2
+-- Performing Test CXX_HAS_AVX2_2 - Success
+-- Performing Test CXX_HAS_AVX512_1
+-- Performing Test CXX_HAS_AVX512_1 - Failed
+-- Performing Test CXX_HAS_AVX512_2
+-- Performing Test CXX_HAS_AVX512_2 - Success
+Found AVX2 features, enabling AVX2 plugin
+Airspy Library could not be found! Not building.
+AirspyHF Library could not be found! Not building.
+HackRF Library could not be found! Not building.
+LimeSDR Library could not be found! Not building.
+SDRlay Library could not be found! Not building.
+IIO or AD9361 Library could not be found! Not building.
+BladeRF Library could not be found! Not building.
+UHD Library could not be found! Not building.
+RTL-SDR Library could not be found! Not building.
+MiriSDR Library could not be found! Not building.
+Building with SpyServer support
+Building with RTL-TCP support
+Building with SDR++ Server support
+RFNM Library could not be found! Not building.
+Building with Network Source support
+Building with Remote Source support
+PortAudio Library could not be found! Not building.
+AAudio Library could not be found! Not building.
+-- Configuring done (4.2s)
+-- Generating done (0.4s)
+-- Build files have been written to: /build/SatDump/build

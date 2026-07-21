@@ -2,7 +2,7 @@ apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 
 android {
-    compileSdkVersion 34
+    compileSdkVersion 28
     buildToolsVersion "30.0.3"
     ndkVersion "25.2.9519653"
 
@@ -14,9 +14,9 @@ android {
         applicationId "org.satdump.SatDump"
         namespace "org.satdump.SatDump"
         minSdkVersion 26
-        targetSdkVersion 27
-        versionCode 9
-        versionName "2.0.0"
+        targetSdkVersion 28
+        versionCode 8
+        versionName "1.2.2"
     }
 
     buildTypes {
@@ -24,10 +24,6 @@ android {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt')
         }
-    }
-
-    buildFeatures {
-        buildConfig true
     }
 
     compileOptions {
@@ -89,8 +85,7 @@ repositories {
 
 dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
-    implementation 'com.github.woheller69:FreeDroidWarn:V1.+'
-    implementation 'androidx.core:core:1.13.1'
+    implementation 'androidx.appcompat:appcompat:1.0.2'
 }
 
 copyResources.dependsOn deleteTempAssets

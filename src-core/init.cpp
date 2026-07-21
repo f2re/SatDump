@@ -1,36 +1,20 @@
-#include "db/kepler/kepler_handler.h"
 #define SATDUMP_DLL_EXPORT 1
-#include "core/config.h"
-#include "core/plugin.h"
-#include "core/resources.h"
 #include "init.h"
 #include "logger.h"
-#include "satdump_vars.h"
+#include "core/module.h"
+#include "core/pipeline.h"
 #include <filesystem>
-
-#include "db/db_handler.h"
-#include "db/iers/iers_handler.h"
-#include <memory>
-
-#include "pipeline/module.h"
-#include "pipeline/pipeline.h"
+#include "core/plugin.h"
+#include "satdump_vars.h"
+#include "core/config.h"
 
 #include "common/tracking/tle.h"
+#include "products/products.h"
+#include "imgui/pfd/portable-file-dialogs.h"
 
 #include "core/opencl.h"
 
 #include "common/dsp/buffer.h"
-
-#include "products/product.h"
-
-// TODOREWORK?
-extern "C"
-{
-#include "libs/supernovas/novas.h"
-
-#include "libs/calceph/calceph.h"
-#include "libs/supernovas/novas-calceph.h"
-}
 
 namespace satdump
 {
@@ -38,28 +22,21 @@ namespace satdump
     SATDUMP_DLL std::string tle_file_override = "";
     SATDUMP_DLL bool tle_do_update_on_init = true;
 
-    SATDUMP_DLL std::shared_ptr<DBHandler> db;
-    SATDUMP_DLL std::shared_ptr<KeplerDBHandler> db_keplers;
-    SATDUMP_DLL std::shared_ptr<IersDBHandler> db_iers;
-
-    void initSatDump(bool is_gui)
+    void initSatdump(bool is_gui)
     {
-        auto lvl = logger->get_level();
-        logger->set_level(slog::LOG_INFO);
         logger->info("   _____       __  ____                      ");
         logger->info("  / ___/____ _/ /_/ __ \\__  ______ ___  ____ ");
         logger->info("  \\__ \\/ __ `/ __/ / / / / / / __ `__ \\/ __ \\");
         logger->info(" ___/ / /_/ / /_/ /_/ / /_/ / / / / / / /_/ /");
         logger->info("/____/\\__,_/\\__/_____/\\__,_/_/ /_/ /_/ .___/ ");
         logger->info("                                    /_/      ");
-        logger->info("Starting " + getSatDumpVersionName());
+        logger->info("Starting SatDump v" + (std::string)SATDUMP_VERSION);
         logger->info("");
-        logger->set_level(lvl);
 
 #ifdef _WIN32
         if (std::filesystem::exists("satdump_cfg.json"))
             user_path = "./config";
-        else
+        else 
             user_path = std::string(getenv("APPDATA")) + "/satdump";
 #elif __ANDROID__
         user_path = ".";
@@ -70,30 +47,29 @@ namespace satdump
         try
         {
             if (std::filesystem::exists("satdump_cfg.json"))
-                satdump_cfg.load("satdump_cfg.json", user_path);
+                config::loadConfig("satdump_cfg.json", user_path);
             else
-                satdump_cfg.load(satdump::RESPATH + "satdump_cfg.json", user_path);
-
-            db = std::make_shared<DBHandler>(user_path + "/main.db");
+                config::loadConfig(satdump::RESPATH + "satdump_cfg.json", user_path);
         }
         catch (std::exception &e)
         {
             logger->critical("Error loading SatDump config! SatDump will now exit. Error:\n%s", e.what());
-            // if (is_gui)
-            //    pfd::message("SatDump", "Error loading SatDump config! SatDump will now exit. Error:\n\n" + std::string(e.what()), pfd::choice::ok, pfd::icon::error); TODOREWORK bring this back
+            if(is_gui)
+                pfd::message("SatDump", "Error loading SatDump config! SatDump will now exit. Error:\n\n" +
+                    std::string(e.what()), pfd::choice::ok, pfd::icon::error);
             exit(1);
         }
 
-        if (satdump_cfg.main_cfg["satdump_general"].contains("log_to_file"))
+        if (config::main_cfg["satdump_general"].contains("log_to_file"))
         {
-            bool log_file = satdump_cfg.main_cfg["satdump_general"]["log_to_file"]["value"];
+            bool log_file = config::main_cfg["satdump_general"]["log_to_file"]["value"];
             if (log_file)
                 initFileSink();
         }
 
-        if (satdump_cfg.main_cfg["satdump_general"].contains("log_level"))
+        if (config::main_cfg["satdump_general"].contains("log_level"))
         {
-            std::string log_level = satdump_cfg.main_cfg["satdump_general"]["log_level"]["value"];
+            std::string log_level = config::main_cfg["satdump_general"]["log_level"]["value"];
             if (log_level == "trace")
                 setConsoleLevel(slog::LOG_TRACE);
             else if (log_level == "debug")
@@ -111,53 +87,55 @@ namespace satdump
         loadPlugins();
 
         // Let plugins know we started
-        satdump_cfg.registerPlugins();
+        eventBus->fire_event<config::RegisterPluginConfigHandlersEvent>({config::plugin_config_handlers});
 
-        // TODOREWORK
-        pipeline::registerModules();
+        registerModules();
 
         // Load pipelines
-        // TODOREWORK
-        // loadPipelines(resources::getResourcePath("pipelines"));
-        pipeline::loadPipelines(resources::getResourcePath("pipelines"));
+        if (std::filesystem::exists("pipelines") && std::filesystem::is_directory("pipelines"))
+            loadPipelines("pipelines");
+        else
+            loadPipelines(satdump::RESPATH + "pipelines");
 
         // List them
         logger->debug("Registered pipelines :");
-        for (auto &pipeline : pipeline::pipelines)
-            logger->debug(" - " + pipeline.id);
+        for (Pipeline &pipeline : pipelines)
+            logger->debug(" - " + pipeline.name);
 
 #ifdef USE_OPENCL
         // OpenCL
         opencl::initOpenCL();
 #endif
 
-        // Database : TLEs, IERS stuff, etc...
-        db->subhandlers.push_back(db_keplers = std::make_shared<KeplerDBHandler>(db));
-        db->subhandlers.push_back(db_iers = std::make_shared<IersDBHandler>(db));
-        db->init();
+        // TLEs
+        if (tle_file_override == "")
+        {
+            loadTLEFileIntoRegistry(user_path + "/satdump_tles.txt");
+            if (tle_do_update_on_init)
+                autoUpdateTLE(user_path + "/satdump_tles.txt");
+        }
+        else
+        {
+            if (std::filesystem::exists(tle_file_override))
+                loadTLEFileIntoRegistry(tle_file_override);
+            else
+                logger->error("TLE File doesn't exist : " + tle_file_override);
+        }
 
         // Products
-        products::registerProducts();
+        registerProducts();
 
-        // Set DSP buffer sizes if they have been changed TODOREWORK remove this!
-        if (satdump_cfg.main_cfg.contains("advanced_settings"))
+        // Set DSP buffer sizes if they have been changed
+        if (config::main_cfg.contains("advanced_settings"))
         {
-            if (satdump_cfg.main_cfg["advanced_settings"].contains("default_buffer_size"))
+            if (config::main_cfg["advanced_settings"].contains("default_buffer_size"))
             {
-                int new_sz = satdump_cfg.main_cfg["advanced_settings"]["default_buffer_size"].get<int>();
+                int new_sz = config::main_cfg["advanced_settings"]["default_buffer_size"].get<int>();
                 dsp::STREAM_BUFFER_SIZE = new_sz;
                 dsp::RING_BUF_SZ = new_sz;
                 logger->warn("DSP Buffer size was changed to %d", new_sz);
             }
         }
-
-        // Init SuperNOVAS/CalCEPH. TODOREWORK, as we need to be able to dynamically load them!
-        std::string de440_f = resources::getResourcePath("spice/de440s.bsp");
-        const char *spice_kernels[] = {de440_f.c_str()};
-        t_calcephbin *de440 = calceph_open_array(1, spice_kernels); //// calceph_open("/home/alan/Downloads/de440s.bsp");
-        if (!de440)
-            logger->error("Could not open ephemeris data! NOVAS will not work!");
-        novas_use_calceph(de440);
 
         // Let plugins know we started
         eventBus->fire_event<SatDumpStartedEvent>({});
@@ -175,14 +153,5 @@ namespace satdump
         logger->error("you probably do not want this. If so, make sure to");
         logger->error("specify -DCMAKE_BUILD_TYPE=Release in CMake.");
 #endif
-
-        // Start task scheduler
-        taskScheduler->start_thread();
     }
-
-    void exitSatDump()
-    {
-        logger->info("Exiting SatDump! Bye!");
-        taskScheduler.reset();
-    }
-} // namespace satdump
+}

@@ -1,14 +1,14 @@
 #define SATDUMP_DLL_EXPORT 1
 
+#include <filesystem>
 #include "style.h"
-#include "backend.h"
-#include "config.h"
-#include "core/resources.h"
 #include "imgui/imgui.h"
 #include "imgui/imgui_internal.h"
-#include "logger.h"
 #include "nlohmann/json_utils.h"
-#include <filesystem>
+#include "logger.h"
+#include "config.h"
+#include "backend.h"
+#include "resources.h"
 
 #ifdef __APPLE__
 #include <CoreGraphics/CGDirectDisplay.h>
@@ -22,11 +22,12 @@ namespace style
     SATDUMP_DLL Theme theme;
     SATDUMP_DLL ImFont *baseFont;
     SATDUMP_DLL ImFont *bigFont;
-    // SATDUMP_DLL ImFont *hugeFont;
+    //SATDUMP_DLL ImFont *hugeFont;
 
     void hexToImVec4(std::string color_hex, ImVec4 *this_color)
     {
-        color_hex.erase(std::remove_if(color_hex.begin(), color_hex.end(), [&](const char c) { return !std::isxdigit(c); }), color_hex.end());
+        color_hex.erase(std::remove_if(color_hex.begin(), color_hex.end(),
+            [&](const char c) { return !std::isxdigit(c); }), color_hex.end());
         if (color_hex.size() != 8)
         {
             logger->debug("Invalid color code %s", color_hex.c_str());
@@ -42,9 +43,7 @@ namespace style
     void setStyle()
     {
         // Set standard theme info
-        ui_scale = backend::device_scale * satdump::satdump_cfg.main_cfg["user_interface"]["manual_dpi_scaling"]["value"].get<float>();
-        if (ui_scale <= 0)
-            ui_scale = 1; // Avoid having ImGui crash...
+        ui_scale = backend::device_scale * satdump::config::main_cfg["user_interface"]["manual_dpi_scaling"]["value"].get<float>();
         ImGuiStyle &style = ImGui::GetStyle();
         style = ImGuiStyle();
         theme = Theme();
@@ -53,22 +52,22 @@ namespace style
         nlohmann::json data;
         try
         {
-            std::string selected_theme = satdump::satdump_cfg.main_cfg["user_interface"]["theme"]["value"];
+            std::string selected_theme = satdump::config::main_cfg["user_interface"]["theme"]["value"];
             std::string theme_path;
-            if (resources::resourceExists("themes/" + selected_theme + ".json"))
+            if(resources::resourceExists("themes/" + selected_theme + ".json"))
                 theme_path = "themes/" + selected_theme + ".json";
             else
             {
                 logger->warn("Failed to load theme \"%s\". Will fall back to Dark", selected_theme.c_str());
-                satdump::satdump_cfg.main_cfg["user_interface"]["theme"]["value"] = selected_theme = "Dark";
-                satdump::satdump_cfg.saveUser();
+                satdump::config::main_cfg["user_interface"]["theme"]["value"] = selected_theme = "Dark";
+                satdump::config::saveUserConfig();
             }
 
             std::ifstream file(resources::getResourcePath("themes/" + selected_theme + ".json"));
             file >> data;
             file.close();
         }
-        catch (std::exception &)
+        catch (std::exception&)
         {
             logger->error("Failed to load any theme! Your SatDump installation may be missing critical files.");
             return;
@@ -98,29 +97,31 @@ namespace style
         // ImGui sizes
         if (data.contains("ImGuiStyle") && data["ImGuiStyle"].is_object())
         {
-            const std::map<std::string, float ImGuiStyle::*> style_map = {{"Alpha", &ImGuiStyle::Alpha},
-                                                                          {"DisabledAlpha", &ImGuiStyle::DisabledAlpha},
-                                                                          {"WindowRounding", &ImGuiStyle::WindowRounding},
-                                                                          {"WindowBorderSize", &ImGuiStyle::WindowBorderSize},
-                                                                          {"ChildRounding", &ImGuiStyle::ChildRounding},
-                                                                          {"ChildBorderSize", &ImGuiStyle::ChildBorderSize},
-                                                                          {"PopupRounding", &ImGuiStyle::PopupRounding},
-                                                                          {"PopupBorderSize", &ImGuiStyle::PopupBorderSize},
-                                                                          {"FrameRounding", &ImGuiStyle::FrameRounding},
-                                                                          {"FrameBorderSize", &ImGuiStyle::FrameBorderSize},
-                                                                          {"IndentSpacing", &ImGuiStyle::IndentSpacing},
-                                                                          {"LogSliderDeadzone", &ImGuiStyle::LogSliderDeadzone},
-                                                                          {"ColumnsMinSpacing", &ImGuiStyle::ColumnsMinSpacing},
-                                                                          {"ScrollbarSize", &ImGuiStyle::ScrollbarSize},
-                                                                          {"ScrollbarRounding", &ImGuiStyle::ScrollbarRounding},
-                                                                          {"GrabMinSize", &ImGuiStyle::GrabMinSize},
-                                                                          {"GrabRounding", &ImGuiStyle::GrabRounding},
-                                                                          {"TabRounding", &ImGuiStyle::TabRounding},
-                                                                          {"TabBorderSize", &ImGuiStyle::TabBorderSize},
-                                                                          {"TabBarBorderSize", &ImGuiStyle::TabBarBorderSize},
-                                                                          {"SeparatorTextBorderSize", &ImGuiStyle::SeparatorTextBorderSize}};
+            const std::map<std::string, float ImGuiStyle::*> style_map = {
+                {"Alpha", &ImGuiStyle::Alpha},
+                {"DisabledAlpha", &ImGuiStyle::DisabledAlpha},
+                {"WindowRounding", &ImGuiStyle::WindowRounding},
+                {"WindowBorderSize", &ImGuiStyle::WindowBorderSize},
+                {"ChildRounding", &ImGuiStyle::ChildRounding},
+                {"ChildBorderSize", &ImGuiStyle::ChildBorderSize},
+                {"PopupRounding", &ImGuiStyle::PopupRounding},
+                {"PopupBorderSize", &ImGuiStyle::PopupBorderSize},
+                {"FrameRounding", &ImGuiStyle::FrameRounding},
+                {"FrameBorderSize", &ImGuiStyle::FrameBorderSize},
+                {"IndentSpacing", &ImGuiStyle::IndentSpacing},
+                {"LogSliderDeadzone", &ImGuiStyle::LogSliderDeadzone},
+                {"ColumnsMinSpacing", &ImGuiStyle::ColumnsMinSpacing},
+                {"ScrollbarSize", &ImGuiStyle::ScrollbarSize},
+                {"ScrollbarRounding", &ImGuiStyle::ScrollbarRounding},
+                {"GrabMinSize", &ImGuiStyle::GrabMinSize},
+                {"GrabRounding", &ImGuiStyle::GrabRounding},
+                {"TabRounding", &ImGuiStyle::TabRounding},
+                {"TabBorderSize", &ImGuiStyle::TabBorderSize},
+                {"TabBarBorderSize", &ImGuiStyle::TabBarBorderSize},
+                {"SeparatorTextBorderSize", &ImGuiStyle::SeparatorTextBorderSize}
+            };
 
-            for (auto &style_item : data["ImGuiStyle"].items())
+            for (auto& style_item : data["ImGuiStyle"].items())
             {
                 if (!style_item.value().is_number_float())
                 {
@@ -196,7 +197,7 @@ namespace style
                 {"TableRowBgAlt", ImGuiCol_TableRowBgAlt},
             };
 
-            for (auto &color : data["ImGuiColors"].items())
+            for (auto& color : data["ImGuiColors"].items())
             {
                 if (!color.value().is_string())
                 {
@@ -215,28 +216,29 @@ namespace style
         // Custom SatDump Colors
         if (data.contains("SatDumpColors") && data["SatDumpColors"].is_object())
         {
-            const std::map<std::string, ImColor Theme::*> custom_color_map = {{"red", &Theme::red},
-                                                                              {"green", &Theme::green},
-                                                                              {"blue", &Theme::blue},
-                                                                              {"yellow", &Theme::yellow},
-                                                                              {"orange", &Theme::orange},
-                                                                              {"cyan", &Theme::cyan},
-                                                                              {"fuchsia", &Theme::fuchsia},
-                                                                              {"magenta", &Theme::magenta},
-                                                                              {"lavender", &Theme::lavender},
-                                                                              {"light_green", &Theme::light_green},
-                                                                              {"light_cyan", &Theme::light_cyan},
-                                                                              {"constellation", &Theme::constellation},
-                                                                              {"plot_bg", &Theme::plot_bg},
-                                                                              {"fft_graduations", &Theme::fft_graduations},
-                                                                              {"widget_bg", &Theme::widget_bg},
-                                                                              {"frame_bg", &Theme::frame_bg},
-                                                                              {"overlay_bg", &Theme::overlay_bg},
-                                                                              {"notification_bg", &Theme::notification_bg},
-                                                                              {"freq_highlight", &Theme::freq_highlight},
-                                                                              {"treeview_icon", &Theme::treeview_icon}};
+            const std::map<std::string, ImColor Theme::*> custom_color_map = {
+                {"red", &Theme::red},
+                {"green", &Theme::green},
+                {"blue", &Theme::blue},
+                {"yellow", &Theme::yellow},
+                {"orange", &Theme::orange},
+                {"cyan", &Theme::cyan},
+                {"fuchsia", &Theme::fuchsia},
+                {"magenta", &Theme::magenta},
+                {"lavender", &Theme::lavender},
+                {"light_green", &Theme::light_green},
+                {"light_cyan", &Theme::light_cyan},
+                {"constellation", &Theme::constellation},
+                {"plot_bg", &Theme::plot_bg},
+                {"fft_graduations", &Theme::fft_graduations},
+                {"widget_bg", &Theme::widget_bg},
+                {"frame_bg", &Theme::frame_bg},
+                {"overlay_bg", &Theme::overlay_bg},
+                {"notification_bg", &Theme::notification_bg},
+                {"freq_highlight", &Theme::freq_highlight}
+            };
 
-            for (auto &color : data["SatDumpColors"].items())
+            for (auto& color : data["SatDumpColors"].items())
             {
                 if (!color.value().is_string())
                 {
@@ -277,18 +279,9 @@ namespace style
     {
         ImGuiIO &io = ImGui::GetIO();
         io.Fonts->Clear();
-        const ImWchar def[] = {0x20, 0x2300, 0}; // default range
-        const ImWchar list[9][3] = {
-            {0xf000, 0xf0ff, 0}, //
-            {0xf400, 0xf4ff, 0}, //
-            {0xf800, 0xf8ff, 0}, //
-            {0xfc00, 0xfcff, 0}, //
-            {0xea00, 0xeaff, 0}, //
-            {0xf200, 0xf2ff, 0}, //
-            {0x2000, 0x20ff, 0}, //
-            {0xf500, 0xfd46, 0}, //
-            {0xea60, 0xebeb, 0}, //
-        };
+        const ImWchar def[] = {0x20, 0x2300, 0}; //default range
+        const ImWchar list[7][3] = { {0xf000, 0xf0ff, 0}, {0xf400, 0xf4ff, 0}, {0xf800, 0xf8ff, 0},
+            {0xfc00, 0xfcff, 0}, {0xea00, 0xeaff, 0}, {0xf200, 0xf2ff, 0} , {0x2000, 0x20ff, 0}};
         static ImFontConfig config;
         float macos_fbs = macos_framebuffer_scale();
         float font_scaling = dpi_scaling * macos_fbs;
@@ -296,12 +289,12 @@ namespace style
         baseFont = io.Fonts->AddFontFromFileTTF(resources::getResourcePath("fonts/" + theme.font + ".ttf").c_str(), theme.font_size * font_scaling, &config, def);
         config.MergeMode = true;
 
-        for (int i = 0; i < 9; i++)
+        for (int i = 0; i < 7; i++)
             baseFont = io.Fonts->AddFontFromFileTTF(resources::getResourcePath("fonts/font.ttf").c_str(), theme.font_size * font_scaling, &config, list[i]);
         config.MergeMode = false;
 
-        bigFont = io.Fonts->AddFontFromFileTTF(resources::getResourcePath("fonts/" + theme.font + ".ttf").c_str(), 45.0f * font_scaling); //, &config, ranges);
-        // hugeFont = io.Fonts->AddFontFromFileTTF(resources::getResourcePath("fonts/" + theme.font + ".ttf").c_str(), 128.0f * font_scaling); //, &config, ranges);
+        bigFont = io.Fonts->AddFontFromFileTTF(resources::getResourcePath("fonts/" + theme.font + ".ttf").c_str(), 45.0f * font_scaling);   //, &config, ranges);
+        //hugeFont = io.Fonts->AddFontFromFileTTF(resources::getResourcePath("fonts/" + theme.font + ".ttf").c_str(), 128.0f * font_scaling); //, &config, ranges);
         io.Fonts->Build();
         io.FontGlobalScale = 1 / macos_fbs;
 
@@ -320,4 +313,4 @@ namespace style
         return 1.0f;
 #endif
     }
-} // namespace style
+}

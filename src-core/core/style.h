@@ -33,13 +33,12 @@ namespace style
         ImColor notification_bg;
         ImColor overlay_bg;
         ImColor freq_highlight;
-        ImColor treeview_icon;
     };
 
     SATDUMP_DLL extern Theme theme;
     SATDUMP_DLL extern ImFont *baseFont;
     SATDUMP_DLL extern ImFont *bigFont;
-    // SATDUMP_DLL extern ImFont *hugeFont;
+    //SATDUMP_DLL extern ImFont *hugeFont;
 
     void setStyle();
     void beginDisabled();

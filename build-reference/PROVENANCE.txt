@@ -1,0 +1,7 @@
+upstream_url  https://github.com/SatDump/SatDump.git
+tag           1.2.2
+commit        7aef0fe8441bc3eb440b1b6ba053556da5e40991
+commit_date   2024-11-29 07:58:19 -0500
+worktree      clean at tag (only untracked: compile_commands.json, docs/res/)
+extracted_from WSL Ubuntu:/home/yurii/build_src/SatDump
+extracted_on  2026-07-21

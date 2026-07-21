@@ -1,0 +1,970 @@
+[00:39:57 - 05/07/2026] [32m(I)    _____       __  ____                      [m
+[00:39:57 - 05/07/2026] [32m(I)   / ___/____ _/ /_/ __ \__  ______ ___  ____ [m
+[00:39:57 - 05/07/2026] [32m(I)   \__ \/ __ `/ __/ / / / / / / __ `__ \/ __ \[m
+[00:39:57 - 05/07/2026] [32m(I)  ___/ / /_/ / /_/ /_/ / /_/ / / / / / / /_/ /[m
+[00:39:57 - 05/07/2026] [32m(I) /____/\__,_/\__/_____/\__,_/_/ /_/ /_/ .___/ [m
+[00:39:57 - 05/07/2026] [32m(I)                                     /_/      [m
+[00:39:57 - 05/07/2026] [32m(I) Starting SatDump v1.2.2[m
+[00:39:57 - 05/07/2026] [32m(I) [m
+[00:39:57 - 05/07/2026] [32m(I) Loading config /opt/satdump/share/satdump/satdump_cfg.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading user settings /root/.config/satdump/settings.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading plugins from /opt/satdump/lib/satdump/plugins[m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libnoaa_metop_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin noaa_metop_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libseawifs_support.so...[m
+[00:39:57 - 05/07/2026] [31m[1m(E) Error loading /opt/satdump/lib/satdump/plugins/libseawifs_support.so! Error : /opt/satdump/lib/satdump/plugins/libseawifs_support.so: undefined symbol: _ZTIN7satdump8pipeline4base28FileStreamToFileStreamModuleE => src-core/core/plugin.cpp:19[m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libmeteosat_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin meteosat_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libspacex_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin spacex_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libcpp_compos_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin standard_cpp_compos loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libaws_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin aws_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/liboceansat_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin oceansat_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libspyserver_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin spyserver_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libsimd_avx2.so...[m
+[00:39:57 - 05/07/2026] [31m[1m(E) CPU Does not support AVX2. Extension plugin NOT loading![m
+[00:39:57 - 05/07/2026] [37m(T) Plugin simd_avx2 loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libgk2a_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin gk2a_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libaaronia_sdr_support.so...[m
+[00:39:57 - 05/07/2026] [31m[1m(E) Error loading /opt/satdump/lib/satdump/plugins/libaaronia_sdr_support.so! Error : /opt/satdump/lib/satdump/plugins/libaaronia_sdr_support.so: undefined symbol: _ZN7satdump11satdump_cfgE => src-core/core/plugin.cpp:19[m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libbluewalker3_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin bluewalker3_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libmeteor_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin meteor_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libsimd_sse41.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin simd_sse41 loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libxrit_support.so...[m
+[00:39:57 - 05/07/2026] [31m[1m(E) Error loading /opt/satdump/lib/satdump/plugins/libxrit_support.so! Error : /opt/satdump/lib/satdump/plugins/libxrit_support.so: undefined symbol: _ZN7satdump11satdump_cfgE => src-core/core/plugin.cpp:19[m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libfengyun3_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin fengyun3_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libsdrpp_server_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin spyserver_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libgoes_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin goes_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libcluster_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin cluster_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libdvb_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin dvb_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libgcom_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin gcom_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/librtltcp_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin rtltcp_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libhinode_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin hinode_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libuvsq_support.so...[m
+[00:39:57 - 05/07/2026] [31m[1m(E) Error loading /opt/satdump/lib/satdump/plugins/libuvsq_support.so! Error : /opt/satdump/lib/satdump/plugins/libuvsq_support.so: undefined symbol: _ZTIN7satdump8pipeline4base28FileStreamToFileStreamModuleE => src-core/core/plugin.cpp:19[m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libwsf_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin wsf_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libeos_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin eos_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libinsat_support.so...[m
+[00:39:57 - 05/07/2026] [31m[1m(E) Error loading /opt/satdump/lib/satdump/plugins/libinsat_support.so! Error : /opt/satdump/lib/satdump/plugins/libinsat_support.so: undefined symbol: _ZTIN7satdump8pipeline4base28FileStreamToFileStreamModuleE => src-core/core/plugin.cpp:19[m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libearthcare_support.so...[m
+[00:39:57 - 05/07/2026] [31m[1m(E) Error loading /opt/satdump/lib/satdump/plugins/libearthcare_support.so! Error : /opt/satdump/lib/satdump/plugins/libearthcare_support.so: undefined symbol: _ZTIN7satdump8pipeline4base28FileStreamToFileStreamModuleE => src-core/core/plugin.cpp:19[m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libdmsp_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin dmsp_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libaim_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin aim_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/liborbcomm_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin orbcomm_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libmats_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin mats_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libinmarsat_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin inmarsat_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libkanopus_support.so...[m
+[00:39:57 - 05/07/2026] [31m[1m(E) Error loading /opt/satdump/lib/satdump/plugins/libkanopus_support.so! Error : /opt/satdump/lib/satdump/plugins/libkanopus_support.so: undefined symbol: _ZTIN7satdump8pipeline4base28FileStreamToFileStreamModuleE => src-core/core/plugin.cpp:19[m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libjpss_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin jpss_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libproba_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin proba_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libexperimental_devices_support.so...[m
+[00:39:57 - 05/07/2026] [31m[1m(E) Error loading /opt/satdump/lib/satdump/plugins/libexperimental_devices_support.so! Error : /opt/satdump/lib/satdump/plugins/libexperimental_devices_support.so: undefined symbol: _ZTIN7satdump8handlers7HandlerE => src-core/core/plugin.cpp:19[m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libradiosonde_support.so...[m
+[00:39:57 - 05/07/2026] [31m[1m(E) Error loading /opt/satdump/lib/satdump/plugins/libradiosonde_support.so! Error : /opt/satdump/lib/satdump/plugins/libradiosonde_support.so: undefined symbol: _ZTVN7satdump4ndsp9flowgraph12NodeInternalE => src-core/core/plugin.cpp:19[m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libremote_sdr_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin remote_sdr_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libothers_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin others_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libstereo_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin stereo_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libcubesat_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin cubesat_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libdscovr_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin dscovr_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libjason3_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin jason3_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libumka_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin umka_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libnet_source_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin network_source_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libtubsat_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin tubsat_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libfengyun2_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin fengyun2_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libmetopsg_support.so...[m
+[00:39:57 - 05/07/2026] [31m[1m(E) Error loading /opt/satdump/lib/satdump/plugins/libmetopsg_support.so! Error : /opt/satdump/lib/satdump/plugins/libmetopsg_support.so: undefined symbol: _ZTIN7satdump8pipeline4base28FileStreamToFileStreamModuleE => src-core/core/plugin.cpp:19[m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/liblandsat_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin landsat_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libfengyun4_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin fenyun4_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libanalog_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin analog_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libelektro_arktika_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin elektro_arktika_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libbitview_app.so...[m
+[00:39:57 - 05/07/2026] [31m[1m(E) Error loading /opt/satdump/lib/satdump/plugins/libbitview_app.so! Error : /opt/satdump/lib/satdump/plugins/libbitview_app.so: undefined symbol: _ZTIN7satdump8handlers7HandlerE => src-core/core/plugin.cpp:19[m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libofficial_products_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin official_products_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libhimawari_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin himawari_support loaded![m
+[00:39:57 - 05/07/2026] [37m(T) Loading plugin /opt/satdump/lib/satdump/plugins/libgeonetcast_support.so...[m
+[00:39:57 - 05/07/2026] [37m(T) Plugin geonetcast_support loaded![m
+[00:39:57 - 05/07/2026] [36m(D) Loaded plugins (45) : [m
+[00:39:57 - 05/07/2026] [36m(D)  - aim_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - analog_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - aws_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - bluewalker3_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - cluster_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - cubesat_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - dmsp_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - dscovr_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - dvb_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - elektro_arktika_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - eos_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - fengyun2_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - fengyun3_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - fenyun4_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - gcom_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - geonetcast_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - gk2a_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - goes_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - himawari_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - hinode_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - inmarsat_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - jason3_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - jpss_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - landsat_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - mats_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - meteor_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - meteosat_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - network_source_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - noaa_metop_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - oceansat_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - official_products_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - orbcomm_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - others_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - proba_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - remote_sdr_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - rtltcp_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - simd_avx2[m
+[00:39:57 - 05/07/2026] [36m(D)  - simd_sse41[m
+[00:39:57 - 05/07/2026] [36m(D)  - spacex_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - spyserver_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - standard_cpp_compos[m
+[00:39:57 - 05/07/2026] [36m(D)  - stereo_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - tubsat_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - umka_support[m
+[00:39:57 - 05/07/2026] [36m(D)  - wsf_support[m
+[00:39:57 - 05/07/2026] [36m(D) Registered modules (102) : [m
+[00:39:57 - 05/07/2026] [36m(D)  - aim_instruments[m
+[00:39:57 - 05/07/2026] [36m(D)  - angels_argos[m
+[00:39:57 - 05/07/2026] [36m(D)  - aqua_db_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - aws_instruments[m
+[00:39:57 - 05/07/2026] [36m(D)  - ax25_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - bw3_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - ccsds_conv_concat_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - ccsds_ldpc_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - ccsds_simple_psk_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - ccsds_turbo_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - cloudsat_cpr[m
+[00:39:57 - 05/07/2026] [36m(D)  - cluster_instruments[m
+[00:39:57 - 05/07/2026] [36m(D)  - coriolis_windsat[m
+[00:39:57 - 05/07/2026] [36m(D)  - cryosat_siral[m
+[00:39:57 - 05/07/2026] [36m(D)  - dmsp_rtd_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - dmsp_rtd_instruments[m
+[00:39:57 - 05/07/2026] [36m(D)  - dscovr_instruments[m
+[00:39:57 - 05/07/2026] [36m(D)  - dvbs2_demod[m
+[00:39:57 - 05/07/2026] [36m(D)  - dvbs2_ts_extractor[m
+[00:39:57 - 05/07/2026] [36m(D)  - dvbs_demod[m
+[00:39:57 - 05/07/2026] [36m(D)  - elektro_arktika_msugs[m
+[00:39:57 - 05/07/2026] [36m(D)  - elektro_lrit_data_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - eos_instruments[m
+[00:39:57 - 05/07/2026] [36m(D)  - falcon_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - fengyun_ahrpt_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - fengyun_mpt_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - fengyun_svissr_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - fengyun_svissr_image_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - fsk_demod[m
+[00:39:57 - 05/07/2026] [36m(D)  - fy3_instruments[m
+[00:39:57 - 05/07/2026] [36m(D)  - fy4_lrit_data_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - gcom1_instruments[m
+[00:39:57 - 05/07/2026] [36m(D)  - generic_analog_demod[m
+[00:39:57 - 05/07/2026] [36m(D)  - geonetcast_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - geoscan_data_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - geoscan_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - gk2a_lrit_data_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - goes_grb_cadu_extractor[m
+[00:39:57 - 05/07/2026] [36m(D)  - goes_grb_data_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - goes_gvar_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - goes_gvar_image_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - goes_lrit_data_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - goes_mdl_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - goes_sd_image_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - goesn_sd_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - goesr_instruments[m
+[00:39:57 - 05/07/2026] [36m(D)  - himawaricast_data_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - hinode_instruments[m
+[00:39:57 - 05/07/2026] [36m(D)  - inmarsat_aero_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - inmarsat_aero_parser[m
+[00:39:57 - 05/07/2026] [36m(D)  - inmarsat_stdc_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - inmarsat_stdc_parser[m
+[00:39:57 - 05/07/2026] [36m(D)  - jason3_instruments[m
+[00:39:57 - 05/07/2026] [36m(D)  - jpss_instruments[m
+[00:39:57 - 05/07/2026] [36m(D)  - ldcm_instruments[m
+[00:39:57 - 05/07/2026] [36m(D)  - lucky7_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - lucky7_demod[m
+[00:39:57 - 05/07/2026] [36m(D)  - mats_instruments[m
+[00:39:57 - 05/07/2026] [36m(D)  - meteor_hrpt_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - meteor_instruments[m
+[00:39:57 - 05/07/2026] [36m(D)  - meteor_lrpt_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - meteor_msumr_lrpt[m
+[00:39:57 - 05/07/2026] [36m(D)  - meteor_qpsk_kmss_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - meteor_xband_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - meteor_xband_instruments[m
+[00:39:57 - 05/07/2026] [36m(D)  - metop_ahrpt_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - metop_dump_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - metop_instruments[m
+[00:39:57 - 05/07/2026] [36m(D)  - msg_instruments[m
+[00:39:57 - 05/07/2026] [36m(D)  - network_client[m
+[00:39:57 - 05/07/2026] [36m(D)  - network_server[m
+[00:39:57 - 05/07/2026] [36m(D)  - noaa_apt_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - noaa_apt_demod[m
+[00:39:57 - 05/07/2026] [36m(D)  - noaa_dsb_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - noaa_gac_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - noaa_hrpt_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - noaa_instruments[m
+[00:39:57 - 05/07/2026] [36m(D)  - oceansat2_db_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - oceansat_ocm[m
+[00:39:57 - 05/07/2026] [36m(D)  - off2pro[m
+[00:39:57 - 05/07/2026] [36m(D)  - orb_decoder_test[m
+[00:39:57 - 05/07/2026] [36m(D)  - orbcomm_plotter[m
+[00:39:57 - 05/07/2026] [36m(D)  - orbcomm_stx_auto_demod[m
+[00:39:57 - 05/07/2026] [36m(D)  - orbcomm_stx_demod[m
+[00:39:57 - 05/07/2026] [36m(D)  - pm_demod[m
+[00:39:57 - 05/07/2026] [36m(D)  - proba_instruments[m
+[00:39:57 - 05/07/2026] [36m(D)  - products_processor[m
+[00:39:57 - 05/07/2026] [36m(D)  - psk_demod[m
+[00:39:57 - 05/07/2026] [36m(D)  - s2_udp_cadu_extractor[m
+[00:39:57 - 05/07/2026] [36m(D)  - saral_argos[m
+[00:39:57 - 05/07/2026] [36m(D)  - scisat1_instruments[m
+[00:39:57 - 05/07/2026] [36m(D)  - sdpsk_demod[m
+[00:39:57 - 05/07/2026] [36m(D)  - soft2hard[m
+[00:39:57 - 05/07/2026] [36m(D)  - spacex_tlm_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - spino_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - stereo_instruments[m
+[00:39:57 - 05/07/2026] [36m(D)  - terra_db_demod[m
+[00:39:57 - 05/07/2026] [36m(D)  - tubin_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - umka1_decoder[m
+[00:39:57 - 05/07/2026] [36m(D)  - wsfm_instruments[m
+[00:39:57 - 05/07/2026] [36m(D)  - xfsk_burst_demod[m
+[00:39:57 - 05/07/2026] [36m(D)  - xrit_goesrecv_publisher[m
+[00:39:57 - 05/07/2026] [32m(I) Loading system pipelines from /opt/satdump/share/satdump/pipelines[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/DSCOVR.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Juice.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Test.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/SAOCOM.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Cryosat.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Work-In-Progress.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Peregrine.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Jason-3.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/FengYun-3.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Aditya.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/SLIM.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Elektro_Arktika.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Proba.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Psyche.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/TGO.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Queqiao.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Hera.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/ODIN.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Sonate-2.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/DMSP.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Orbcomm.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Oceansat.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/GCOM.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/LandSat.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/UmKA.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/UVSQ.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/GeoNetCast.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Cluster.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/FengYun-4.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/BlueWalker3.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Iris.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Lucky7.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/GOES.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/GK2A.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/DVB_Test.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/MSG.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Coriolis.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Sentinel-6.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/KPLO.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/FengYun-2.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Cloudsat.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Meteor-M.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/FORMOSAT.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/MetOp.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Tianwen.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/MATS.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Himawari.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/ViaSat.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/EOS.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Stereo.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Cosmos.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/JPSS.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/TUBSAT.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Others.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/ACE.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/IM-1.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/WSF-M.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/VERONIKA.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Hinode.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/ORX.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/AWS.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Inmarsat.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Orion.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Integral.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Geoscan.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/SpaceX.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/NOAA.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/XMM-Newton.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Chandrayaan.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/Insat.json[m
+[00:39:57 - 05/07/2026] [37m(T) Found system pipeline file /opt/satdump/share/satdump/pipelines/AIM.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/ACE.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/AIM.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/AWS.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Aditya.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/BlueWalker3.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Chandrayaan.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Cloudsat.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Cluster.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Coriolis.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Cosmos.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Cryosat.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/DMSP.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/DSCOVR.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/DVB_Test.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/EOS.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Elektro_Arktika.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/FORMOSAT.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/FengYun-2.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/FengYun-3.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/FengYun-4.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/GCOM.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/GK2A.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/GOES.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/GeoNetCast.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Geoscan.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Hera.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Himawari.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Hinode.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/IM-1.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Inmarsat.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Insat.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Integral.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Iris.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/JPSS.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Jason-3.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Juice.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/KPLO.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/LandSat.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Lucky7.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/MATS.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/MSG.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/MetOp.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Meteor-M.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/NOAA.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/ODIN.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/ORX.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Oceansat.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Orbcomm.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Orion.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Others.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Peregrine.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Proba.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Psyche.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Queqiao.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/SAOCOM.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/SLIM.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Sentinel-6.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Sonate-2.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/SpaceX.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Stereo.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/TGO.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/TUBSAT.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Test.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Tianwen.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/UVSQ.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/UmKA.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/VERONIKA.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/ViaSat.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/WSF-M.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/Work-In-Progress.json[m
+[00:39:57 - 05/07/2026] [32m(I) Loading pipelines from file /opt/satdump/share/satdump/pipelines/XMM-Newton.json[m
+[00:39:57 - 05/07/2026] [36m(D) Registered pipelines :[m
+[00:39:57 - 05/07/2026] [36m(D)  - ace_s_link[m
+[00:39:57 - 05/07/2026] [36m(D)  - adityal1_tlm_link[m
+[00:39:57 - 05/07/2026] [36m(D)  - aeolus_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - aim_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - spino_2400[m
+[00:39:57 - 05/07/2026] [36m(D)  - angels_l_band[m
+[00:39:57 - 05/07/2026] [36m(D)  - aqua_db[m
+[00:39:57 - 05/07/2026] [36m(D)  - arktika_ggak[m
+[00:39:57 - 05/07/2026] [36m(D)  - arktika_rdas[m
+[00:39:57 - 05/07/2026] [36m(D)  - aura_db[m
+[00:39:57 - 05/07/2026] [36m(D)  - aws_pfm[m
+[00:39:57 - 05/07/2026] [36m(D)  - bluewalker3_narrow[m
+[00:39:57 - 05/07/2026] [36m(D)  - bluewalker3_wide[m
+[00:39:57 - 05/07/2026] [36m(D)  - CALIPSO[m
+[00:39:57 - 05/07/2026] [36m(D)  - cfosat1_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - chandrayaan3_link_1k[m
+[00:39:57 - 05/07/2026] [36m(D)  - chandrayaan3_link_2k[m
+[00:39:57 - 05/07/2026] [36m(D)  - chandrayaan3_link_4k[m
+[00:39:57 - 05/07/2026] [36m(D)  - chandrayaan3_link_8k[m
+[00:39:57 - 05/07/2026] [36m(D)  - cheops_link[m
+[00:39:57 - 05/07/2026] [36m(D)  - chinese_spaceplane_sband[m
+[00:39:57 - 05/07/2026] [36m(D)  - cloudsat_link[m
+[00:39:57 - 05/07/2026] [36m(D)  - cluster_hr_link[m
+[00:39:57 - 05/07/2026] [36m(D)  - cluster_lr_link[m
+[00:39:57 - 05/07/2026] [36m(D)  - colibri_s_uhf[m
+[00:39:57 - 05/07/2026] [36m(D)  - coriolis_db[m
+[00:39:57 - 05/07/2026] [36m(D)  - cosmos_2558_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - cosmos_2518_sband[m
+[00:39:57 - 05/07/2026] [36m(D)  - crew_dragon_tlm[m
+[00:39:57 - 05/07/2026] [36m(D)  - cryosat_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - off2pro[m
+[00:39:57 - 05/07/2026] [36m(D)  - dmsp_rtd[m
+[00:39:57 - 05/07/2026] [36m(D)  - dscovr_hr[m
+[00:39:57 - 05/07/2026] [36m(D)  - dscovr_tlm[m
+[00:39:57 - 05/07/2026] [36m(D)  - dvbs_test[m
+[00:39:57 - 05/07/2026] [36m(D)  - dvbs2_test[m
+[00:39:57 - 05/07/2026] [36m(D)  - elektro_ggak[m
+[00:39:57 - 05/07/2026] [36m(D)  - elektro_hrit[m
+[00:39:57 - 05/07/2026] [36m(D)  - elektro_lrit[m
+[00:39:57 - 05/07/2026] [36m(D)  - elektro_rdas[m
+[00:39:57 - 05/07/2026] [36m(D)  - eumetcast_africa[m
+[00:39:57 - 05/07/2026] [36m(D)  - falcon9_tlm[m
+[00:39:57 - 05/07/2026] [36m(D)  - fengyun_svissr[m
+[00:39:57 - 05/07/2026] [36m(D)  - fengyun3_ab_ahrpt[m
+[00:39:57 - 05/07/2026] [36m(D)  - fengyun3_abc_dpt[m
+[00:39:57 - 05/07/2026] [36m(D)  - fengyun3_abc_mpt[m
+[00:39:57 - 05/07/2026] [36m(D)  - fengyun3_c_ahrpt[m
+[00:39:57 - 05/07/2026] [36m(D)  - fengyun3_d_ahrpt[m
+[00:39:57 - 05/07/2026] [36m(D)  - fengyun3_d_dpt[m
+[00:39:57 - 05/07/2026] [36m(D)  - fengyun3_e_ahrpt[m
+[00:39:57 - 05/07/2026] [36m(D)  - fengyun3_e_dpt[m
+[00:39:57 - 05/07/2026] [36m(D)  - fengyun3_f_ahrpt[m
+[00:39:57 - 05/07/2026] [36m(D)  - fengyun3_f_dpt[m
+[00:39:57 - 05/07/2026] [36m(D)  - fengyun3_g_ahrpt[m
+[00:39:57 - 05/07/2026] [36m(D)  - fengyun3_tlm_old[m
+[00:39:57 - 05/07/2026] [36m(D)  - fengyun3_tlm[m
+[00:39:57 - 05/07/2026] [36m(D)  - fengyun4_a_hrit23[m
+[00:39:57 - 05/07/2026] [36m(D)  - fengyun4_a_lrit[m
+[00:39:57 - 05/07/2026] [36m(D)  - fengyun4_b_lrit[m
+[00:39:57 - 05/07/2026] [36m(D)  - formosat5_s_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - formosat7_s_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - gcom_s_band[m
+[00:39:57 - 05/07/2026] [36m(D)  - gcom_c1_link[m
+[00:39:57 - 05/07/2026] [36m(D)  - gcom_w1_link[m
+[00:39:57 - 05/07/2026] [36m(D)  - generic_analog_demod[m
+[00:39:57 - 05/07/2026] [36m(D)  - geonetcast[m
+[00:39:57 - 05/07/2026] [36m(D)  - gfsk_test[m
+[00:39:57 - 05/07/2026] [36m(D)  - gk2a_cdas[m
+[00:39:57 - 05/07/2026] [36m(D)  - gk2a_hrit[m
+[00:39:57 - 05/07/2026] [36m(D)  - gk2a_lrit[m
+[00:39:57 - 05/07/2026] [36m(D)  - gk2a_lrit_tcp[m
+[00:39:57 - 05/07/2026] [36m(D)  - goes_gvar[m
+[00:39:57 - 05/07/2026] [36m(D)  - goesn_cda[m
+[00:39:57 - 05/07/2026] [36m(D)  - goes_lrit[m
+[00:39:57 - 05/07/2026] [36m(D)  - goes_mdl[m
+[00:39:57 - 05/07/2026] [36m(D)  - goesn_sd[m
+[00:39:57 - 05/07/2026] [36m(D)  - goesn_sounder[m
+[00:39:57 - 05/07/2026] [36m(D)  - goesr_cda[m
+[00:39:57 - 05/07/2026] [36m(D)  - goesr_cda_4k[m
+[00:39:57 - 05/07/2026] [36m(D)  - goes_grb[m
+[00:39:57 - 05/07/2026] [36m(D)  - goes_hrit[m
+[00:39:57 - 05/07/2026] [36m(D)  - goes_hrit_tcp[m
+[00:39:57 - 05/07/2026] [36m(D)  - goesr_raw[m
+[00:39:57 - 05/07/2026] [36m(D)  - grace_fo_link[m
+[00:39:57 - 05/07/2026] [36m(D)  - hera_x_link[m
+[00:39:57 - 05/07/2026] [36m(D)  - himawaricast[m
+[00:39:57 - 05/07/2026] [36m(D)  - hinode_s_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - hinode_s_tlm[m
+[00:39:57 - 05/07/2026] [36m(D)  - horizon_uhf[m
+[00:39:57 - 05/07/2026] [36m(D)  - im1_s_tlm[m
+[00:39:57 - 05/07/2026] [36m(D)  - inmarsat_aero_6[m
+[00:39:57 - 05/07/2026] [36m(D)  - inmarsat_aero_12[m
+[00:39:57 - 05/07/2026] [36m(D)  - inmarsat_aero_105[m
+[00:39:57 - 05/07/2026] [36m(D)  - inmarsat_aero_84[m
+[00:39:57 - 05/07/2026] [36m(D)  - inmarsat_std_c[m
+[00:39:57 - 05/07/2026] [36m(D)  - insat_3d_imager[m
+[00:39:57 - 05/07/2026] [36m(D)  - inspiresat7_tlm[m
+[00:39:57 - 05/07/2026] [36m(D)  - integral_s_link[m
+[00:39:57 - 05/07/2026] [36m(D)  - iris_s_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - iris_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - jason3_link[m
+[00:39:57 - 05/07/2026] [36m(D)  - jpss_hrd[m
+[00:39:57 - 05/07/2026] [36m(D)  - jpss_tlm[m
+[00:39:57 - 05/07/2026] [36m(D)  - juice_x_link[m
+[00:39:57 - 05/07/2026] [36m(D)  - kplo_sband_link[m
+[00:39:57 - 05/07/2026] [36m(D)  - landsat_ldcm_tlm[m
+[00:39:57 - 05/07/2026] [36m(D)  - landsat_ldcm_link[m
+[00:39:57 - 05/07/2026] [36m(D)  - lucky7_link[m
+[00:39:57 - 05/07/2026] [36m(D)  - tgo_link[m
+[00:39:57 - 05/07/2026] [36m(D)  - mats_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - meteor_hrpt[m
+[00:39:57 - 05/07/2026] [36m(D)  - meteor_m2_lrpt[m
+[00:39:57 - 05/07/2026] [36m(D)  - meteor_m2-x_lrpt[m
+[00:39:57 - 05/07/2026] [36m(D)  - meteor_m2-x_lrpt_80k[m
+[00:39:57 - 05/07/2026] [36m(D)  - meteor_m_kmss_bpsk_db[m
+[00:39:57 - 05/07/2026] [36m(D)  - meteor_m_kmss_qpsk_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - meteor_m_mtvza_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - metop_ahrpt[m
+[00:39:57 - 05/07/2026] [36m(D)  - metop_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - msg_raw[m
+[00:39:57 - 05/07/2026] [36m(D)  - neossat_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - noaa_apt[m
+[00:39:57 - 05/07/2026] [36m(D)  - noaa_dsb[m
+[00:39:57 - 05/07/2026] [36m(D)  - noaa_gac[m
+[00:39:57 - 05/07/2026] [36m(D)  - noaa_hrpt[m
+[00:39:57 - 05/07/2026] [36m(D)  - oceansat2_db[m
+[00:39:57 - 05/07/2026] [36m(D)  - oceansat3_argos[m
+[00:39:57 - 05/07/2026] [36m(D)  - oceansat3_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - odin_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - ominous_orb[m
+[00:39:57 - 05/07/2026] [36m(D)  - ops_sat_s_link[m
+[00:39:57 - 05/07/2026] [36m(D)  - orbcomm_stx[m
+[00:39:57 - 05/07/2026] [36m(D)  - orbcomm_stx_auto[m
+[00:39:57 - 05/07/2026] [36m(D)  - orbcomm_stx_auto_plotter[m
+[00:39:57 - 05/07/2026] [36m(D)  - orion_link[m
+[00:39:57 - 05/07/2026] [36m(D)  - orx_link[m
+[00:39:57 - 05/07/2026] [36m(D)  - gazelle_l_band[m
+[00:39:57 - 05/07/2026] [36m(D)  - paz_s_tlm[m
+[00:39:57 - 05/07/2026] [36m(D)  - peregrine_x_tlm[m
+[00:39:57 - 05/07/2026] [36m(D)  - pretty_s_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - prisma_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - proba1_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - proba2_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - probav_s_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - probav_x_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - pvcc_s_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - pvcc_x_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - psyche_hr[m
+[00:39:57 - 05/07/2026] [36m(D)  - queqiao2_bpsk_science_s_link[m
+[00:39:57 - 05/07/2026] [36m(D)  - queqiao2_oqpsk_science_s_link[m
+[00:39:57 - 05/07/2026] [36m(D)  - queqiao2_s_link[m
+[00:39:57 - 05/07/2026] [36m(D)  - rtumirea1_uhf[m
+[00:39:57 - 05/07/2026] [36m(D)  - saocom_1ab_tlm_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - saral_l_band[m
+[00:39:57 - 05/07/2026] [36m(D)  - scisat1_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - sentinel6_tlm[m
+[00:39:57 - 05/07/2026] [36m(D)  - sentinel6_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - slim_tlm_link[m
+[00:39:57 - 05/07/2026] [36m(D)  - smap_s_link[m
+[00:39:57 - 05/07/2026] [36m(D)  - smos_tlm[m
+[00:39:57 - 05/07/2026] [36m(D)  - smos_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - sonate2_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - starship_tlm[m
+[00:39:57 - 05/07/2026] [36m(D)  - stereo_hr[m
+[00:39:57 - 05/07/2026] [36m(D)  - stereo_lr[m
+[00:39:57 - 05/07/2026] [36m(D)  - stratosat_tk1_uhf[m
+[00:39:57 - 05/07/2026] [36m(D)  - npp_hrd[m
+[00:39:57 - 05/07/2026] [36m(D)  - swot_tlm[m
+[00:39:57 - 05/07/2026] [36m(D)  - syracuse3b_tlm[m
+[00:39:57 - 05/07/2026] [36m(D)  - terra_db[m
+[00:39:57 - 05/07/2026] [36m(D)  - test_custom[m
+[00:39:57 - 05/07/2026] [36m(D)  - tiahne1_tlm[m
+[00:39:57 - 05/07/2026] [36m(D)  - tianwen1_link[m
+[00:39:57 - 05/07/2026] [36m(D)  - timed_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - tubin_x_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - tusur_go_uhf[m
+[00:39:57 - 05/07/2026] [36m(D)  - umka_1_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - veronika_link[m
+[00:39:57 - 05/07/2026] [36m(D)  - viasat3_tlm_12200[m
+[00:39:57 - 05/07/2026] [36m(D)  - viasat3_tlm[m
+[00:39:57 - 05/07/2026] [36m(D)  - vizard_ion_uhf[m
+[00:39:57 - 05/07/2026] [36m(D)  - wsf_m_db[m
+[00:39:57 - 05/07/2026] [36m(D)  - xmm_newton_s_link[m
+[00:39:57 - 05/07/2026] [36m(D)  - youthsat_dump[m
+[00:39:57 - 05/07/2026] [36m(D)  - yunhai_ahrpt[m
+[00:39:57 - 05/07/2026] [32m(I) Loading TLEs from /root/.config/satdump/satdump_tles.txt[m
+[00:39:57 - 05/07/2026] [32m(I) 15923 TLEs loaded![m
+[00:39:57 - 05/07/2026] [32m(I) Starting processing pipeline meteor_hrpt...[m
+[00:39:57 - 05/07/2026] [36m(D) Input file (cadu) : /build/test_meteor.dat[m
+[00:39:57 - 05/07/2026] [36m(D) Output file : /build/cleantest[m
+[00:39:57 - 05/07/2026] [36m(D) Starting meteor_hrpt[m
+[00:39:57 - 05/07/2026] [32m(I) Data is already at level baseband, skipping[m
+[00:39:57 - 05/07/2026] [32m(I) Data is already at level soft, skipping[m
+[00:39:57 - 05/07/2026] [32m(I) Data is already at level cadu, skipping[m
+[00:39:57 - 05/07/2026] [32m(I) Processing data to level products[m
+[00:39:57 - 05/07/2026] [36m(D) Parameters :[m
+[00:39:57 - 05/07/2026] [32m(I) Using input frames /build/test_meteor.dat[m
+[00:39:59 - 05/07/2026] [32m(I) ----------- Satellite[m
+[00:39:59 - 05/07/2026] [32m(I) NORAD : 57166[m
+[00:39:59 - 05/07/2026] [32m(I) Name  : METEOR-M2-3[m
+[00:39:59 - 05/07/2026] [32m(I) ----------- MSU-MR[m
+[00:39:59 - 05/07/2026] [32m(I) Lines : 4872[m
+[00:39:59 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/MSU-MR-1.png...[m
+[00:39:59 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/MSU-MR-3.png...[m
+[00:39:59 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/MSU-MR-6.png...[m
+[00:39:59 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/MSU-MR-4.png...[m
+[00:39:59 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/MSU-MR-2.png...[m
+[00:39:59 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/MSU-MR-5.png...[m
+[00:40:01 - 05/07/2026] [32m(I) ----------- MTVZA[m
+[00:40:01 - 05/07/2026] [32m(I) Lines : 281[m
+[00:40:01 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/MTVZA-19.png...[m
+[00:40:01 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/MTVZA-16.png...[m
+[00:40:01 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/MTVZA-29.png...[m
+[00:40:01 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/MTVZA-23.png...[m
+[00:40:01 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/MTVZA-13.png...[m
+[00:40:01 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/MTVZA-25.png...[m
+[00:40:01 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/MTVZA-7.png...[m
+[00:40:01 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/MTVZA-27.png...[m
+[00:40:01 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/MTVZA-10.png...[m
+[00:40:01 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/MTVZA-1.png...[m
+[00:40:01 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/MTVZA-4.png...[m
+[00:40:01 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/MTVZA-21.png...[m
+[00:40:01 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/MTVZA-17.png...[m
+[00:40:01 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/MTVZA-20.png...[m
+[00:40:01 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/MTVZA-30.png...[m
+[00:40:01 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/MTVZA-11.png...[m
+[00:40:01 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/MTVZA-2.png...[m
+[00:40:01 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/MTVZA-24.png...[m
+[00:40:01 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/MTVZA-28.png...[m
+[00:40:01 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/MTVZA-26.png...[m
+[00:40:01 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/MTVZA-8.png...[m
+[00:40:01 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/MTVZA-3.png...[m
+[00:40:01 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/MTVZA-14.png...[m
+[00:40:01 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/MTVZA-18.png...[m
+[00:40:01 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/MTVZA-22.png...[m
+[00:40:01 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/MTVZA-12.png...[m
+[00:40:01 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/MTVZA-5.png...[m
+[00:40:01 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/MTVZA-9.png...[m
+[00:40:01 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/MTVZA-15.png...[m
+[00:40:01 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/MTVZA-6.png...[m
+[00:40:01 - 05/07/2026] [32m(I) ----------- BIS-M[m
+[00:40:01 - 05/07/2026] [32m(I) Frames : 10354[m
+[00:40:01 - 05/07/2026] [36m(D) Products processing is enabled! Starting processing module.[m
+[00:40:01 - 05/07/2026] [32m(I) /build/cleantest/MSU-MR[m
+[00:40:01 - 05/07/2026] [32m(I) /build/cleantest/MSU-MR/product.cbor[m
+[00:40:01 - 05/07/2026] [32m(I) /build/cleantest/MSU-MR/product.cbor[m
+[00:40:01 - 05/07/2026] [32m(I) Loading MSU-MR-1.png[m
+[00:40:01 - 05/07/2026] [32m(I) Loading MSU-MR-2.png[m
+[00:40:01 - 05/07/2026] [32m(I) Loading MSU-MR-3.png[m
+[00:40:02 - 05/07/2026] [32m(I) Loading MSU-MR-4.png[m
+[00:40:02 - 05/07/2026] [32m(I) Loading MSU-MR-5.png[m
+[00:40:02 - 05/07/2026] [32m(I) Loading MSU-MR-6.png[m
+[00:40:02 - 05/07/2026] [36m(D) Composite needs channel ch1[m
+[00:40:02 - 05/07/2026] [36m(D) Composite needs channel ch2[m
+[00:40:02 - 05/07/2026] [37m(T) Max Total Width 1572[m
+[00:40:02 - 05/07/2026] [37m(T) Max Total Used  1572[m
+[00:40:02 - 05/07/2026] [37m(T) Offset for ch1 is 0[m
+[00:40:02 - 05/07/2026] [37m(T) Offset for ch2 is 0[m
+[00:40:04 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_AVHRR_221_False_Color_corrected.png...[m
+[00:40:07 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_AVHRR_221_False_Color.png...[m
+[00:40:08 - 05/07/2026] [36m(D) Composite needs channel ch1[m
+[00:40:08 - 05/07/2026] [36m(D) Composite needs channel ch2[m
+[00:40:08 - 05/07/2026] [36m(D) Composite needs channel ch3[m
+[00:40:08 - 05/07/2026] [37m(T) Max Total Width 1572[m
+[00:40:08 - 05/07/2026] [37m(T) Max Total Used  1572[m
+[00:40:08 - 05/07/2026] [37m(T) Offset for ch1 is 0[m
+[00:40:08 - 05/07/2026] [37m(T) Offset for ch2 is 0[m
+[00:40:08 - 05/07/2026] [37m(T) Offset for ch3 is 0[m
+[00:40:10 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_AVHRR_3a21_False_Color_corrected.png...[m
+[00:40:12 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_AVHRR_3a21_False_Color.png...[m
+[00:40:13 - 05/07/2026] [36m(D) Reprojecting composite msu_mr_rgb_AVHRR_3a21_False_Color[m
+[00:40:13 - 05/07/2026] [36m(D) Filtering timestamps...[m
+[00:40:13 - 05/07/2026] [37m(T) Warping size 15720x7860[m
+[00:40:13 - 05/07/2026] [37m(T) Smart Warp using 4148 1965, full size 15720 7860[m
+[00:40:13 - 05/07/2026] [37m(T) We will split into 1 segments. Median distance is 98.704684 km and total (avg) distance is 4737.824810 km[m
+[00:40:13 - 05/07/2026] [32m(I) Solving TPS equations for 769 GCPs...[m
+[00:40:14 - 05/07/2026] [32m(I) Solved! Took 0.069875[m
+[00:40:14 - 05/07/2026] [36m(D) Using CPU![m
+[00:40:21 - 05/07/2026] [36m(D) CPU Processing Time 6.715477[m
+[00:40:21 - 05/07/2026] [32m(I) Drawing map overlay...[m
+[00:40:21 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/rgb_msu_mr_rgb_AVHRR_3a21_False_Color_projected.png...[m
+[00:40:22 - 05/07/2026] [36m(D) Composite needs channel ch1[m
+[00:40:22 - 05/07/2026] [36m(D) Composite needs channel ch2[m
+[00:40:22 - 05/07/2026] [36m(D) Composite needs channel ch4[m
+[00:40:22 - 05/07/2026] [37m(T) Max Total Width 1572[m
+[00:40:22 - 05/07/2026] [37m(T) Max Total Used  1572[m
+[00:40:22 - 05/07/2026] [37m(T) Offset for ch1 is 0[m
+[00:40:22 - 05/07/2026] [37m(T) Offset for ch2 is 0[m
+[00:40:22 - 05/07/2026] [37m(T) Offset for ch4 is 0[m
+[00:40:23 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_MSU-MR_124_False_Color_corrected.png...[m
+[00:40:25 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_MSU-MR_124_False_Color.png...[m
+[00:40:27 - 05/07/2026] [36m(D) Composite needs channel ch1[m
+[00:40:27 - 05/07/2026] [36m(D) Composite needs channel ch2[m
+[00:40:27 - 05/07/2026] [36m(D) Composite needs channel ch5[m
+[00:40:27 - 05/07/2026] [37m(T) Max Total Width 1572[m
+[00:40:27 - 05/07/2026] [37m(T) Max Total Used  1572[m
+[00:40:27 - 05/07/2026] [37m(T) Offset for ch1 is 0[m
+[00:40:27 - 05/07/2026] [37m(T) Offset for ch2 is 0[m
+[00:40:27 - 05/07/2026] [37m(T) Offset for ch5 is 0[m
+[00:40:29 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_AVHRR_124_False_Color_corrected.png...[m
+[00:40:31 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_AVHRR_124_False_Color.png...[m
+[00:40:33 - 05/07/2026] [36m(D) Composite needs channel ch1[m
+[00:40:33 - 05/07/2026] [36m(D) Composite needs channel ch2[m
+[00:40:33 - 05/07/2026] [36m(D) Composite needs channel ch3[m
+[00:40:33 - 05/07/2026] [36m(D) Composite needs channel ch4[m
+[00:40:33 - 05/07/2026] [37m(T) Max Total Width 1572[m
+[00:40:33 - 05/07/2026] [37m(T) Max Total Used  1572[m
+[00:40:33 - 05/07/2026] [37m(T) Offset for ch1 is 0[m
+[00:40:33 - 05/07/2026] [37m(T) Offset for ch2 is 0[m
+[00:40:33 - 05/07/2026] [37m(T) Offset for ch3 is 0[m
+[00:40:33 - 05/07/2026] [37m(T) Offset for ch4 is 0[m
+[00:40:35 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_Natural_Color_corrected.png...[m
+[00:40:37 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_Natural_Color.png...[m
+[00:40:38 - 05/07/2026] [36m(D) Composite needs channel ch5[m
+[00:40:38 - 05/07/2026] [37m(T) Max Total Width 1572[m
+[00:40:38 - 05/07/2026] [37m(T) Max Total Used  1572[m
+[00:40:38 - 05/07/2026] [37m(T) Offset for ch5 is 0[m
+[00:40:38 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_10.8um_Thermal_IR_(Uncalibrated)_corrected.png...[m
+[00:40:39 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_10.8um_Thermal_IR_(Uncalibrated).png...[m
+[00:40:40 - 05/07/2026] [36m(D) Reprojecting composite msu_mr_10.8um_Thermal_IR_(Uncalibrated)[m
+[00:40:40 - 05/07/2026] [36m(D) Filtering timestamps...[m
+[00:40:40 - 05/07/2026] [37m(T) Warping size 15720x7860[m
+[00:40:40 - 05/07/2026] [37m(T) Smart Warp using 4148 1965, full size 15720 7860[m
+[00:40:40 - 05/07/2026] [37m(T) We will split into 1 segments. Median distance is 98.704684 km and total (avg) distance is 4737.824810 km[m
+[00:40:40 - 05/07/2026] [32m(I) Solving TPS equations for 769 GCPs...[m
+[00:40:40 - 05/07/2026] [32m(I) Solved! Took 0.066870[m
+[00:40:40 - 05/07/2026] [36m(D) Using CPU![m
+[00:40:46 - 05/07/2026] [36m(D) CPU Processing Time 5.846811[m
+[00:40:46 - 05/07/2026] [32m(I) Drawing map overlay...[m
+[00:40:46 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/rgb_msu_mr_10.8um_Thermal_IR_(Uncalibrated)_projected.png...[m
+[00:40:47 - 05/07/2026] [36m(D) Composite needs channel ch1[m
+[00:40:47 - 05/07/2026] [36m(D) Composite needs channel ch4[m
+[00:40:47 - 05/07/2026] [36m(D) Composite needs channel ch5[m
+[00:40:47 - 05/07/2026] [37m(T) Max Total Width 1572[m
+[00:40:47 - 05/07/2026] [37m(T) Max Total Used  1572[m
+[00:40:47 - 05/07/2026] [37m(T) Offset for ch1 is 0[m
+[00:40:47 - 05/07/2026] [37m(T) Offset for ch4 is 0[m
+[00:40:47 - 05/07/2026] [37m(T) Offset for ch5 is 0[m
+[00:40:48 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_Day_Microphysics_corrected.png...[m
+[00:40:51 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_Day_Microphysics.png...[m
+[00:40:53 - 05/07/2026] [37m(T) Generating calibrated image channel 4. Range 200.000000 400.000000. Type 3[m
+[00:40:54 - 05/07/2026] [36m(D) Composite needs calibrated channel ch4[m
+[00:40:54 - 05/07/2026] [37m(T) Generating calibrated image channel 5. Range 200.000000 400.000000. Type 3[m
+[00:40:55 - 05/07/2026] [36m(D) Composite needs calibrated channel ch5[m
+[00:40:55 - 05/07/2026] [37m(T) Generating calibrated image channel 6. Range 200.000000 400.000000. Type 3[m
+[00:40:56 - 05/07/2026] [36m(D) Composite needs calibrated channel ch6[m
+[00:40:56 - 05/07/2026] [37m(T) Max Total Width 1572[m
+[00:40:56 - 05/07/2026] [37m(T) Max Total Used  1572[m
+[00:40:56 - 05/07/2026] [37m(T) Offset for cch4 is 0[m
+[00:40:56 - 05/07/2026] [37m(T) Offset for cch5 is 0[m
+[00:40:56 - 05/07/2026] [37m(T) Offset for cch6 is 0[m
+[00:40:57 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_Night_Microphysics_corrected.png...[m
+[00:41:04 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_Night_Microphysics.png...[m
+[00:41:07 - 05/07/2026] [36m(D) Composite needs channel ch4[m
+[00:41:07 - 05/07/2026] [36m(D) Composite needs channel ch5[m
+[00:41:07 - 05/07/2026] [36m(D) Composite needs channel ch6[m
+[00:41:07 - 05/07/2026] [37m(T) Max Total Width 1572[m
+[00:41:07 - 05/07/2026] [37m(T) Max Total Used  1572[m
+[00:41:07 - 05/07/2026] [37m(T) Offset for ch4 is 0[m
+[00:41:07 - 05/07/2026] [37m(T) Offset for ch5 is 0[m
+[00:41:07 - 05/07/2026] [37m(T) Offset for ch6 is 0[m
+[00:41:08 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_AVHRR_543b_IR_False_Color_corrected.png...[m
+[00:41:10 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_AVHRR_543b_IR_False_Color.png...[m
+[00:41:12 - 05/07/2026] [36m(D) Composite needs channel ch4[m
+[00:41:12 - 05/07/2026] [36m(D) Composite needs channel ch5[m
+[00:41:12 - 05/07/2026] [36m(D) Composite needs channel ch6[m
+[00:41:12 - 05/07/2026] [37m(T) Max Total Width 1572[m
+[00:41:12 - 05/07/2026] [37m(T) Max Total Used  1572[m
+[00:41:12 - 05/07/2026] [37m(T) Offset for ch4 is 0[m
+[00:41:12 - 05/07/2026] [37m(T) Offset for ch5 is 0[m
+[00:41:12 - 05/07/2026] [37m(T) Offset for ch6 is 0[m
+[00:41:12 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_AVHRR_3b45_IR_False_Color_corrected.png...[m
+[00:41:15 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_AVHRR_3b45_IR_False_Color.png...[m
+[00:41:16 - 05/07/2026] [37m(T) Generating calibrated image channel 5. Range 4.261273 155.278282. Type 2[m
+[00:41:17 - 05/07/2026] [36m(D) Composite needs calibrated channel ch5[m
+[00:41:17 - 05/07/2026] [37m(T) Max Total Width 1572[m
+[00:41:17 - 05/07/2026] [37m(T) Max Total Used  1572[m
+[00:41:17 - 05/07/2026] [37m(T) Offset for cch5 is 0[m
+[00:41:17 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_NO_enhancement.png...[m
+[00:41:18 - 05/07/2026] [37m(T) Generating calibrated image channel 5. Range 30.000000 120.000000. Type 0[m
+[00:41:19 - 05/07/2026] [36m(D) Composite needs calibrated channel ch5[m
+[00:41:19 - 05/07/2026] [37m(T) Max Total Width 1572[m
+[00:41:19 - 05/07/2026] [37m(T) Max Total Used  1572[m
+[00:41:19 - 05/07/2026] [37m(T) Offset for cch5 is 0[m
+[00:41:20 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_Cloud_Top_IR_corrected.png...[m
+[00:41:21 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_Cloud_Top_IR.png...[m
+[00:41:23 - 05/07/2026] [36m(D) Composite needs channel ch4[m
+[00:41:23 - 05/07/2026] [37m(T) Max Total Width 1572[m
+[00:41:23 - 05/07/2026] [37m(T) Max Total Used  1572[m
+[00:41:23 - 05/07/2026] [37m(T) Offset for ch4 is 0[m
+[00:41:25 - 05/07/2026] [36m(D) Filtering timestamps...[m
+[00:41:34 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_MCIR_corrected.png...[m
+[00:41:35 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_MCIR.png...[m
+[00:41:36 - 05/07/2026] [36m(D) Filtering timestamps...[m
+[00:41:37 - 05/07/2026] [32m(I) Solving TPS equations for 769 GCPs...[m
+[00:41:37 - 05/07/2026] [32m(I) Solved! Took 0.062449[m
+[00:41:37 - 05/07/2026] [32m(I) Drawing map overlay...[m
+[00:41:40 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_MCIR_map.png...[m
+[00:41:41 - 05/07/2026] [32m(I) Drawing map overlay...[m
+[00:41:45 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_MCIR_corrected_map.png...[m
+[00:41:47 - 05/07/2026] [36m(D) Composite needs channel ch1[m
+[00:41:47 - 05/07/2026] [37m(T) Max Total Width 1572[m
+[00:41:47 - 05/07/2026] [37m(T) Max Total Used  1572[m
+[00:41:47 - 05/07/2026] [37m(T) Offset for ch1 is 0[m
+[00:41:48 - 05/07/2026] [36m(D) Filtering timestamps...[m
+[00:41:58 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_MSA_corrected.png...[m
+[00:42:00 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_MSA.png...[m
+[00:42:01 - 05/07/2026] [32m(I) Applying cached map overlay...[m
+[00:42:01 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_MSA_map.png...[m
+[00:42:02 - 05/07/2026] [32m(I) Applying cached map overlay...[m
+[00:42:02 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_MSA_corrected_map.png...[m
+[00:42:04 - 05/07/2026] [36m(D) Composite needs channel ch4[m
+[00:42:04 - 05/07/2026] [37m(T) Max Total Width 1572[m
+[00:42:04 - 05/07/2026] [37m(T) Max Total Used  1572[m
+[00:42:04 - 05/07/2026] [37m(T) Offset for ch4 is 0[m
+[00:42:05 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_3.9_um_Shortwave_IR_(Uncalibrated)_corrected.png...[m
+[00:42:05 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_3.9_um_Shortwave_IR_(Uncalibrated).png...[m
+[00:42:06 - 05/07/2026] [32m(I) Applying cached map overlay...[m
+[00:42:06 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_3.9_um_Shortwave_IR_(Uncalibrated)_map.png...[m
+[00:42:08 - 05/07/2026] [32m(I) Applying cached map overlay...[m
+[00:42:08 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_3.9_um_Shortwave_IR_(Uncalibrated)_corrected_map.png...[m
+[00:42:08 - 05/07/2026] [37m(T) Generating calibrated image channel 4. Range 180.000000 320.000000. Type 3[m
+[00:42:10 - 05/07/2026] [36m(D) Composite needs calibrated channel ch4[m
+[00:42:10 - 05/07/2026] [37m(T) Max Total Width 1572[m
+[00:42:10 - 05/07/2026] [37m(T) Max Total Used  1572[m
+[00:42:10 - 05/07/2026] [37m(T) Offset for cch4 is 0[m
+[00:42:10 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_3.9_um_Shortwave_IR_(Calibrated)_corrected.png...[m
+[00:42:11 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_3.9_um_Shortwave_IR_(Calibrated).png...[m
+[00:42:12 - 05/07/2026] [32m(I) Applying cached map overlay...[m
+[00:42:12 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_3.9_um_Shortwave_IR_(Calibrated)_map.png...[m
+[00:42:13 - 05/07/2026] [32m(I) Applying cached map overlay...[m
+[00:42:13 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_3.9_um_Shortwave_IR_(Calibrated)_corrected_map.png...[m
+[00:42:14 - 05/07/2026] [37m(T) Generating calibrated image channel 4. Range 200.000000 241.000000. Type 3[m
+[00:42:15 - 05/07/2026] [36m(D) Composite needs calibrated channel ch4[m
+[00:42:15 - 05/07/2026] [37m(T) Max Total Width 1572[m
+[00:42:15 - 05/07/2026] [37m(T) Max Total Used  1572[m
+[00:42:15 - 05/07/2026] [37m(T) Offset for cch4 is 0[m
+[00:42:16 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_3.9_um_Cloud_Tops_(Transparent)_corrected.png...[m
+[00:42:16 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_3.9_um_Cloud_Tops_(Transparent).png...[m
+[00:42:16 - 05/07/2026] [32m(I) Applying cached map overlay...[m
+[00:42:16 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_3.9_um_Cloud_Tops_(Transparent)_map.png...[m
+[00:42:16 - 05/07/2026] [32m(I) Applying cached map overlay...[m
+[00:42:16 - 05/07/2026] [32m(I) Saving /build/cleantest/MSU-MR/msu_mr_rgb_3.9_um_Cloud_Tops_(Transparent)_corrected_map.png...[m
+[00:42:16 - 05/07/2026] [32m(I) /build/cleantest/MTVZA[m
+[00:42:16 - 05/07/2026] [32m(I) /build/cleantest/MTVZA/product.cbor[m
+[00:42:16 - 05/07/2026] [32m(I) /build/cleantest/MTVZA/product.cbor[m
+[00:42:16 - 05/07/2026] [32m(I) Loading MTVZA-1.png[m
+[00:42:16 - 05/07/2026] [32m(I) Loading MTVZA-2.png[m
+[00:42:16 - 05/07/2026] [32m(I) Loading MTVZA-3.png[m
+[00:42:16 - 05/07/2026] [32m(I) Loading MTVZA-4.png[m
+[00:42:16 - 05/07/2026] [32m(I) Loading MTVZA-5.png[m
+[00:42:16 - 05/07/2026] [32m(I) Loading MTVZA-6.png[m
+[00:42:16 - 05/07/2026] [32m(I) Loading MTVZA-7.png[m
+[00:42:16 - 05/07/2026] [32m(I) Loading MTVZA-8.png[m
+[00:42:16 - 05/07/2026] [32m(I) Loading MTVZA-9.png[m
+[00:42:16 - 05/07/2026] [32m(I) Loading MTVZA-10.png[m
+[00:42:16 - 05/07/2026] [32m(I) Loading MTVZA-11.png[m
+[00:42:16 - 05/07/2026] [32m(I) Loading MTVZA-12.png[m
+[00:42:16 - 05/07/2026] [32m(I) Loading MTVZA-13.png[m
+[00:42:16 - 05/07/2026] [32m(I) Loading MTVZA-14.png[m
+[00:42:16 - 05/07/2026] [32m(I) Loading MTVZA-15.png[m
+[00:42:16 - 05/07/2026] [32m(I) Loading MTVZA-16.png[m
+[00:42:16 - 05/07/2026] [32m(I) Loading MTVZA-17.png[m
+[00:42:16 - 05/07/2026] [32m(I) Loading MTVZA-18.png[m
+[00:42:16 - 05/07/2026] [32m(I) Loading MTVZA-19.png[m
+[00:42:16 - 05/07/2026] [32m(I) Loading MTVZA-20.png[m
+[00:42:16 - 05/07/2026] [32m(I) Loading MTVZA-21.png[m
+[00:42:16 - 05/07/2026] [32m(I) Loading MTVZA-22.png[m
+[00:42:16 - 05/07/2026] [32m(I) Loading MTVZA-23.png[m
+[00:42:16 - 05/07/2026] [32m(I) Loading MTVZA-24.png[m
+[00:42:16 - 05/07/2026] [32m(I) Loading MTVZA-25.png[m
+[00:42:16 - 05/07/2026] [32m(I) Loading MTVZA-26.png[m
+[00:42:16 - 05/07/2026] [32m(I) Loading MTVZA-27.png[m
+[00:42:16 - 05/07/2026] [32m(I) Loading MTVZA-28.png[m
+[00:42:16 - 05/07/2026] [32m(I) Loading MTVZA-29.png[m
+[00:42:16 - 05/07/2026] [32m(I) Loading MTVZA-30.png[m
+[00:42:16 - 05/07/2026] [36m(D) Composite needs channel ch3[m
+[00:42:16 - 05/07/2026] [36m(D) Composite needs channel ch4[m
+[00:42:16 - 05/07/2026] [37m(T) Max Total Width 100[m
+[00:42:16 - 05/07/2026] [37m(T) Max Total Used  100[m
+[00:42:16 - 05/07/2026] [37m(T) Offset for ch3 is 0[m
+[00:42:16 - 05/07/2026] [37m(T) Offset for ch4 is 0[m
+[00:42:16 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/mtvza_rgb_443_(AMSU_221_equivalent).png...[m
+[00:42:16 - 05/07/2026] [36m(D) Composite needs channel ch3[m
+[00:42:16 - 05/07/2026] [36m(D) Composite needs channel ch4[m
+[00:42:16 - 05/07/2026] [36m(D) Composite needs channel ch8[m
+[00:42:16 - 05/07/2026] [37m(T) Max Total Width 100[m
+[00:42:16 - 05/07/2026] [37m(T) Max Total Used  100[m
+[00:42:16 - 05/07/2026] [37m(T) Offset for ch3 is 0[m
+[00:42:16 - 05/07/2026] [37m(T) Offset for ch4 is 0[m
+[00:42:16 - 05/07/2026] [37m(T) Offset for ch8 is 0[m
+[00:42:16 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/mtvza_rgb_843_(AMSU_421_equivalent).png...[m
+[00:42:16 - 05/07/2026] [36m(D) Composite needs channel ch12[m
+[00:42:16 - 05/07/2026] [36m(D) Composite needs channel ch13[m
+[00:42:16 - 05/07/2026] [36m(D) Composite needs channel ch14[m
+[00:42:16 - 05/07/2026] [37m(T) Max Total Width 100[m
+[00:42:16 - 05/07/2026] [37m(T) Max Total Used  100[m
+[00:42:16 - 05/07/2026] [37m(T) Offset for ch12 is 0[m
+[00:42:16 - 05/07/2026] [37m(T) Offset for ch13 is 0[m
+[00:42:16 - 05/07/2026] [37m(T) Offset for ch14 is 0[m
+[00:42:16 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/mtvza_rgb_Soil_Moisture.png...[m
+[00:42:16 - 05/07/2026] [36m(D) Composite needs channel ch15[m
+[00:42:16 - 05/07/2026] [36m(D) Composite needs channel ch16[m
+[00:42:16 - 05/07/2026] [36m(D) Composite needs channel ch17[m
+[00:42:16 - 05/07/2026] [37m(T) Max Total Width 100[m
+[00:42:16 - 05/07/2026] [37m(T) Max Total Used  100[m
+[00:42:16 - 05/07/2026] [37m(T) Offset for ch15 is 0[m
+[00:42:16 - 05/07/2026] [37m(T) Offset for ch16 is 0[m
+[00:42:16 - 05/07/2026] [37m(T) Offset for ch17 is 0[m
+[00:42:16 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/mtvza_rgb_Vegetation.png...[m
+[00:42:16 - 05/07/2026] [36m(D) Composite needs channel ch15[m
+[00:42:16 - 05/07/2026] [36m(D) Composite needs channel ch16[m
+[00:42:16 - 05/07/2026] [36m(D) Composite needs channel ch17[m
+[00:42:16 - 05/07/2026] [37m(T) Max Total Width 100[m
+[00:42:16 - 05/07/2026] [37m(T) Max Total Used  100[m
+[00:42:16 - 05/07/2026] [37m(T) Offset for ch15 is 0[m
+[00:42:16 - 05/07/2026] [37m(T) Offset for ch16 is 0[m
+[00:42:16 - 05/07/2026] [37m(T) Offset for ch17 is 0[m
+[00:42:16 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/mtvza_rgb_MTVZA_False_Color_(WIP).png...[m
+[00:42:16 - 05/07/2026] [36m(D) Composite needs channel ch28[m
+[00:42:16 - 05/07/2026] [36m(D) Composite needs channel ch29[m
+[00:42:16 - 05/07/2026] [36m(D) Composite needs channel ch30[m
+[00:42:16 - 05/07/2026] [37m(T) Max Total Width 100[m
+[00:42:16 - 05/07/2026] [37m(T) Max Total Used  100[m
+[00:42:16 - 05/07/2026] [37m(T) Offset for ch28 is 0[m
+[00:42:16 - 05/07/2026] [37m(T) Offset for ch29 is 0[m
+[00:42:16 - 05/07/2026] [37m(T) Offset for ch30 is 0[m
+[00:42:16 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/mtvza_rgb_Microwave_Airmass.png...[m
+[00:42:16 - 05/07/2026] [36m(D) Composite needs channel ch16[m
+[00:42:16 - 05/07/2026] [37m(T) Max Total Width 100[m
+[00:42:16 - 05/07/2026] [37m(T) Max Total Used  100[m
+[00:42:16 - 05/07/2026] [37m(T) Offset for ch16 is 0[m
+[00:42:16 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/mtvza_rgb_550hPa_Temperature_(~5_km).png...[m
+[00:42:16 - 05/07/2026] [36m(D) Composite needs channel ch17[m
+[00:42:16 - 05/07/2026] [37m(T) Max Total Width 100[m
+[00:42:16 - 05/07/2026] [37m(T) Max Total Used  100[m
+[00:42:16 - 05/07/2026] [37m(T) Offset for ch17 is 0[m
+[00:42:16 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/mtvza_rgb_350hPa_Temperature_(~10_km).png...[m
+[00:42:16 - 05/07/2026] [36m(D) Composite needs channel ch18[m
+[00:42:16 - 05/07/2026] [37m(T) Max Total Width 100[m
+[00:42:16 - 05/07/2026] [37m(T) Max Total Used  100[m
+[00:42:16 - 05/07/2026] [37m(T) Offset for ch18 is 0[m
+[00:42:16 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/mtvza_rgb_200hPa_Temperature_(~12_km).png...[m
+[00:42:16 - 05/07/2026] [36m(D) Composite needs channel ch19[m
+[00:42:16 - 05/07/2026] [37m(T) Max Total Width 100[m
+[00:42:16 - 05/07/2026] [37m(T) Max Total Used  100[m
+[00:42:16 - 05/07/2026] [37m(T) Offset for ch19 is 0[m
+[00:42:16 - 05/07/2026] [32m(I) Saving /build/cleantest/MTVZA/mtvza_rgb_100hPa_Temperature_(~15_km).png...[m
+[00:42:16 - 05/07/2026] [36m(D) Skipping Test1 as it can't be made![m
+[00:42:16 - 05/07/2026] [36m(D) Skipping Test2 as it can't be made![m
+[00:42:16 - 05/07/2026] [32m(I) Done! Goodbye[m
