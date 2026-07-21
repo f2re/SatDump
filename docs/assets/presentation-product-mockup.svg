@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1040" viewBox="0 0 1600 1040" role="img" aria-labelledby="title description">
+  <title id="title">SatDump 1.2.2 presentation product visual reference</title>
+  <desc id="description">Dark scientific header, satellite image area and continuous temperature legend.</desc>
+  <defs>
+    <linearGradient id="earth" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#173455"/>
+      <stop offset="0.45" stop-color="#416F76"/>
+      <stop offset="1" stop-color="#17263D"/>
+    </linearGradient>
+    <linearGradient id="temperature" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#1B1844"/>
+      <stop offset="0.25" stop-color="#1E5E8B"/>
+      <stop offset="0.5" stop-color="#24A093"/>
+      <stop offset="0.75" stop-color="#96C959"/>
+      <stop offset="1" stop-color="#FCE725"/>
+    </linearGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="22"/>
+    </filter>
+    <clipPath id="imageClip">
+      <rect x="0" y="190" width="1600" height="610"/>
+    </clipPath>
+  </defs>
+
+  <rect width="1600" height="1040" fill="#0E1624"/>
+
+  <!-- Header -->
+  <rect x="0" y="0" width="1600" height="190" fill="#0E1624"/>
+  <rect x="0" y="186" width="1600" height="4" fill="#4EC7E8"/>
+
+  <text x="52" y="59" font-family="Roboto, Noto Sans, sans-serif" font-size="35" font-weight="600" fill="#F3F7FB">METEOR-M №2-3  /  МСУ-МР</text>
+  <text x="52" y="102" font-family="Roboto, Noto Sans, sans-serif" font-size="25" font-weight="500" fill="#F3F7FB">Яркостная температура облачной поверхности</text>
+  <text x="52" y="139" font-family="Roboto, Noto Sans, sans-serif" font-size="19" fill="#AAB8C8">20.07.2026 · 02:41:16–02:55:38 UTC   |   нисходящий пролёт · макс. высота 67°</text>
+  <text x="52" y="169" font-family="Roboto Mono, monospace" font-size="16" fill="#AAB8C8">Канал 5 (10,8 мкм)   |   Приём: 137,9 МГц   |   EPSG:4326   |   1,1 км/пикс.</text>
+
+  <rect x="1322" y="34" width="226" height="96" rx="10" fill="#172235" stroke="#2A3A50"/>
+  <rect x="1322" y="34" width="4" height="96" rx="2" fill="#4EC7E8"/>
+  <text x="1350" y="74" font-family="Roboto Mono, monospace" font-size="21" font-weight="600" fill="#F3F7FB">КАЧЕСТВО 94%</text>
+  <text x="1350" y="105" font-family="Roboto Mono, monospace" font-size="15" fill="#AAB8C8">потери 0,8% · 17,4 дБ</text>
+
+  <!-- Image region -->
+  <g clip-path="url(#imageClip)">
+    <rect x="0" y="190" width="1600" height="610" fill="url(#earth)"/>
+    <path d="M-60 650 C220 520 280 290 520 314 C740 337 704 520 928 529 C1170 540 1245 310 1660 266 L1660 830 L-60 830 Z" fill="#24465A" opacity="0.8"/>
+    <path d="M-90 342 C205 264 388 417 564 354 C778 278 837 279 1000 397 C1176 524 1358 411 1660 347" fill="none" stroke="#DDE9F2" stroke-opacity="0.34" stroke-width="62" filter="url(#soft)"/>
+    <path d="M-80 531 C159 468 291 617 476 559 C698 490 760 593 916 558 C1160 503 1244 592 1672 491" fill="none" stroke="#FFFFFF" stroke-opacity="0.52" stroke-width="48" filter="url(#soft)"/>
+    <path d="M138 795 C338 674 361 521 529 467 C697 414 806 523 991 453 C1170 385 1252 230 1446 201" fill="none" stroke="#4EC7E8" stroke-opacity="0.55" stroke-width="2"/>
+    <path d="M165 798 C350 691 382 552 538 500 C704 445 826 551 1007 486 C1195 418 1272 268 1457 225" fill="none" stroke="#F3F7FB" stroke-opacity="0.35" stroke-width="1"/>
+    <g opacity="0.32" stroke="#F3F7FB" stroke-width="1">
+      <path d="M0 342 H1600"/><path d="M0 495 H1600"/><path d="M0 648 H1600"/>
+      <path d="M320 190 V800"/><path d="M640 190 V800"/><path d="M960 190 V800"/><path d="M1280 190 V800"/>
+    </g>
+    <g fill="#F3F7FB" font-family="Roboto Mono, monospace" font-size="13" opacity="0.76">
+      <text x="14" y="337">60°N</text><text x="14" y="490">50°N</text><text x="14" y="643">40°N</text>
+      <text x="304" y="788">20°E</text><text x="624" y="788">40°E</text><text x="944" y="788">60°E</text><text x="1264" y="788">80°E</text>
+    </g>
+  </g>
+
+  <!-- Footer -->
+  <rect x="0" y="800" width="1600" height="240" fill="#0E1624"/>
+  <rect x="0" y="800" width="1600" height="1" fill="#2A3A50"/>
+
+  <text x="52" y="851" font-family="Roboto, Noto Sans, sans-serif" font-size="25" font-weight="500" fill="#F3F7FB">ЯРКОСТНАЯ ТЕМПЕРАТУРА  [K]</text>
+  <text x="52" y="881" font-family="Roboto, Noto Sans, sans-serif" font-size="16" fill="#AAB8C8">Канал 10,8 мкм · физическая шкала без эквализации после окрашивания</text>
+
+  <rect x="52" y="903" width="1496" height="28" rx="4" fill="url(#temperature)" stroke="#2A3A50"/>
+  <g stroke="#AAB8C8" stroke-width="1">
+    <path d="M52 931 V941"/><path d="M266 931 V941"/><path d="M479 931 V941"/><path d="M693 931 V941"/>
+    <path d="M907 931 V941"/><path d="M1121 931 V941"/><path d="M1334 931 V941"/><path d="M1548 931 V941"/>
+  </g>
+  <g font-family="Roboto Mono, monospace" font-size="17" fill="#F3F7FB" text-anchor="middle">
+    <text x="52" y="966" text-anchor="start">180</text><text x="266" y="966">200</text><text x="479" y="966">220</text>
+    <text x="693" y="966">240</text><text x="907" y="966">260</text><text x="1121" y="966">280</text>
+    <text x="1334" y="966">300</text><text x="1548" y="966" text-anchor="end">320</text>
+  </g>
+  <text x="52" y="1012" font-family="Roboto, Noto Sans, sans-serif" font-size="15" fill="#AAB8C8">Примечание: яркостная температура излучающей поверхности; «температура верхней границы облаков» требует отдельного алгоритма восстановления.</text>
+  <text x="1548" y="1012" font-family="Roboto Mono, monospace" font-size="14" fill="#AAB8C8" text-anchor="end">SatDump 1.2.2 · Presentation</text>
+</svg>
