@@ -44,13 +44,27 @@ jobs:
             | xargs -0 -n1 bash -n
 
       - name: ShellCheck
+        shell: bash
         run: |
+          set +e
           shellcheck \
             --external-sources \
             --exclude=SC1091,SC2034 \
-            scripts/astra/*.sh
+            scripts/astra/*.sh 2>&1 | tee shellcheck.log
+          status=${PIPESTATUS[0]}
+          exit "${status}"
+
+      - name: Upload ShellCheck report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shellcheck-report
+          path: shellcheck.log
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Check documentation entry points
+        if: always()
         run: |
           test -s README.md
           test -s docs/ru/README.md
@@ -61,7 +75,9 @@ jobs:
           test -s docs/ru/PRESENTATION.md
           test -s docs/ru/PRESENTATION_LAYOUTS.md
           test -s docs/ru/REVIEW_PRESENTATION.md
+          test -s docs/ru/REVIEW_PRESENTATION_2026-07-21.md
           test -s docs/ru/ASTRA_VALIDATION.md
+          test -s docs/ru/ASTRA_NATIVE_RUNNERS.md
           test -s docs/ru/DEPLOYMENT.md
           test -s docs/ru/TROUBLESHOOTING.md
 
@@ -98,13 +114,17 @@ jobs:
           fi
 
       - name: Build Astra-compatible headless profile
+        shell: bash
         env:
           ASTRA_VERSION_OVERRIDE: ${{ matrix.astra }}
+          BUILD_DIR: ${{ github.workspace }}/build/astra-${{ matrix.astra }}-ci
         run: |
+          mkdir -p "${BUILD_DIR}"
+          set -o pipefail
           bash scripts/astra/build.sh \
             --profile headless \
-            --build-dir "${GITHUB_WORKSPACE}/build/astra-${{ matrix.astra }}-ci" \
-            --jobs 2
+            --build-dir "${BUILD_DIR}" \
+            --jobs 2 2>&1 | tee "${BUILD_DIR}/ci-build.log"
 
       - name: Run presentation output integration test
         env:
@@ -159,6 +179,7 @@ jobs:
         with:
           name: astra-${{ matrix.astra }}-build-diagnostics
           path: |
+            build/astra-${{ matrix.astra }}-ci/ci-build.log
             build/astra-${{ matrix.astra }}-ci/CMakeCache.txt
             build/astra-${{ matrix.astra }}-ci/CMakeFiles/CMakeOutput.log
             build/astra-${{ matrix.astra }}-ci/CMakeFiles/CMakeError.log
@@ -179,6 +200,8 @@ jobs:
       - name: Build inside official Astra Linux UBI 1.7
         shell: bash
         run: |
+          mkdir -p build/astra-ubi17-ci
+          set -o pipefail
           docker pull registry.astralinux.ru/library/astra/ubi17:1.7.5
           docker run --rm \
             -v "${GITHUB_WORKSPACE}:/workspace" \
@@ -197,7 +220,7 @@ jobs:
               /workspace/build/astra-ubi17-ci/satdump-presentation-output-test \
                 /workspace/resources/fonts/Roboto-Medium.ttf \
                 /workspace/build/astra-ubi17-ci/presentation-output-test
-            '
+            ' 2>&1 | tee build/astra-ubi17-ci/ci-build.log
 
       - name: Validate UBI output
         run: |
@@ -207,12 +230,13 @@ jobs:
           test -s build/astra-ubi17-ci/presentation-output-test/meteor_cloud_rgb_annotated_presentation.png
           test -s build/astra-ubi17-ci/presentation-output-test/meteor_cloud_rgb_annotated.json
 
-      - name: Upload UBI reference products
+      - name: Upload UBI reference products and log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: presentation-reference-astra-ubi17
           path: |
+            build/astra-ubi17-ci/ci-build.log
             build/astra-ubi17-ci/presentation-test-output/*.png
             build/astra-ubi17-ci/presentation-output-test/*
           if-no-files-found: warn
