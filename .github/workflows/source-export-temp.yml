@@ -1,0 +1,21 @@
+name: Temporary source export
+
+on:
+  push:
+    branches:
+      - agent/astra-portable-glibc224
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: presentation-source-temp
+          path: src-core/common/image/presentation.cpp
+          if-no-files-found: error
+          retention-days: 1
