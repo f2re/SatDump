@@ -83,10 +83,24 @@ jobs:
       fail-fast: false
       matrix:
         astra: ["1.6", "1.7"]
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_COMPRESS: "1"
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Restore compiler cache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: presentation-ccache-${{ runner.os }}-${{ matrix.astra }}-${{ hashFiles('CMakeLists.txt', 'src-core/CMakeLists.txt', 'src-testing/CMakeLists.txt', 'plugins/CMakeLists.txt') }}
+          restore-keys: |
+            presentation-ccache-${{ runner.os }}-${{ matrix.astra }}-
 
       - name: Install required dependencies
         shell: bash
@@ -94,6 +108,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             build-essential \
+            ccache \
             cmake \
             pkg-config \
             libfftw3-dev \
@@ -106,6 +121,8 @@ jobs:
           if ! sudo apt-get install -y libvolk2-dev; then
             sudo apt-get install -y libvolk-dev
           fi
+          ccache --max-size=2G
+          ccache --zero-stats
 
       - name: Build Astra-compatible headless profile
         env:
@@ -118,6 +135,7 @@ jobs:
             --profile headless \
             --build-dir "${build_dir}" \
             --jobs 2 2>&1 | tee "${build_dir}/build.log"
+          ccache --show-stats
 
       - name: Validate orientation and visual products
         run: |
