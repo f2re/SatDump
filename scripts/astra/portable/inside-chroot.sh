@@ -28,7 +28,7 @@ if ! grep -Eq 'project\(SatDump VERSION "1\.2\.2"\)' "${SOURCE_DIR}/CMakeLists.t
     fail "Portable-профиль рассчитан только на дерево SatDump 1.2.2."
 fi
 
-# Защита от известного смешивания 1.2.2 и 2.x, обнаруженного в старой ветке astra.
+# Защита от смешанного дерева 1.2.2/2.x, обнаруженного в старой ветке astra.
 MIXED_TREE_MARKERS=(
     "src-core/products/image_product.cpp"
     "src-core/angelscript"
@@ -40,12 +40,11 @@ for marker in "${MIXED_TREE_MARKERS[@]}"; do
 done
 
 mkdir -p "${WORK_DIR}" "${OUTPUT_DIR}" "${CACHE_DIR}"
-
 export DEBIAN_FRONTEND=noninteractive
-export LC_ALL=C.UTF-8
-export LANG=C.UTF-8
+export LC_ALL=C
+export LANG=C
 
-log "Обновление APT внутри изолированного Debian Stretch chroot"
+log "Установка зависимостей внутри изолированного Debian Stretch chroot"
 apt-get update
 apt-get install -y --no-install-recommends \
     build-essential flex bison git curl ca-certificates pkg-config \
@@ -83,15 +82,14 @@ verify_sha256() {
 
 install_cmake() {
     local prefix="/opt/cmake-${SATDUMP_PORTABLE_CMAKE_VERSION}"
-    if [[ -x "${prefix}/bin/cmake" ]]; then
-        return
-    fi
+    [[ -x "${prefix}/bin/cmake" ]] && return
 
     local archive checksums expected
     archive="$(fetch_file "${SATDUMP_PORTABLE_CMAKE_ARCHIVE}" "${SATDUMP_PORTABLE_CMAKE_URL}")"
     checksums="$(fetch_file "${SATDUMP_PORTABLE_CMAKE_CHECKSUMS}" "${SATDUMP_PORTABLE_CMAKE_CHECKSUMS_URL}")"
-    expected="$(awk -v name="${SATDUMP_PORTABLE_CMAKE_ARCHIVE}" '$2 == name { print $1 }' "${checksums}")"
-    [[ "${expected}" =~ ^[0-9a-fA-F]{64}$ ]] || fail "В официальном манифесте CMake не найден ${SATDUMP_PORTABLE_CMAKE_ARCHIVE}"
+    expected="$(awk -v name="${SATDUMP_PORTABLE_CMAKE_ARCHIVE}" '{ file=$2; sub(/^\*/, "", file); if (file == name) print $1 }' "${checksums}")"
+    [[ "${expected}" =~ ^[0-9a-fA-F]{64}$ ]] \
+        || fail "В официальном манифесте CMake не найден ${SATDUMP_PORTABLE_CMAKE_ARCHIVE}"
     verify_sha256 "${archive}" "${expected}"
 
     rm -rf "${prefix}"
@@ -102,141 +100,12 @@ install_cmake() {
 
 build_gcc() {
     local prefix="/opt/gcc9"
-    if [[ -x "${prefix}/bin/g++" ]]; then
-        return
-    fi
-
-    local archive source build
-    archive="$(fetch_file "${SATDUMP_PORTABLE_GCC_ARCHIVE}" "${SATDUMP_PORTABLE_GCC_URL}")"
-    verify_sha256 "${archive}" "${SATDUMP_PORTABLE_GCC_SHA256}"
-
-    source="${WORK_DIR}/toolchain/gcc-${SATDUMP_PORTABLE_GCC_VERSION}"
-    build="${WORK_DIR}/toolchain/gcc-build"
-    rm -rf "${source}" "${build}" "${prefix}"
-    mkdir -p "${WORK_DIR}/toolchain" "${build}"
-    tar -xJf "${archive}" -C "${WORK_DIR}/toolchain"
-
-    log "Сборка GCC ${SATDUMP_PORTABLE_GCC_VERSION}"
-    "${source}/configure" \
-        --prefix="${prefix}" \
-        --enable-languages=c,c++ \
-        --disable-multilib \
-        --disable-bootstrap \
-        --disable-libsanitizer \
-        --disable-werror \
-        --with-system-zlib \
-        --disable-nls \
-        --build=x86_64-linux-gnu \
-        --host=x86_64-linux-gnu \
-        --target=x86_64-linux-gnu \
-        --srcdir="${source}" \
-        --with-gmp=/usr \
-        --with-mpfr=/usr \
-        --with-mpc=/usr \
-        --with-isl=/usr \
-        --enable-shared \
-        --enable-threads=posix \
-        --enable-__cxa_atexit \
-        --enable-clocale=gnu \
-        --enable-libstdcxx-time=yes \
-        --enable-checking=release \
-        --with-gnu-as \
-        --with-gnu-ld \
-        --program-suffix="" \
-        --program-prefix="" \
-        --exec-prefix="${prefix}" \
-        --libdir="${prefix}/lib64" \
-        --libexecdir="${prefix}/libexec" \
-        --includedir="${prefix}/include" \
-        --datarootdir="${prefix}/share" \
-        --mandir="${prefix}/share/man" \
-        --infodir="${prefix}/share/info" \
-        --localstatedir="${prefix}/var" \
-        --sysconfdir="${prefix}/etc" \
-        --disable-werror \
-        --disable-multilib \
-        --disable-bootstrap \
-        --disable-libsanitizer \
-        --disable-libquadmath-support \
-        --disable-libada \
-        --disable-libssp \
-        --disable-libvtv \
-        --disable-libmpx \
-        --disable-libstdcxx-pch \
-        --without-cuda-driver \
-        --without-included-gettext \
-        --without-isl-version-check \
-        --without-zstd \
-        --without-system-libunwind \
-        --without-libiconv-prefix \
-        --without-libintl-prefix \
-        --without-stage1-ldflags \
-        --without-boot-ldflags \
-        --without-pic \
-        --without-dwarf2 \
-        --without-build-config \
-        --without-multilib-list \
-        --without-gnu-ld \
-        --without-gnu-as \
-        --without-long-double-128 \
-        --without-newlib \
-        --without-headers \
-        --without-sysroot \
-        --without-build-sysroot \
-        --without-native-system-header-dir \
-        --without-local-prefix \
-        --without-plugin-ld \
-        --without-demangler-in-ld \
-        --without-libiconv-prefix \
-        --without-libintl-prefix \
-        --without-stage1-ldflags \
-        --without-boot-ldflags \
-        --without-pic \
-        --without-dwarf2 \
-        --without-build-config \
-        --without-multilib-list \
-        --without-long-double-128 \
-        --without-newlib \
-        --without-headers \
-        --without-sysroot \
-        --without-build-sysroot \
-        --without-native-system-header-dir \
-        --without-local-prefix \
-        --without-plugin-ld \
-        --without-demangler-in-ld \
-        --without-cuda-driver \
-        --without-included-gettext \
-        --without-isl-version-check \
-        --without-zstd \
-        --without-system-libunwind \
-        --disable-libquadmath-support \
-        --disable-libada \
-        --disable-libssp \
-        --disable-libvtv \
-        --disable-libmpx \
-        --disable-libstdcxx-pch \
-        --disable-nls \
-        --disable-werror \
-        --disable-multilib \
-        --disable-bootstrap \
-        --disable-libsanitizer \
-        --enable-languages=c,c++ \
-        --prefix="${prefix}"
-
-    make -C "${build}" -j"${JOBS}"
-    make -C "${build}" install
-    [[ -x "${prefix}/bin/g++" ]] || fail "GCC 9.5 не установлен."
-}
-
-# GCC configure необходимо запускать из build-каталога. Отдельная функция выше
-# сохраняет полную конфигурацию, но вызов configure выполняем здесь корректно.
-build_gcc_reference() {
-    local prefix="/opt/gcc9"
     [[ -x "${prefix}/bin/g++" ]] && return
 
     local archive source build
     archive="$(fetch_file "${SATDUMP_PORTABLE_GCC_ARCHIVE}" "${SATDUMP_PORTABLE_GCC_URL}")"
     verify_sha256 "${archive}" "${SATDUMP_PORTABLE_GCC_SHA256}"
+
     source="${WORK_DIR}/toolchain/gcc-${SATDUMP_PORTABLE_GCC_VERSION}"
     build="${WORK_DIR}/toolchain/gcc-build"
     rm -rf "${source}" "${build}" "${prefix}"
@@ -261,19 +130,21 @@ build_gcc_reference() {
 
 build_nng() {
     local prefix="/usr/local"
-    if [[ -f "${prefix}/include/nng/nng.h" ]] && ldconfig -p 2>/dev/null | grep -q 'libnng\.so'; then
+    if [[ -f "${prefix}/include/nng/nng.h" ]] && \
+       compgen -G "${prefix}/lib/libnng.so*" >/dev/null; then
         return
     fi
 
     local source="${WORK_DIR}/toolchain/nng-${SATDUMP_PORTABLE_NNG_VERSION}"
     local build="${WORK_DIR}/toolchain/nng-build"
     rm -rf "${source}" "${build}"
-    mkdir -p "${source}" "${build}"
+    mkdir -p "${build}"
 
     if [[ -n "${OFFLINE_DIR}" && -f "${OFFLINE_DIR}/${SATDUMP_PORTABLE_NNG_BUNDLE}" ]]; then
         git clone "${OFFLINE_DIR}/${SATDUMP_PORTABLE_NNG_BUNDLE}" "${source}"
     else
-        git clone --no-checkout "${SATDUMP_PORTABLE_NNG_REPOSITORY}" "${source}"
+        git init "${source}"
+        git -C "${source}" remote add origin "${SATDUMP_PORTABLE_NNG_REPOSITORY}"
         git -C "${source}" fetch --depth 1 origin "${SATDUMP_PORTABLE_NNG_COMMIT}"
     fi
     git -C "${source}" checkout --detach "${SATDUMP_PORTABLE_NNG_COMMIT}"
@@ -297,7 +168,7 @@ build_nng() {
 }
 
 install_cmake
-build_gcc_reference
+build_gcc
 build_nng
 
 export PATH="/opt/gcc9/bin:/opt/cmake-${SATDUMP_PORTABLE_CMAKE_VERSION}/bin:${PATH}"
@@ -315,9 +186,10 @@ mkdir -p "${BUILD_DIR}" "${STAGE_ROOT}" "${TEST_OUTPUT}"
 
 CMAKE_PROFILE_ARGS=()
 if [[ "${PLUGIN_PROFILE}" == "reference" ]]; then
-    CMAKE_PROFILE_ARGS+=(
-        -DPLUGINS_ALL=ON
-    )
+    # Повторяет рабочую сборку astra: все плагины 1.2.2, которые могут быть
+    # собраны из доступных зависимостей Stretch. GUI и локальные SDR отключаются
+    # автоматически при отсутствии библиотек.
+    CMAKE_PROFILE_ARGS+=( -DPLUGINS_ALL=ON )
 else
     CMAKE_PROFILE_ARGS+=(
         -DPLUGINS_ALL=OFF
@@ -343,7 +215,7 @@ else
     )
 fi
 
-log "Конфигурация SatDump 1.2.2 Presentation: profile=${PLUGIN_PROFILE}"
+log "Конфигурация SatDump 1.2.2 Presentation: plugin-profile=${PLUGIN_PROFILE}"
 cmake -S "${SOURCE_DIR}" -B "${BUILD_DIR}" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX="${SATDUMP_PORTABLE_INSTALL_PREFIX}" \
@@ -376,8 +248,8 @@ if [[ -x "${BUILD_DIR}/satdump-presentation-test" ]]; then
         "${TEST_OUTPUT}"
 fi
 
-# DESTDIR гарантирует полностью чистое staging-дерево и исключает примесь .so
-# от другой версии SatDump.
+# DESTDIR гарантирует чистое staging-дерево и исключает примесь .so от другой
+# версии SatDump — именно это было дефектом старого Astra-бандла.
 rm -rf "${STAGE_ROOT}"
 mkdir -p "${STAGE_ROOT}"
 DESTDIR="${STAGE_ROOT}" cmake --install "${BUILD_DIR}"
