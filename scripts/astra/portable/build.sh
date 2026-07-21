@@ -98,6 +98,8 @@ OUTPUT_DIR="$(absolute_path "${OUTPUT_DIR}")"
 CACHE_DIR="$(absolute_path "${CACHE_DIR}")"
 SOURCE_REAL="$(readlink -f "${SATDUMP_ROOT}")"
 
+[[ "${ROOTFS}" != *[$'\t\r\n ']* ]] || die "Путь rootfs не должен содержать пробельные символы: ${ROOTFS}"
+
 paths_overlap() {
     local left="${1%/}/"
     local right="${2%/}/"
@@ -195,8 +197,25 @@ cleanup_mounts() {
         target="${MOUNTED[index]}"
         "${SUDO[@]}" umount -l -- "${target}" >/dev/null 2>&1 || true
     done
+    MOUNTED=()
 }
-trap cleanup_mounts EXIT INT TERM
+
+restore_ownership() {
+    local path
+    for path in "${WORK_REAL}" "${OUTPUT_REAL}" "${CACHE_REAL}"; do
+        [[ -e "${path}" ]] || continue
+        "${SUDO[@]}" chown -R "${OWNER_UID}:${OWNER_GID}" "${path}" >/dev/null 2>&1 || true
+    done
+}
+
+cleanup_host_state() {
+    cleanup_mounts
+    restore_ownership
+}
+
+trap cleanup_host_state EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # Перед новым запуском устраняем следы прерванной предыдущей сборки, но не
 # удаляем сам rootfs/toolchain.
@@ -241,13 +260,8 @@ fi
 "${SUDO[@]}" chroot "${ROOTFS}" /usr/bin/env -i "${CHROOT_ENV[@]}" \
     /bin/bash /build/source/scripts/astra/portable/inside-chroot.sh
 
-cleanup_mounts
+cleanup_host_state
 trap - EXIT INT TERM
-
-# Артефакты и кэш создавались root внутри chroot; возвращаем их пользователю,
-# который запустил сборку. Системный rootfs и toolchain остаются root-owned.
-"${SUDO[@]}" chown -R "${OWNER_UID}:${OWNER_GID}" \
-    "${WORK_REAL}" "${OUTPUT_REAL}" "${CACHE_REAL}"
 
 log_ok "Portable-бандл собран: ${OUTPUT_REAL}"
 log_info "Проверка на целевой Astra: bash scripts/astra/portable/validate-bundle.sh '${OUTPUT_REAL}/satdump-1.2.2-presentation-${PLUGIN_PROFILE}-glibc224-x86_64'"
