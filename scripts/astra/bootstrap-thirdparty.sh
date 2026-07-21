@@ -149,7 +149,7 @@ build_nng() {
 }
 
 build_volk() {
-    if pkg-config --exists volk 2>/dev/null && "${FORCE}" == "0"; then
+    if pkg-config --exists volk 2>/dev/null && [[ "${FORCE}" == "0" ]]; then
         log_ok "VOLK уже доступен: $(pkg-config --modversion volk)"
         return
     fi
