@@ -111,9 +111,16 @@ jobs:
 
   portable-build:
     name: Exact Stretch/glibc 2.24 portable build
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_full_build }}
+    if: >-
+      ${{
+        (github.event_name == 'workflow_dispatch' && inputs.run_full_build) ||
+        (github.event_name == 'pull_request' && github.head_ref == 'agent/astra-portable-glibc224')
+      }}
     runs-on: ubuntu-22.04
     timeout-minutes: 300
+    env:
+      PORTABLE_PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.plugin_profile || 'reference' }}
+      PORTABLE_ALLOW_UNSIGNED: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_unsigned_archive || 'false' }}
 
     steps:
       - name: Checkout
@@ -142,7 +149,7 @@ jobs:
         run: |
           args=(
             --mode portable-glibc224
-            --profile "${{ inputs.plugin_profile }}"
+            --profile "${PORTABLE_PROFILE}"
             --rootfs /var/lib/satdump-build/stretch-amd64
             --work-dir "${GITHUB_WORKSPACE}/build/portable-glibc224"
             --output-dir "${GITHUB_WORKSPACE}/dist/astra-portable"
@@ -151,7 +158,7 @@ jobs:
             --clean-rootfs
           )
 
-          if [[ "${{ inputs.allow_unsigned_archive }}" == "true" ]]; then
+          if [[ "${PORTABLE_ALLOW_UNSIGNED}" == "true" ]]; then
             args+=(--allow-unsigned-archive)
           fi
 
@@ -160,18 +167,20 @@ jobs:
       - name: Validate generated bundle
         shell: bash
         run: |
-          bundle="dist/astra-portable/satdump-1.2.2-presentation-${{ inputs.plugin_profile }}-glibc224-x86_64"
+          bundle="dist/astra-portable/satdump-1.2.2-presentation-${PORTABLE_PROFILE}-glibc224-x86_64"
           archive="${bundle}.tar.gz"
           test -s "${archive}"
           test -s "${archive}.sha256"
           test -s "${bundle}/PORTABLE-MANIFEST.txt"
           bash scripts/astra/portable/validate-bundle.sh "${bundle}"
           grep -q '^glibc_allowed_max=2.24$' "${bundle}/PORTABLE-MANIFEST.txt"
+          grep -q '^nng_version=1.8.0$' "${bundle}/PORTABLE-MANIFEST.txt"
+          grep -q '^nng_commit=29b73962b939a6fbbf6ea8d5d7680bb06d0eeb99$' "${bundle}/PORTABLE-MANIFEST.txt"
 
       - name: Upload portable bundle
         uses: actions/upload-artifact@v4
         with:
-          name: satdump-1.2.2-${{ inputs.plugin_profile }}-glibc224
+          name: satdump-1.2.2-${{ env.PORTABLE_PROFILE }}-glibc224
           path: |
             dist/astra-portable/*.tar.gz
             dist/astra-portable/*.sha256
