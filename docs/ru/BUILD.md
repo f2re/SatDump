@@ -1,82 +1,112 @@
 # 🔨 Сборка SatDump 1.2.2 Presentation
 
-## 1. Рекомендуемый способ
+В ветке `release/1.2.2` предусмотрены два независимых режима сборки для Astra Linux:
 
-Используйте профильный сценарий:
+```text
+native
+  └─ сборка, установка и запуск на конкретной машине Astra Linux
 
-```bash
-bash scripts/astra/build.sh --profile headless
+portable-glibc224
+  └─ сборка в изолированном Debian Stretch/glibc 2.24
+     и выпуск переносимого CLI-бандла
 ```
 
-Он выполняет:
-
-1. определение Astra Linux 1.6/1.7;
-2. выбор реального C++17-компилятора;
-3. выбор CMake 3.18+;
-4. подключение локальных NNG/VOLK;
-5. формирование переносимого набора плагинов;
-6. сборку `satdump`, при необходимости `satdump-ui`;
-7. smoke-тест плашек и легенд;
-8. создание `astra-env.sh` в каталоге сборки.
-
-## 2. Профили
-
-### 2.1 `headless`
+Режим выбирается единым диспетчером:
 
 ```bash
-bash scripts/astra/build.sh --profile headless
+bash scripts/astra/build.sh --mode <режим> [параметры]
 ```
 
-Включено:
+Без `--mode` используется `native`, поэтому старые команды остаются рабочими.
+
+## 1. Native: рекомендуемый режим для рабочей станции
+
+Native-сборка использует пакеты, компилятор и системные библиотеки фактической Astra Linux. Она обязательна для GUI, локального SDR, OpenGL, USB/udev и проверки конкретного оперативного обновления ОС.
+
+### 1.1 Полный цикл headless
+
+```bash
+cat /etc/astra/build_version
+bash scripts/astra/check-system.sh --strict
+
+bash scripts/astra/install-deps.sh \
+  --profile headless \
+  --bootstrap-missing
+
+bash scripts/astra/build.sh \
+  --mode native \
+  --profile headless \
+  --clean \
+  --install
+
+bash scripts/astra/run.sh -- version
+```
+
+Эта последовательность проверяет не только компиляцию, но и установленное дерево ресурсов, pipelines, библиотек и исполняемый файл.
+
+### 1.2 Desktop с GUI и RTL-SDR
+
+```bash
+bash scripts/astra/install-deps.sh \
+  --profile desktop \
+  --bootstrap-missing
+
+bash scripts/astra/build.sh \
+  --mode native \
+  --profile desktop \
+  --sdr rtl \
+  --clean \
+  --install
+
+bash scripts/astra/run.sh --ui
+```
+
+## 2. Native-профили
+
+### `headless`
+
+Включает:
 
 - CLI;
-- Meteor-M;
+- Meteor-M LRPT/HRPT;
 - NOAA/MetOp;
-- NOAA APT/аналоговые протоколы;
+- NOAA APT и аналоговые протоколы;
 - стандартные C++-композиты;
-- presentation renderer;
-- тесты оформления.
+- Minimal и Presentation;
+- легенды и JSON-паспорта;
+- smoke-тесты оформления.
 
-Отключено:
-
-- GUI;
-- SDR-драйверы;
-- аудио;
-- OpenCL;
-- ZIQ;
-- архитектурные SIMD-плагины.
-
-VOLK остаётся включён и самостоятельно выбирает подходящие оптимизированные
-ядра во время выполнения.
-
-### 2.2 `desktop`
+Отключает GUI, локальные SDR-драйверы, аудио, OpenCL, ZIQ и архитектурные SIMD-плагины.
 
 ```bash
-bash scripts/astra/build.sh --profile desktop --sdr rtl
+bash scripts/astra/build.sh --mode native --profile headless
 ```
 
-Дополнительно:
+### `desktop`
 
-- `satdump-ui`;
-- OpenGL/GLFW;
-- PortAudio;
-- RTL-SDR.
-
-### 2.3 `full`
+Дополнительно включает GUI, OpenGL/GLFW, PortAudio и выбранные SDR-плагины.
 
 ```bash
-bash scripts/astra/build.sh --profile full --sdr common
+bash scripts/astra/build.sh \
+  --mode native \
+  --profile desktop \
+  --sdr rtl
 ```
 
-Включает все протокольные плагины через `PLUGINS_ALL=ON`. Возможны дополнительные
-требования HDF5, OpenCL, библиотек SDR и производителей оборудования.
+### `full`
 
-Для производственной Astra-системы сначала доведите до стабильности `headless`
-или `desktop`, затем расширяйте набор плагинов по одному.
+Включает `PLUGINS_ALL=ON` и расширенный набор устройств. Этот профиль собирается под конкретный стенд и не является минимальным baseline совместимости.
 
-## 3. SDR-профили
+```bash
+bash scripts/astra/build.sh \
+  --mode native \
+  --profile full \
+  --sdr common
+```
 
-| Значение | Плагины |
+## 3. SDR-профили native
+
+| Значение | Назначение |
 |---|---|
 | `none` | без локальных SDR-драйверов |
 | `rtl` | RTL-SDR |
@@ -84,17 +114,9 @@ bash scripts/astra/build.sh --profile full --sdr common
 | `all` | расширенный набор поддерживаемых драйверов |
 | `auto` | `none` для headless, `rtl` для desktop, `common` для full |
 
-Пример:
-
-```bash
-bash scripts/astra/build.sh \
-  --profile desktop \
-  --sdr common
-```
-
 Каждый включённый драйвер требует соответствующего `-dev` пакета.
 
-## 4. Каталоги
+## 4. Каталоги native-сборки
 
 По умолчанию:
 
@@ -108,51 +130,54 @@ build/astra-<версия>-<профиль>/
 build/astra-1.7-headless/
 ```
 
-Пользовательский каталог:
+Пользовательский каталог и prefix:
 
 ```bash
 bash scripts/astra/build.sh \
+  --mode native \
   --profile headless \
-  --build-dir /data/build/satdump
+  --build-dir /data/build/satdump \
+  --prefix /data/opt/satdump-1.2.2 \
+  --install
 ```
 
-## 5. Тип сборки
+## 5. Тип native-сборки
 
 Производственный вариант:
 
 ```bash
 bash scripts/astra/build.sh \
+  --mode native \
   --profile headless \
   --build-type Release
 ```
 
-Для диагностики без полного отказа от оптимизации:
+Диагностический вариант:
 
 ```bash
 bash scripts/astra/build.sh \
+  --mode native \
   --profile headless \
   --build-type RelWithDebInfo
 ```
 
 `Debug` предназначен только для разработки.
 
-## 6. Переносимость
+## 6. Переносимость native-бинарника
 
-В оригинальном SatDump 1.2.2 при локальной Unix-сборке автоматически добавляется
-`-march=native`. Это может сделать бинарник непереносимым на другой процессор.
+В профилях `headless` и `desktop` архитектурные плагины SSE4.1, AVX2 и NEON отключены. Оптимизированные вычислительные ядра выбирает VOLK во время выполнения.
 
-Astra-сценарий конфигурирует проект с переменной окружения `CI=astra-linux`,
-которая отключает эту ветку исходного CMake. Архитектурные SIMD-плагины также
-отключены в базовых профилях.
+Сам SatDump 1.2.2 в используемом дереве не добавляет глобальный `-march=native`; сценарий всё равно проверяет итоговый `CMakeCache.txt` и сохраняет параметры сборки в манифесте.
 
-Не удаляйте это поведение, если бинарник должен работать на нескольких машинах.
+Native-установка предназначена прежде всего для той машины, где она собрана. Если локальные NNG/VOLK установлены в пользовательский prefix, установленный SatDump сохраняет путь к этому prefix в RPATH. Для переноса на другую машину используйте `portable-glibc224`, а не копирование native-каталога.
 
-## 7. OpenCL и ZIQ
+## 7. Native OpenCL и ZIQ
 
 OpenCL:
 
 ```bash
 bash scripts/astra/build.sh \
+  --mode native \
   --profile desktop \
   --with-opencl
 ```
@@ -163,138 +188,137 @@ ZIQ:
 
 ```bash
 bash scripts/astra/build.sh \
+  --mode native \
   --profile headless \
   --with-ziq
 ```
 
 Требуется `libzstd-dev`.
 
-## 8. Дополнительные плагины
+## 8. Дополнительные CMake-параметры
 
-Параметры CMake передаются после `--`:
+Параметры передаются после `--`:
 
 ```bash
 bash scripts/astra/build.sh \
+  --mode native \
   --profile headless \
   -- \
   -DPLUGIN_FY3=ON \
   -DPLUGIN_EOS=ON
 ```
 
-Полный список находится в `plugins/CMakeLists.txt`.
+Полный перечень находится в `plugins/CMakeLists.txt`.
 
-## 9. Установка
+## 9. Native-установка и запуск
 
-Пользовательская:
+Пользовательская установка:
 
 ```bash
 bash scripts/astra/build.sh \
+  --mode native \
   --profile headless \
   --prefix "$HOME/.local/opt/satdump-1.2.2" \
   --install
+
+bash scripts/astra/run.sh \
+  --prefix "$HOME/.local/opt/satdump-1.2.2" \
+  -- version
 ```
 
-Системная:
+Системная установка:
 
 ```bash
 bash scripts/astra/build.sh \
+  --mode native \
   --profile headless \
-  --prefix /opt/satdump \
+  --prefix /opt/satdump-1.2.2 \
   --install
+
+bash scripts/astra/run.sh \
+  --prefix /opt/satdump-1.2.2 \
+  -- version
 ```
 
-Системная установка потребует прав только на этапе `cmake --install`.
+Сценарий повышает права только для `cmake --install`, когда prefix недоступен текущему пользователю.
 
-## 10. Ручная сборка
+## 10. Portable glibc 2.24
 
-Ручной режим полезен для отладки. Сначала:
+Portable-режим повторяет проверенную технологию старой ветки `astra`, но собирает текущее чистое дерево `release/1.2.2`.
 
 ```bash
-source scripts/astra/common.sh
-select_compiler
-export CMAKE_BIN="$(find_cmake 3.18.0)"
-export CMAKE_PREFIX_PATH="$ASTRA_DEPS_PREFIX:${CMAKE_PREFIX_PATH:-}"
-export PKG_CONFIG_PATH="$ASTRA_DEPS_PREFIX/lib/pkgconfig:$ASTRA_DEPS_PREFIX/lib64/pkgconfig:${PKG_CONFIG_PATH:-}"
+bash scripts/astra/build.sh \
+  --mode portable-glibc224 \
+  --profile reference
 ```
 
-Конфигурация минимального профиля:
-
-```bash
-env CI=astra-linux CC="$CC" CXX="$CXX" "$CMAKE_BIN" \
-  -S . \
-  -B build/manual-astra \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_INSTALL_PREFIX="$HOME/.local/opt/satdump-1.2.2" \
-  -DBUILD_GUI=OFF \
-  -DBUILD_TESTING=ON \
-  -DBUILD_OPENCL=OFF \
-  -DBUILD_ZIQ=OFF \
-  -DPLUGINS_ALL=OFF \
-  -DPLUGIN_METEOR=ON \
-  -DPLUGIN_NOAA_METOP=ON \
-  -DPLUGIN_ANALOG=ON \
-  -DPLUGIN_STANDARD_CPP_COMPOS=ON \
-  -DPLUGIN_RTLSDR_SDR_SUPPORT=OFF \
-  -DPLUGIN_PORTAUDIO_SINK=OFF
-```
-
-Сборка:
-
-```bash
-"$CMAKE_BIN" --build build/manual-astra --parallel "$(nproc)"
-```
-
-Установка:
-
-```bash
-"$CMAKE_BIN" --install build/manual-astra
-```
-
-## 11. Smoke-тест presentation renderer
-
-```bash
-LD_LIBRARY_PATH="build/astra-1.7-headless:build/astra-1.7-headless/plugins:${LD_LIBRARY_PATH:-}" \
-  build/astra-1.7-headless/satdump-presentation-test \
-  resources/fonts/Roboto-Medium.ttf \
-  build/astra-1.7-headless/presentation-test-output
-```
-
-Ожидаются три изображения:
+Фиксируются:
 
 ```text
-continuous.png
-categorical.png
-composite.png
+Debian Stretch / glibc 2.24
+GCC 9.5.0
+CMake 3.27.9
+NNG 1.8.0
+SatDump 1.2.2
 ```
 
-## 12. Что сохранять для воспроизводимости
-
-После успешной сборки архивируйте:
+Результат:
 
 ```text
-CMakeCache.txt
-cmake_install.cmake
-astra-env.sh
-полный журнал configure/build
-вывод gcc/g++ --version
-вывод cmake --version
-вывод cat /etc/astra/build_version
-вывод dpkg-query по зависимостям
-SHA коммита Git
-тестовые PNG
+dist/astra-portable/
+├── satdump-1.2.2-presentation-reference-glibc224-x86_64/
+├── satdump-1.2.2-presentation-reference-glibc224-x86_64.tar.gz
+└── satdump-1.2.2-presentation-reference-glibc224-x86_64.tar.gz.sha256
 ```
 
-SHA текущего коммита:
+Профили:
+
+- `reference` — `PLUGINS_ALL=ON`, максимально близко к рабочей сборке `astra`;
+- `meteor` — Meteor/NOAA/APT и presentation renderer.
+
+Подробно: [Portable-сборка для Astra Linux](PORTABLE_ASTRA.md).
+
+## 11. Проверка native-результата
+
+После сборки должны существовать семь эталонных PNG в:
+
+```text
+build/astra-<версия>-<профиль>/presentation-test-output/
+```
+
+После установки обязательно выполните:
 
 ```bash
-git rev-parse HEAD
+bash scripts/astra/run.sh --prefix <prefix> -- version
 ```
 
-Список CMake-параметров:
+Для воспроизводимости:
 
 ```bash
-grep -E '^(BUILD_|PLUGIN_|CMAKE_BUILD_TYPE|CMAKE_INSTALL_PREFIX)' \
-  build/astra-*/CMakeCache.txt
+bash scripts/astra/collect-build-info.sh \
+  --build-dir build/astra-1.7-headless \
+  --output build/astra-1.7-headless/astra-build-manifest.txt
 ```
 
-Следующий документ: [Запуск и обработка](RUN.md).
+## 12. Что подтверждает CI
+
+CI выполняет для режимов `ASTRA_VERSION_OVERRIDE=1.6` и `1.7`:
+
+- dry-run установщика зависимостей;
+- native-конфигурацию и компиляцию;
+- `cmake --install` в чистый пользовательский prefix;
+- запуск установленного бинарника через `run.sh`;
+- smoke-тесты плашек, легенд и ориентации.
+
+Эта матрица работает на Ubuntu runner и не заменяет финальную сборку на реальной Astra Linux соответствующего оперативного обновления. Отдельный portable job действительно собирает бинарники в Debian Stretch/glibc 2.24, а официальный Astra UBI 1.7 может запускаться вручную из workflow.
+
+## 13. Приёмка на реальной Astra
+
+Перед эксплуатационным тегом нужны:
+
+1. native headless build/install/run на фактической Astra Linux 1.6;
+2. native headless build/install/run на фактической Astra Linux 1.7;
+3. при необходимости desktop-сборка с Fly и реальным SDR;
+4. обработка восходящего и нисходящего пролёта;
+5. визуальная проверка Minimal и Presentation;
+6. проверка исходного геопривязанного продукта.

@@ -55,5 +55,15 @@ namespace image
     void load_img(Image &img, uint8_t *buffer, int size);
     void save_img(Image &img, std::string file, bool fast = true);
 
+    // SatDump 1.2.2 image encoders use a mutable Image reference even though
+    // saving does not conceptually transfer ownership. Presentation outputs are
+    // immutable at the call site, so provide a compatibility overload that
+    // preserves the original API and saves an isolated copy.
+    inline void save_img(const Image &img, std::string file, bool fast = true)
+    {
+        Image writable_copy = img;
+        save_img(writable_copy, file, fast);
+    }
+
     bool append_ext(std::string *file, bool prod = false);
 }

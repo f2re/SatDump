@@ -107,7 +107,7 @@ namespace lua_utils
         lua["image_load_jpeg"] = (void (*)(image::Image &, std::string))(&image::load_jpeg);
         lua["image_save_jpeg"] = &image::save_jpeg;
         lua["image_load_img"] = (void (*)(image::Image &, std::string))(&image::load_img);
-        lua["image_save_img"] = &image::save_img;
+        lua["image_save_img"] = (void (*)(image::Image &, std::string, bool))(&image::save_img);
     }
 
     void bindImageTypes(sol::state &lua)

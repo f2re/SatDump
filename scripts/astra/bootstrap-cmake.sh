@@ -40,7 +40,7 @@ if [[ -x "${PREFIX}/bin/cmake" && "${FORCE}" == "0" ]]; then
     EXISTING_VERSION="$(cmake_version "${PREFIX}/bin/cmake")"
     if version_ge "${EXISTING_VERSION}" "${CMAKE_VERSION}"; then
         log_ok "CMake ${EXISTING_VERSION} уже установлен: ${PREFIX}/bin/cmake"
-        printf '\nexport PATH="%s/bin:$PATH"\n' "${PREFIX}"
+        printf '\nexport PATH="%s/bin:%s"\n' "${PREFIX}" "\$PATH"
         exit 0
     fi
 fi
@@ -94,7 +94,7 @@ make -j"${JOBS}"
 make install
 
 [[ -x "${PREFIX}/bin/cmake" ]] || die "Установка CMake завершилась без исполняемого файла."
-log_ok "Установлен $(${PREFIX}/bin/cmake --version | head -n1)"
+log_ok "Установлен $("${PREFIX}/bin/cmake" --version | head -n1)"
 cat <<EOF
 
 Добавьте CMake в текущую сессию:

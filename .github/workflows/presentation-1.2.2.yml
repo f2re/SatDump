@@ -35,20 +35,35 @@ jobs:
 
       - name: Install shellcheck
         run: |
-          sudo apt-get update
-          sudo apt-get install -y shellcheck
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
 
       - name: Bash syntax
         run: |
-          find scripts/astra -maxdepth 1 -type f -name '*.sh' -print0 \
+          find scripts/astra -type f -name '*.sh' -print0 \
             | xargs -0 -n1 bash -n
 
       - name: ShellCheck
+        shell: bash
         run: |
+          set +e
           shellcheck \
             --external-sources \
             --exclude=SC1091,SC2034 \
-            scripts/astra/*.sh
+            scripts/astra/*.sh \
+            > presentation-shellcheck.log 2>&1
+          status=$?
+          cat presentation-shellcheck.log
+          exit "${status}"
+
+      - name: Upload ShellCheck diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: presentation-shellcheck-log
+          path: presentation-shellcheck.log
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Check documentation entry points
         run: |
@@ -56,6 +71,7 @@ jobs:
           test -s docs/ru/README.md
           test -s docs/ru/INSTALL_ASTRA.md
           test -s docs/ru/BUILD.md
+          test -s docs/ru/PORTABLE_ASTRA.md
           test -s docs/ru/RUN.md
           test -s docs/ru/CONFIGURATION.md
           test -s docs/ru/PRESENTATION.md
@@ -77,6 +93,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Exercise native dependency installer
+        env:
+          ASTRA_VERSION_OVERRIDE: ${{ matrix.astra }}
+        shell: bash
+        run: |
+          bash scripts/astra/install-deps.sh \
+            --profile headless \
+            --no-update \
+            --dry-run
+
       - name: Install required dependencies
         shell: bash
         run: |
@@ -96,14 +122,40 @@ jobs:
             sudo apt-get install -y libvolk-dev
           fi
 
-      - name: Build Astra-compatible headless profile
+      - name: Build and install Astra-compatible headless profile
         env:
           ASTRA_VERSION_OVERRIDE: ${{ matrix.astra }}
+        shell: bash
         run: |
+          build_dir="${GITHUB_WORKSPACE}/build/astra-${{ matrix.astra }}-ci"
+          install_prefix="${GITHUB_WORKSPACE}/build/satdump-install-astra-${{ matrix.astra }}-ci"
+          mkdir -p "${build_dir}"
+          set -o pipefail
           bash scripts/astra/build.sh \
+            --mode native \
             --profile headless \
-            --build-dir "${GITHUB_WORKSPACE}/build/astra-${{ matrix.astra }}-ci" \
-            --jobs 2
+            --build-dir "${build_dir}" \
+            --prefix "${install_prefix}" \
+            --jobs 2 \
+            --clean-prefix \
+            --install \
+            2>&1 | tee "${build_dir}/native-build.log"
+
+      - name: Validate installed native tree and launcher
+        env:
+          ASTRA_VERSION_OVERRIDE: ${{ matrix.astra }}
+        shell: bash
+        run: |
+          prefix="${GITHUB_WORKSPACE}/build/satdump-install-astra-${{ matrix.astra }}-ci"
+          test -x "${prefix}/bin/satdump"
+          test -d "${prefix}/share/satdump/resources"
+          test -d "${prefix}/share/satdump/pipelines"
+          test -f "${prefix}/share/satdump/satdump_cfg.json"
+          test -f "${prefix}/.satdump-install-root"
+          bash scripts/astra/run.sh \
+            --prefix "${prefix}" \
+            -- version \
+            | tee "build/astra-${{ matrix.astra }}-ci/native-version.log"
 
       - name: Validate orientation and visual products
         run: |
@@ -140,6 +192,8 @@ jobs:
         with:
           name: astra-${{ matrix.astra }}-build-diagnostics
           path: |
+            build/astra-${{ matrix.astra }}-ci/native-build.log
+            build/astra-${{ matrix.astra }}-ci/native-version.log
             build/astra-${{ matrix.astra }}-ci/CMakeCache.txt
             build/astra-${{ matrix.astra }}-ci/CMakeFiles/CMakeOutput.log
             build/astra-${{ matrix.astra }}-ci/CMakeFiles/CMakeError.log
@@ -171,15 +225,24 @@ jobs:
               apt-get update
               bash scripts/astra/install-deps.sh --profile headless --no-update --bootstrap-missing
               bash scripts/astra/build.sh \
+                --mode native \
                 --profile headless \
                 --build-dir /workspace/build/astra-ubi17-ci \
-                --jobs 2
+                --prefix /workspace/build/satdump-install-astra-ubi17-ci \
+                --jobs 2 \
+                --clean-prefix \
+                --install
+              bash scripts/astra/run.sh \
+                --prefix /workspace/build/satdump-install-astra-ubi17-ci \
+                -- version
             '
 
       - name: Validate UBI output
         run: |
           test -s build/astra-ubi17-ci/presentation-test-output/continuous_editorial_landscape.png
           test -s build/astra-ubi17-ci/presentation-test-output/continuous_minimal_portrait.png
+          test -x build/satdump-install-astra-ubi17-ci/bin/satdump
+          test -f build/satdump-install-astra-ubi17-ci/.satdump-install-root
 
       - name: Upload UBI reference products
         if: always()

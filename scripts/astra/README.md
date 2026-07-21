@@ -1,181 +1,228 @@
 # 🛡️ Сборка SatDump 1.2.2 в Astra Linux
 
-Этот каталог содержит сценарии для **Astra Linux Special Edition 1.6 и 1.7**.
-Они не меняют системные репозитории автоматически и не заменяют системный
-компилятор или CMake.
+Каталог содержит два независимых способа сборки для Astra Linux Special Edition
+1.6 и 1.7.
 
-> После клонирования можно один раз выполнить:
->
-> ```bash
-> chmod +x scripts/astra/*.sh
-> ```
->
-> Либо всегда запускать сценарии через `bash scripts/astra/<имя>.sh`.
+```text
+native
+  └─ собирается непосредственно на целевой Astra
 
-## 🚦 Быстрый запуск
+portable-glibc224
+  └─ собирается в изолированном Debian Stretch chroot
+     и выпускается как самодостаточный CLI-бандл
+```
 
-### Сервер обработки без GUI
+Сценарии не подключают Debian/Ubuntu-репозитории к хостовой Astra Linux и не
+заменяют её системный компилятор или CMake.
+
+Запускать можно через `bash`; executable bit не обязателен:
+
+```bash
+bash scripts/astra/build.sh --help
+```
+
+## 🚦 Выбор режима
+
+### Native — установка на эту же машину
 
 ```bash
 bash scripts/astra/check-system.sh
 bash scripts/astra/install-deps.sh --profile headless --bootstrap-missing
-bash scripts/astra/build.sh --profile headless --install
+bash scripts/astra/build.sh --mode native --profile headless --install
 bash scripts/astra/run.sh -- version
 ```
 
-### Рабочая станция с GUI и RTL-SDR
+`native` используется по умолчанию, поэтому сохранена совместимость:
 
 ```bash
-bash scripts/astra/install-deps.sh --profile desktop --bootstrap-missing
-bash scripts/astra/build.sh --profile desktop --sdr rtl --install
-bash scripts/astra/run.sh --ui
+bash scripts/astra/build.sh --profile headless --install
 ```
+
+### Portable — один бандл для нескольких машин
+
+```bash
+bash scripts/astra/build.sh \
+  --mode portable-glibc224 \
+  --profile reference
+```
+
+Результат:
+
+```text
+dist/astra-portable/
+├── satdump-1.2.2-presentation-reference-glibc224-x86_64/
+├── satdump-1.2.2-presentation-reference-glibc224-x86_64.tar.gz
+└── satdump-1.2.2-presentation-reference-glibc224-x86_64.tar.gz.sha256
+```
+
+Подробно: [`docs/ru/PORTABLE_ASTRA.md`](../../docs/ru/PORTABLE_ASTRA.md).
 
 ## 📁 Состав каталога
 
 | Файл | Назначение |
 |---|---|
 | `check-system.sh` | Диагностика версии ОС, C++17, CMake и обязательных библиотек |
-| `install-deps.sh` | Установка доступных пакетов из подключённых Astra-репозиториев |
-| `bootstrap-cmake.sh` | Локальная сборка CMake 3.18.6 с проверкой SHA-256 |
-| `bootstrap-thirdparty.sh` | Локальная сборка NNG 1.5.2 и VOLK 2.5.2 |
-| `build.sh` | Конфигурация и сборка по профилю |
+| `install-deps.sh` | Установка пакетов из уже подключённых Astra-репозиториев |
+| `bootstrap-cmake.sh` | Локальная сборка CMake 3.18.6 для native-профиля |
+| `bootstrap-thirdparty.sh` | Локальная сборка NNG/VOLK для native-профиля |
+| `build.sh` | Безопасный диспетчер `native` / `portable-glibc224` |
+| `build-native.sh` | Нативные профили headless/desktop/full |
 | `run.sh` | Проверка установленного дерева и запуск CLI/GUI |
-| `repos/*.example` | Примеры официальных репозиториев без автоматического применения |
+| `collect-build-info.sh` | Манифест воспроизводимости native-сборки |
+| `portable/lock.env` | Зафиксированные версии portable toolchain |
+| `portable/prepare-rootfs.sh` | Подготовка Debian Stretch chroot |
+| `portable/build.sh` | Host orchestrator portable-сборки |
+| `portable/inside-chroot.sh` | Сборка GCC, NNG и SatDump внутри chroot |
+| `portable/make-bundle.sh` | Чистый staging, сбор библиотек и tar.gz |
+| `portable/validate-bundle.sh` | Проверка бандла на целевой Astra |
+| `repos/*.example` | Примеры Astra-репозиториев без автоматического применения |
 
-## 🧱 Профили
+## 🧱 Native-профили
 
 ### `headless`
 
-Минимальный переносимый профиль:
-
-- CLI без графического интерфейса;
+- CLI;
 - Meteor-M LRPT/HRPT;
 - NOAA/MetOp;
-- NOAA APT и аналоговые протоколы;
+- NOAA APT;
 - стандартные C++-композиты;
-- плашки, легенды и JSON-паспорта;
-- без SDR-драйверов, OpenCL и аудиовыхода.
-
-Он предпочтителен для серверов, пакетной обработки и закрытых контуров.
+- Minimal/Presentation плашки, легенды и JSON-паспорта;
+- без GUI, локальных SDR, OpenCL и аудиовыхода.
 
 ### `desktop`
 
-Добавляет:
+Дополнительно включает:
 
-- графический интерфейс;
+- GUI;
 - OpenGL/GLFW;
 - PortAudio;
 - RTL-SDR по умолчанию.
 
-Другой SDR-профиль можно выбрать через `--sdr`.
+```bash
+bash scripts/astra/install-deps.sh --profile desktop --bootstrap-missing
+bash scripts/astra/build.sh --mode native --profile desktop --sdr rtl --install
+bash scripts/astra/run.sh --ui
+```
 
 ### `full`
 
-Включает все протокольные плагины SatDump и расширенный набор устройств. Требует
-существенно больше библиотек. Этот профиль не считается минимальным профилем
-совместимости Astra и должен собираться под конкретную рабочую станцию.
+Включает расширенный набор протокольных и аппаратных плагинов. Этот профиль
+собирается под конкретную рабочую станцию и не является переносимым baseline.
 
-## 🔧 Astra Linux 1.6
+## 📦 Portable-профили плагинов
 
-Основные особенности:
+### `reference`
 
-1. Нужен подключённый `repository-dev`, соответствующий установленному обновлению.
-2. Требуется компилятор с рабочим C++17 — обычно GCC/G++ 8 или новее.
-3. Системный CMake может быть слишком старым. Используйте:
+Повторяет рабочий принцип ветки `astra`:
+
+```cmake
+PLUGINS_ALL=ON
+```
+
+Собирается всё из SatDump 1.2.2, для чего есть зависимости в Stretch. Эталонный
+профиль CLI-only, без локальных SDR и OpenCL.
+
+### `meteor`
+
+Минимальный контролируемый набор:
+
+- Meteor-M;
+- NOAA/MetOp;
+- NOAA APT;
+- standard C++ composites;
+- presentation renderer.
 
 ```bash
-bash scripts/astra/bootstrap-cmake.sh
+bash scripts/astra/build.sh \
+  --mode portable-glibc224 \
+  --profile meteor
 ```
 
-CMake устанавливается в:
+## 🔒 Почему portable-сборка безопаснее прямого копирования
+
+Она фиксирует:
 
 ```text
-~/.local/opt/satdump-astra/cmake-3.18.6
+Debian Stretch / glibc 2.24
+GCC 9.5.0
+CMake 3.27.9
+NNG 1.8.0
+SatDump 1.2.2
 ```
 
-Системный `/usr/bin/cmake` не изменяется.
+И выполняет обязательные проверки:
 
-## 🔧 Astra Linux 1.7
+- исходное дерево не содержит маркеров SatDump 2.x;
+- GCC и CMake проверяются SHA-256;
+- NNG checkout соответствует зафиксированному commit;
+- `cmake --install` выполняется в новый пустой `DESTDIR`;
+- известные чужие плагины 2.x запрещены;
+- все зависимости разрешаются через `ldd`;
+- требуемая `GLIBC_*` не выше baseline;
+- SatDump возвращает версию 1.2.2;
+- плагины не выдают `undefined symbol`;
+- renderer проходит smoke-тесты.
 
-GCC 8 с C++17 обычно доступен штатно. Сценарий всё равно проверяет компилятор
-не по номеру версии, а реальной компиляцией тестовой программы.
+## 🧼 Почему обязателен чистый staging
 
-Если CMake старше/младше требуемого порога, используется тот же локальный
-bootstrap, что и для 1.6.
+Старая рабочая сборка Astra показала типичную проблему: если `/opt/satdump` не
+очистить после другой версии, старые `.so` могут попасть в новый бандл.
 
-## 📦 Если NNG или VOLK отсутствуют
-
-```bash
-bash scripts/astra/bootstrap-thirdparty.sh --component all
-```
-
-Локальный префикс:
+Portable-профиль не читает постоянный install prefix. Он устанавливает только в:
 
 ```text
-~/.local/opt/satdump-astra/deps
+build/portable-glibc224/stage-<profile>/opt/satdump
 ```
 
-Архивы проверяются контрольными суммами. Для офлайн-сборки:
-
-```bash
-bash scripts/astra/bootstrap-thirdparty.sh \
-  --archive-dir /mnt/approved/satdump-sources
-```
-
-В каталоге должны находиться:
-
-```text
-nng-1.5.2.tar.gz
-volk-2.5.2.tar.gz
-```
+Этот каталог удаляется и создаётся заново перед упаковкой.
 
 ## 🌐 Репозитории
 
-Сценарии **не записывают** `/etc/apt/sources.list`. Примеры:
+Native-сценарии не записывают `/etc/apt/sources.list`. Примеры:
 
 - `repos/astra-1.6.list.example`;
 - `repos/astra-1.7.list.example`.
 
-Перед применением:
+Portable-сценарий создаёт отдельный Debian chroot. Debian-пакеты не устанавливаются
+в Astra Linux. Для закрытого контура используйте внутреннее зеркало через
+`--mirror`.
 
-1. проверьте `/etc/astra/build_version`;
-2. выберите frozen-репозиторий именно своего обновления;
-3. согласуйте изменения с администратором;
-4. не подключайте Debian/Ubuntu-репозитории поверх Astra Linux;
-5. в изолированной сети используйте внутреннее зеркало.
+## 📴 Offline portable-сборка
 
-## 🧪 Проверка результата
-
-При обычной сборке создаётся `satdump-presentation-test`. Он формирует три PNG:
+Подготовьте:
 
 ```text
-build/astra-*/presentation-test-output/continuous.png
-build/astra-*/presentation-test-output/categorical.png
-build/astra-*/presentation-test-output/composite.png
+approved-sources/
+├── gcc-9.5.0.tar.xz
+├── cmake-3.27.9-linux-x86_64.tar.gz
+├── cmake-3.27.9-SHA-256.txt
+└── nng-v1.8.0.bundle
 ```
 
-Проверяются:
-
-- непрерывная температурная шкала;
-- категориальная легенда;
-- описание RGB-композита;
-- сохранение исходной ширины спутникового растра.
-
-## 🧭 Пользовательские параметры CMake
-
-Дополнительные параметры передаются после `--`:
-
 ```bash
-bash scripts/astra/build.sh --profile headless -- \
-  -DPLUGIN_FY3=ON \
-  -DPLUGIN_EOS=ON
+bash scripts/astra/build.sh \
+  --mode portable-glibc224 \
+  --profile reference \
+  --offline-dir /mnt/approved/approved-sources \
+  --mirror http://mirror.internal/debian-archive
 ```
 
-## 🛰️ Пример обработки файла
+## 🧪 Проверка бандла
+
+На целевой Astra:
 
 ```bash
-bash scripts/astra/run.sh -- \
+bash scripts/astra/portable/validate-bundle.sh \
+  dist/astra-portable/satdump-1.2.2-presentation-reference-glibc224-x86_64
+```
+
+Проверяются системная glibc, ELF-зависимости, запуск версии, resources, pipelines
+и ABI плагинов.
+
+## 🛰️ Реальный прогон
+
+```bash
+./satdump-1.2.2-presentation-reference-glibc224-x86_64/satdump \
   meteor_m2x_lrpt \
   baseband \
   /data/input/meteor.cs16 \
@@ -184,16 +231,31 @@ bash scripts/astra/run.sh -- \
   --baseband_format cs16
 ```
 
-Подставьте фактический pipeline, формат и частоту дискретизации своей записи.
+После обработки проверьте:
 
-## 🔒 Замечания для защищённой среды
+- научный исходный продукт;
+- Minimal PNG;
+- Presentation PNG;
+- JSON-паспорта;
+- направление «север сверху»;
+- соответствие легенды LUT.
 
-- Не запускайте скрипт установки целиком от `root`: он сам использует `sudo`
-  только для APT. Иначе локальный CMake попадёт в `/root/.local`.
-- Проверяйте исходные архивы и переносите их через утверждённый канал.
-- Не снижайте уровень целостности системы ради сборки.
-- Сохраняйте версию ОС, список пакетов, SHA коммита и параметры CMake вместе с
-  эксплуатационным комплектом.
-- Проверяйте собранный бинарник на точной версии Astra Linux, где он будет работать.
+## ⚠️ Ограничения
 
-Полная документация: [`docs/ru/INSTALL_ASTRA.md`](../../docs/ru/INSTALL_ASTRA.md).
+Portable baseline не заменяет native desktop-проверку. В нём не подтверждаются:
+
+- Fly/GUI;
+- OpenGL;
+- локальный RTL-SDR/Airspy/HackRF;
+- USB/udev;
+- OpenCL;
+- политики конкретного защищённого контура.
+
+Для этого используйте `--mode native --profile desktop` на фактической рабочей
+станции.
+
+Полная документация:
+
+- [`docs/ru/PORTABLE_ASTRA.md`](../../docs/ru/PORTABLE_ASTRA.md);
+- [`docs/ru/INSTALL_ASTRA.md`](../../docs/ru/INSTALL_ASTRA.md);
+- [`docs/ru/ASTRA_VALIDATION.md`](../../docs/ru/ASTRA_VALIDATION.md).
