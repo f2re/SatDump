@@ -40,7 +40,7 @@ if [[ -x "${PREFIX}/bin/cmake" && "${FORCE}" == "0" ]]; then
     EXISTING_VERSION="$(cmake_version "${PREFIX}/bin/cmake")"
     if version_ge "${EXISTING_VERSION}" "${CMAKE_VERSION}"; then
         log_ok "CMake ${EXISTING_VERSION} уже установлен: ${PREFIX}/bin/cmake"
-        printf '\nexport PATH="%s/bin:$PATH"\n' "${PREFIX}"
+        printf '\nexport PATH="%s/bin:%s"\n' "${PREFIX}" '$PATH'
         exit 0
     fi
 fi
