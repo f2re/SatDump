@@ -5,6 +5,7 @@
 #include "common/image/text.h"
 #include "products/image_products.h"
 #include "products/processor/presentation_outputs.h"
+#include "logger.h"
 
 #include <cmath>
 #include <filesystem>
@@ -221,6 +222,8 @@ namespace
 
 int main(int argc, char **argv)
 {
+    initLogger();
+
     if (argc < 2)
     {
         std::cerr << "Usage: satdump-presentation-test <font.ttf> [output-directory]\n";
