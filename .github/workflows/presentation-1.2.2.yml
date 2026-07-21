@@ -9,6 +9,12 @@ on:
     branches:
       - release/1.2.2
   workflow_dispatch:
+    inputs:
+      run_astra_ubi17:
+        description: "Дополнительно проверить официальный Astra Linux UBI 1.7"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -53,13 +59,19 @@ jobs:
           test -s docs/ru/RUN.md
           test -s docs/ru/CONFIGURATION.md
           test -s docs/ru/PRESENTATION.md
+          test -s docs/ru/PRESENTATION_LAYOUTS.md
+          test -s docs/ru/ASTRA_VALIDATION.md
           test -s docs/ru/DEPLOYMENT.md
           test -s docs/ru/TROUBLESHOOTING.md
 
-  linux-core:
-    name: Headless build and presentation smoke tests
+  astra-compatibility:
+    name: Astra ${{ matrix.astra }} compatible headless build
     runs-on: ubuntu-22.04
-    timeout-minutes: 45
+    timeout-minutes: 55
+    strategy:
+      fail-fast: false
+      matrix:
+        astra: ["1.6", "1.7"]
 
     steps:
       - name: Checkout
@@ -86,36 +98,94 @@ jobs:
 
       - name: Build Astra-compatible headless profile
         env:
-          ASTRA_VERSION_OVERRIDE: "1.7"
+          ASTRA_VERSION_OVERRIDE: ${{ matrix.astra }}
         run: |
           bash scripts/astra/build.sh \
             --profile headless \
-            --build-dir "${GITHUB_WORKSPACE}/build/astra-ci" \
+            --build-dir "${GITHUB_WORKSPACE}/build/astra-${{ matrix.astra }}-ci" \
             --jobs 2
 
-      - name: Validate visual products
+      - name: Validate orientation and visual products
         run: |
-          test -s build/astra-ci/presentation-test-output/continuous.png
-          test -s build/astra-ci/presentation-test-output/categorical.png
-          test -s build/astra-ci/presentation-test-output/composite.png
+          output="build/astra-${{ matrix.astra }}-ci/presentation-test-output"
+          test -s "${output}/continuous_editorial_landscape.png"
+          test -s "${output}/continuous_minimal_landscape.png"
+          test -s "${output}/categorical_editorial_landscape.png"
+          test -s "${output}/composite_editorial_landscape.png"
+          test -s "${output}/composite_minimal_landscape.png"
+          test -s "${output}/continuous_editorial_portrait.png"
+          test -s "${output}/continuous_minimal_portrait.png"
 
-      - name: Upload visual test products
+      - name: Collect reproducibility manifest
+        if: always()
+        env:
+          ASTRA_VERSION_OVERRIDE: ${{ matrix.astra }}
+        run: |
+          bash scripts/astra/collect-build-info.sh \
+            --build-dir "${GITHUB_WORKSPACE}/build/astra-${{ matrix.astra }}-ci" \
+            --output "${GITHUB_WORKSPACE}/build/astra-${{ matrix.astra }}-ci/astra-build-manifest.txt" || true
+
+      - name: Upload visual reference products
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: presentation-reference-images
-          path: build/astra-ci/presentation-test-output/*.png
+          name: presentation-reference-astra-${{ matrix.astra }}
+          path: build/astra-${{ matrix.astra }}-ci/presentation-test-output/*.png
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Upload build diagnostics on failure
+      - name: Upload build diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: astra-build-diagnostics
+          name: astra-${{ matrix.astra }}-build-diagnostics
           path: |
-            build/astra-ci/CMakeCache.txt
-            build/astra-ci/CMakeFiles/CMakeOutput.log
-            build/astra-ci/CMakeFiles/CMakeError.log
+            build/astra-${{ matrix.astra }}-ci/CMakeCache.txt
+            build/astra-${{ matrix.astra }}-ci/CMakeFiles/CMakeOutput.log
+            build/astra-${{ matrix.astra }}-ci/CMakeFiles/CMakeError.log
+            build/astra-${{ matrix.astra }}-ci/astra-build-manifest.txt
           if-no-files-found: ignore
+          retention-days: 14
+
+  astra-ubi17:
+    name: Official Astra Linux UBI 1.7 smoke build
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_astra_ubi17 }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 75
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build inside official Astra Linux UBI 1.7
+        shell: bash
+        run: |
+          docker pull registry.astralinux.ru/library/astra/ubi17:1.7.5
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -w /workspace \
+            -e ASTRA_VERSION_OVERRIDE=1.7 \
+            registry.astralinux.ru/library/astra/ubi17:1.7.5 \
+            /bin/bash -lc '
+              set -Eeuo pipefail
+              apt-get update
+              bash scripts/astra/install-deps.sh --profile headless --no-update --bootstrap-missing
+              bash scripts/astra/build.sh \
+                --profile headless \
+                --build-dir /workspace/build/astra-ubi17-ci \
+                --jobs 2
+            '
+
+      - name: Validate UBI output
+        run: |
+          test -s build/astra-ubi17-ci/presentation-test-output/continuous_editorial_landscape.png
+          test -s build/astra-ubi17-ci/presentation-test-output/continuous_minimal_portrait.png
+
+      - name: Upload UBI reference products
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: presentation-reference-astra-ubi17
+          path: build/astra-ubi17-ci/presentation-test-output/*.png
+          if-no-files-found: warn
           retention-days: 14
