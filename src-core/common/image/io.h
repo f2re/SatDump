@@ -55,5 +55,14 @@ namespace image
     void load_img(Image &img, uint8_t *buffer, int size);
     void save_img(Image &img, std::string file, bool fast = true);
 
+    // Encoders in SatDump 1.2.2 predate const-correct image output. Presentation
+    // products are immutable by design, so provide a safe overload that preserves
+    // the existing encoder API and performs the required working copy explicitly.
+    inline void save_img(const Image &img, std::string file, bool fast = true)
+    {
+        Image writable = img;
+        save_img(writable, file, fast);
+    }
+
     bool append_ext(std::string *file, bool prod = false);
-}
+} // namespace image
