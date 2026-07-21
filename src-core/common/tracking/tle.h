@@ -33,6 +33,25 @@ namespace satdump
         v.line2 = j["line2"].get<std::string>();
     }
 
+    // SatDump 1.2.2 uses ordered_json for projection metadata and regular json
+    // for product metadata. Keep TLE serialization available for both aliases so
+    // callers do not need unsafe casts or hand-written JSON objects.
+    inline void to_json(nlohmann::ordered_json &j, const TLE &v)
+    {
+        j["norad"] = v.norad;
+        j["name"] = v.name;
+        j["line1"] = v.line1;
+        j["line2"] = v.line2;
+    }
+
+    inline void from_json(const nlohmann::ordered_json &j, TLE &v)
+    {
+        v.norad = j["norad"].get<int>();
+        v.name = j["name"].get<std::string>();
+        v.line1 = j["line1"].get<std::string>();
+        v.line2 = j["line2"].get<std::string>();
+    }
+
     struct TLEsUpdatedEvent
     {
     };
@@ -53,4 +72,4 @@ namespace satdump
     void loadTLEFileIntoRegistry(std::string path);                           // Loads the TLE file into the general registry
 
     void fetchTLENow(int norad); // Utils, in case you want to fetch & load a TLE into the regristry right now. Should NOT be used in most cases
-}
+} // namespace satdump
