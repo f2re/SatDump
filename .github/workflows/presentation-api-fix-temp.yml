@@ -1,5 +1,6 @@
 name: Temporary presentation API fixes
 
+# Одноразовый workflow: после успешной точечной замены удаляет собственный файл.
 on:
   push:
     branches:
