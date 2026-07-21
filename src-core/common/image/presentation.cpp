@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <sstream>
+#include <vector>
 
 namespace image
 {
@@ -19,6 +20,24 @@ namespace image
                 int padding = 24;
                 int gap = 10;
                 int accent = 3;
+                int legend_bar = 28;
+                bool portrait = false;
+                bool wide = false;
+            };
+
+            struct HeaderPlan
+            {
+                std::vector<std::string> identity_lines;
+                std::vector<std::string> product_lines;
+                std::vector<std::string> pass_lines;
+                std::vector<std::string> detail_lines;
+                std::vector<std::string> quality_detail_lines;
+                std::string quality;
+                bool badge = false;
+                int badge_width = 0;
+                int badge_height = 0;
+                int left_width = 1;
+                int height = 0;
             };
 
             double clamp_value(double value, double minimum, double maximum)
@@ -34,8 +53,8 @@ namespace image
             Color normalized_color(const Color &color, const Color &fallback)
             {
                 Color output = fallback;
-                for (size_t i = 0; i < std::min<size_t>(3, color.size()); i++)
-                    output[i] = clamp_value(color[i], 0.0, 1.0);
+                for (size_t index = 0; index < std::min<size_t>(3, color.size()); index++)
+                    output[index] = clamp_value(color[index], 0.0, 1.0);
                 return output;
             }
 
@@ -51,13 +70,19 @@ namespace image
                 return result;
             }
 
+            int line_height(TextDrawer &drawer, int size)
+            {
+                return measured(drawer, size, "Ag").line_height;
+            }
+
             void fill_rect(Image &image, int x0, int y0, int x1, int y1, const Color &color)
             {
-                x0 = std::max(0, std::min((int)image.width(), x0));
-                x1 = std::max(0, std::min((int)image.width(), x1));
-                y0 = std::max(0, std::min((int)image.height(), y0));
-                y1 = std::max(0, std::min((int)image.height(), y1));
-
+                const int width = (int)image.width();
+                const int height = (int)image.height();
+                x0 = std::max(0, std::min(width, x0));
+                x1 = std::max(0, std::min(width, x1));
+                y0 = std::max(0, std::min(height, y0));
+                y1 = std::max(0, std::min(height, y1));
                 if (x1 <= x0 || y1 <= y0)
                     return;
 
@@ -83,7 +108,7 @@ namespace image
                     for (size_t y = 0; y < source.height(); y++)
                         for (size_t x = 0; x < source.width(); x++)
                         {
-                            int value = source.get(0, x, y);
+                            const int value = source.get(0, x, y);
                             rgb.set(0, x, y, value);
                             rgb.set(1, x, y, value);
                             rgb.set(2, x, y, value);
@@ -92,10 +117,14 @@ namespace image
                 return rgb;
             }
 
-            std::vector<std::string> wrap_text(TextDrawer &drawer, const std::string &text, int font_size, int max_width)
+            std::vector<std::string> wrap_text(TextDrawer &drawer,
+                                               const std::string &text,
+                                               int font_size,
+                                               int max_width,
+                                               int max_lines = -1)
             {
                 std::vector<std::string> output;
-                if (text.empty())
+                if (text.empty() || max_width <= 0)
                     return output;
 
                 std::stringstream paragraphs(text);
@@ -108,11 +137,13 @@ namespace image
 
                     while (words >> word)
                     {
-                        std::string candidate = line.empty() ? word : line + " " + word;
+                        const std::string candidate = line.empty() ? word : line + " " + word;
                         if (!line.empty() && measured(drawer, font_size, candidate).width > max_width)
                         {
                             output.push_back(line);
                             line = word;
+                            if (max_lines > 0 && (int)output.size() >= max_lines)
+                                break;
                         }
                         else
                         {
@@ -120,31 +151,37 @@ namespace image
                         }
                     }
 
+                    if (max_lines > 0 && (int)output.size() >= max_lines)
+                        break;
                     if (!line.empty())
                         output.push_back(line);
                     else if (paragraph.empty())
                         output.push_back("");
+                    if (max_lines > 0 && (int)output.size() >= max_lines)
+                        break;
                 }
 
+                if (max_lines > 0 && (int)output.size() > max_lines)
+                    output.resize(max_lines);
                 return output;
             }
 
-            std::string join_fields(const std::vector<MetadataField> &fields)
+            int draw_lines(Image &output,
+                           TextDrawer &drawer,
+                           const std::vector<std::string> &lines,
+                           int x,
+                           int y,
+                           int font_size,
+                           const Color &color)
             {
-                std::string output;
-                for (const MetadataField &field : fields)
+                const int advance = line_height(drawer, font_size);
+                for (const std::string &line : lines)
                 {
-                    if (field.value.empty())
-                        continue;
-
-                    if (!output.empty())
-                        output += "   |   ";
-
-                    if (!field.label.empty())
-                        output += field.label + ": ";
-                    output += field.value;
+                    if (!line.empty())
+                        drawer.draw_text(output, x, y, color, font_size, line);
+                    y += advance;
                 }
-                return output;
+                return y;
             }
 
             std::string join_nonempty(const std::vector<std::string> &values, const std::string &separator)
@@ -161,17 +198,26 @@ namespace image
                 return output;
             }
 
+            std::string join_fields(const std::vector<MetadataField> &fields)
+            {
+                std::vector<std::string> values;
+                for (const MetadataField &field : fields)
+                {
+                    if (field.value.empty())
+                        continue;
+                    values.push_back(field.label.empty() ? field.value : field.label + ": " + field.value);
+                }
+                return join_nonempty(values, "   |   ");
+            }
+
             std::string component_description(const CompositeComponent &component)
             {
                 if (!component.description.empty())
                     return component.description;
 
-                std::vector<std::string> parts;
-                parts.push_back(component.channel);
-                parts.push_back(component.spectral_range);
-                parts.push_back(component.quantity);
-                std::string output = join_nonempty(parts, "  ·  ");
-
+                std::string output = join_nonempty(
+                    {component.channel, component.spectral_range, component.quantity},
+                    "  ·  ");
                 if (!component.formula.empty())
                 {
                     if (!output.empty())
@@ -198,8 +244,8 @@ namespace image
                     return theme.accent;
 
                 std::vector<ColorStop> stops = source_stops;
-                std::sort(stops.begin(), stops.end(), [](const ColorStop &a, const ColorStop &b)
-                          { return a.position < b.position; });
+                std::sort(stops.begin(), stops.end(), [](const ColorStop &left, const ColorStop &right)
+                          { return left.position < right.position; });
 
                 position = clamp_value(position, 0.0, 1.0);
                 if (position <= stops.front().position)
@@ -207,27 +253,31 @@ namespace image
                 if (position >= stops.back().position)
                     return normalized_color(stops.back().color, theme.accent);
 
-                for (size_t i = 1; i < stops.size(); i++)
+                for (size_t index = 1; index < stops.size(); index++)
                 {
-                    if (position <= stops[i].position)
+                    if (position <= stops[index].position)
                     {
-                        const Color left = normalized_color(stops[i - 1].color, theme.accent);
-                        const Color right = normalized_color(stops[i].color, theme.accent);
-                        const double span = std::max(1e-12, stops[i].position - stops[i - 1].position);
-                        const double amount = clamp_value((position - stops[i - 1].position) / span, 0.0, 1.0);
+                        const Color left = normalized_color(stops[index - 1].color, theme.accent);
+                        const Color right = normalized_color(stops[index].color, theme.accent);
+                        const double span = std::max(1e-12, stops[index].position - stops[index - 1].position);
+                        const double amount = clamp_value((position - stops[index - 1].position) / span, 0.0, 1.0);
                         return {
                             left[0] + (right[0] - left[0]) * amount,
                             left[1] + (right[1] - left[1]) * amount,
                             left[2] + (right[2] - left[2]) * amount};
                     }
                 }
-
                 return normalized_color(stops.back().color, theme.accent);
             }
 
-            TextStyle build_text_style(size_t width, const Theme &theme)
+            TextStyle build_text_style(size_t width, size_t height, const Theme &theme)
             {
+                const double aspect = height == 0 ? 1.0 : (double)width / (double)height;
                 double scale = (double)width / (double)std::max(1, theme.reference_width);
+                if (aspect < 0.82)
+                    scale *= 0.90;
+                else if (aspect > 1.75)
+                    scale *= 0.94;
                 scale = clamp_value(scale, theme.minimum_scale, theme.maximum_scale);
 
                 TextStyle style;
@@ -238,307 +288,644 @@ namespace image
                 style.padding = scaled(28, scale);
                 style.gap = scaled(10, scale);
                 style.accent = scaled(3, scale);
+                style.legend_bar = scaled(28, scale);
+                style.portrait = aspect < 0.82;
+                style.wide = aspect > 1.20 && width >= 980;
                 return style;
             }
 
-            int notes_height(TextDrawer &drawer, const std::vector<std::string> &notes, int font_size, int width, int gap)
+            HeaderPlan build_header_plan(TextDrawer &drawer,
+                                         int width,
+                                         const PresentationSpec &spec,
+                                         const TextStyle &style)
+            {
+                HeaderPlan plan;
+                const int available = std::max(1, width - style.padding * 2);
+                plan.quality = spec.pass.quality;
+
+                plan.badge = !spec.pass.quality.empty() && style.wide;
+                if (plan.badge)
+                {
+                    const int minimum_badge = scaled(190, (double)style.body / 17.0);
+                    const int desired_badge = std::max(
+                        measured(drawer, style.body, spec.pass.quality).width + style.gap * 2,
+                        measured(drawer, style.small, "КАЧЕСТВО").width + style.gap * 2);
+                    plan.badge_width = std::min(std::max(minimum_badge, desired_badge), std::max(minimum_badge, available / 3));
+                    plan.left_width = std::max(1, available - plan.badge_width - style.gap * 2);
+                    plan.quality_detail_lines = wrap_text(
+                        drawer,
+                        spec.pass.quality_detail,
+                        style.small,
+                        std::max(1, plan.badge_width - style.gap * 2),
+                        3);
+                    plan.badge_height =
+                        style.gap +
+                        line_height(drawer, style.small) +
+                        style.gap / 2 +
+                        line_height(drawer, style.body) +
+                        (int)plan.quality_detail_lines.size() * line_height(drawer, style.small) +
+                        style.gap;
+                }
+                else
+                {
+                    plan.left_width = available;
+                }
+
+                const std::string identity = join_nonempty(
+                    {spec.pass.satellite, spec.pass.instrument},
+                    "  /  ");
+                plan.identity_lines = wrap_text(drawer, identity, style.title, plan.left_width, 2);
+                if (plan.identity_lines.empty())
+                    plan.identity_lines.push_back("");
+
+                plan.product_lines = wrap_text(
+                    drawer,
+                    spec.pass.product,
+                    style.product,
+                    plan.left_width,
+                    style.portrait ? 3 : 2);
+
+                std::vector<std::string> pass_parts = {
+                    spec.pass.acquisition_time,
+                    spec.pass.pass_summary};
+                if (!plan.badge)
+                {
+                    pass_parts.push_back(spec.pass.quality);
+                    pass_parts.push_back(spec.pass.quality_detail);
+                }
+                plan.pass_lines = wrap_text(
+                    drawer,
+                    join_nonempty(pass_parts, "   |   "),
+                    style.body,
+                    plan.left_width,
+                    style.portrait ? 4 : 3);
+
+                plan.detail_lines = wrap_text(
+                    drawer,
+                    join_fields(spec.pass.details),
+                    style.small,
+                    plan.left_width,
+                    style.portrait ? 5 : 3);
+
+                int left_height = (int)plan.identity_lines.size() * line_height(drawer, style.title);
+                if (!plan.product_lines.empty())
+                {
+                    left_height += style.gap / 2 +
+                                   (int)plan.product_lines.size() * line_height(drawer, style.product);
+                }
+                if (!plan.pass_lines.empty())
+                {
+                    left_height += style.gap / 2 +
+                                   (int)plan.pass_lines.size() * line_height(drawer, style.body);
+                }
+                if (!plan.detail_lines.empty())
+                {
+                    left_height += style.gap / 2 +
+                                   (int)plan.detail_lines.size() * line_height(drawer, style.small);
+                }
+
+                plan.height =
+                    style.padding +
+                    std::max(left_height, plan.badge_height) +
+                    style.padding +
+                    style.accent;
+                return plan;
+            }
+
+            void draw_header(Image &output,
+                             TextDrawer &drawer,
+                             const PresentationSpec &spec,
+                             const TextStyle &style,
+                             const HeaderPlan &plan)
+            {
+                const Theme &theme = spec.theme;
+                fill_rect(output, 0, 0, (int)output.width(), plan.height, theme.panel);
+                fill_rect(output, 0, plan.height - style.accent, (int)output.width(), plan.height, theme.accent);
+
+                int y = style.padding;
+                y = draw_lines(output, drawer, plan.identity_lines, style.padding, y, style.title, theme.text);
+
+                if (!plan.product_lines.empty())
+                {
+                    y += style.gap / 2;
+                    y = draw_lines(output, drawer, plan.product_lines, style.padding, y, style.product, theme.text);
+                }
+                if (!plan.pass_lines.empty())
+                {
+                    y += style.gap / 2;
+                    y = draw_lines(output, drawer, plan.pass_lines, style.padding, y, style.body, theme.muted_text);
+                }
+                if (!plan.detail_lines.empty())
+                {
+                    y += style.gap / 2;
+                    draw_lines(output, drawer, plan.detail_lines, style.padding, y, style.small, theme.muted_text);
+                }
+
+                if (plan.badge)
+                {
+                    const int badge_x = (int)output.width() - style.padding - plan.badge_width;
+                    const int badge_y = style.padding;
+                    fill_rect(
+                        output,
+                        badge_x,
+                        badge_y,
+                        badge_x + plan.badge_width,
+                        badge_y + plan.badge_height,
+                        theme.panel_secondary);
+                    fill_rect(
+                        output,
+                        badge_x,
+                        badge_y,
+                        badge_x + style.accent,
+                        badge_y + plan.badge_height,
+                        theme.accent);
+
+                    int badge_text_y = badge_y + style.gap;
+                    drawer.draw_text(
+                        output,
+                        badge_x + style.gap,
+                        badge_text_y,
+                        theme.muted_text,
+                        style.small,
+                        "КАЧЕСТВО");
+                    badge_text_y += line_height(drawer, style.small) + style.gap / 2;
+                    drawer.draw_text(
+                        output,
+                        badge_x + style.gap,
+                        badge_text_y,
+                        theme.text,
+                        style.body,
+                        plan.quality);
+                    badge_text_y += line_height(drawer, style.body);
+                    draw_lines(
+                        output,
+                        drawer,
+                        plan.quality_detail_lines,
+                        badge_x + style.gap,
+                        badge_text_y,
+                        style.small,
+                        theme.muted_text);
+                }
+            }
+
+            int title_block_height(TextDrawer &drawer,
+                                   int available,
+                                   const LegendSpec &legend,
+                                   const TextStyle &style)
             {
                 int height = 0;
-                const int line_height = measured(drawer, font_size, "Ag").line_height;
-                for (const std::string &note : notes)
+                if (!legend.title.empty())
                 {
-                    std::vector<std::string> lines = wrap_text(drawer, note, font_size, width);
-                    height += (int)lines.size() * line_height;
-                    if (!lines.empty())
-                        height += gap / 2;
+                    const std::string title = legend.unit.empty()
+                                                  ? legend.title
+                                                  : legend.title + "  [" + legend.unit + "]";
+                    height += std::max(1, (int)wrap_text(drawer, title, style.product, available, 2).size()) *
+                              line_height(drawer, style.product);
+                    height += style.gap / 2;
+                }
+                if (!legend.subtitle.empty())
+                {
+                    height += (int)wrap_text(
+                                  drawer,
+                                  legend.subtitle,
+                                  style.small,
+                                  available,
+                                  style.portrait ? 4 : 3)
+                                  .size() *
+                              line_height(drawer, style.small);
+                    height += style.gap / 2;
                 }
                 return height;
             }
 
-            int footer_height(TextDrawer &drawer, size_t width, const PresentationSpec &spec, const TextStyle &style)
+            int categorical_height(TextDrawer &drawer,
+                                   int available,
+                                   const LegendSpec &legend,
+                                   const TextStyle &style)
             {
-                const LegendSpec &legend = spec.legend;
-                const int available = std::max(1, (int)width - style.padding * 2);
-                const int title_line = measured(drawer, style.product, "Ag").line_height;
-                const int body_line = measured(drawer, style.body, "Ag").line_height;
-                const int small_line = measured(drawer, style.small, "Ag").line_height;
+                const int columns = style.wide && available >= 900 ? 2 : 1;
+                const int cell_width = std::max(1, available / columns);
+                const int marker = std::max(8, scaled(13, (double)style.body / 17.0));
+                const int label_width = std::max(1, cell_width - marker - style.gap * 2);
+                int height = 0;
 
-                int height = style.padding;
-                if (!legend.title.empty())
-                    height += title_line + style.gap / 2;
-                if (!legend.subtitle.empty())
+                for (size_t row_start = 0; row_start < legend.categories.size(); row_start += (size_t)columns)
                 {
-                    height += (int)wrap_text(drawer, legend.subtitle, style.small, available).size() * small_line;
-                    height += style.gap / 2;
-                }
-
-                if (legend.kind == LegendKind::Continuous)
-                {
-                    height += scaled(28, (double)style.body / 17.0);
-                    height += style.gap + body_line;
-                }
-                else if (legend.kind == LegendKind::Categorical)
-                {
-                    const int columns = width >= 1100 ? 2 : 1;
-                    const int rows = (int)std::ceil((double)legend.categories.size() / (double)columns);
-                    height += rows * (body_line + style.gap);
-                }
-                else if (legend.kind == LegendKind::Composite)
-                {
-                    const int description_width = std::max(1, available - scaled(78, (double)style.body / 17.0));
-                    for (const CompositeComponent &component : legend.components)
+                    int row_height = line_height(drawer, style.body);
+                    for (int column = 0; column < columns; column++)
                     {
-                        const std::vector<std::string> lines = wrap_text(drawer, component_description(component), style.small, description_width);
-                        height += std::max(body_line, (int)lines.size() * small_line) + style.gap;
+                        const size_t index = row_start + (size_t)column;
+                        if (index >= legend.categories.size())
+                            break;
+                        const int lines = std::max(
+                            1,
+                            (int)wrap_text(
+                                drawer,
+                                legend.categories[index].label,
+                                style.body,
+                                label_width,
+                                3)
+                                .size());
+                        row_height = std::max(row_height, lines * line_height(drawer, style.body));
                     }
+                    height += row_height + style.gap;
+                }
+                return height;
+            }
+
+            int composite_height(TextDrawer &drawer,
+                                 int available,
+                                 const LegendSpec &legend,
+                                 const TextStyle &style)
+            {
+                const int component_width = scaled(72, (double)style.body / 17.0);
+                const int description_width = std::max(1, available - component_width - style.gap);
+                int height = 0;
+                for (const CompositeComponent &component : legend.components)
+                {
+                    const int lines = std::max(
+                        1,
+                        (int)wrap_text(
+                            drawer,
+                            component_description(component),
+                            style.small,
+                            description_width,
+                            style.portrait ? 6 : 4)
+                            .size());
+                    height += std::max(
+                                  line_height(drawer, style.body),
+                                  lines * line_height(drawer, style.small)) +
+                              style.gap;
+                }
+                return height;
+            }
+
+            int notes_height(TextDrawer &drawer,
+                             int available,
+                             const LegendSpec &legend,
+                             const TextStyle &style)
+            {
+                int height = 0;
+                for (const std::string &note : legend.notes)
+                {
+                    const int lines = (int)wrap_text(
+                                          drawer,
+                                          note,
+                                          style.small,
+                                          available,
+                                          style.portrait ? 6 : 4)
+                                          .size();
+                    if (lines > 0)
+                        height += lines * line_height(drawer, style.small) + style.gap / 2;
+                }
+                return height;
+            }
+
+            int footer_height(TextDrawer &drawer,
+                              int width,
+                              const PresentationSpec &spec,
+                              const TextStyle &style)
+            {
+                const int available = std::max(1, width - style.padding * 2);
+                int height = style.padding;
+                height += title_block_height(drawer, available, spec.legend, style);
+
+                if (spec.legend.kind == LegendKind::Continuous)
+                {
+                    height += style.legend_bar + style.gap / 2;
+                    height += line_height(drawer, style.body) + style.gap;
+                }
+                else if (spec.legend.kind == LegendKind::Categorical)
+                {
+                    height += categorical_height(drawer, available, spec.legend, style);
+                }
+                else if (spec.legend.kind == LegendKind::Composite)
+                {
+                    height += composite_height(drawer, available, spec.legend, style);
                 }
 
-                height += notes_height(drawer, legend.notes, style.small, available, style.gap);
-
+                height += notes_height(drawer, available, spec.legend, style);
                 if (spec.show_branding && !spec.branding.empty())
-                    height += small_line + style.gap / 2;
-
+                    height += line_height(drawer, style.small) + style.gap / 2;
                 height += style.padding;
                 return std::max(height, style.padding * 2);
             }
 
-            void draw_header(Image &output, TextDrawer &drawer, const PresentationSpec &spec, const TextStyle &style, int header_height)
+            std::vector<size_t> selected_tick_labels(TextDrawer &drawer,
+                                                     const LegendSpec &legend,
+                                                     const TextStyle &style,
+                                                     int x0,
+                                                     int bar_width)
             {
-                const Theme &theme = spec.theme;
-                fill_rect(output, 0, 0, output.width(), header_height, theme.panel);
-                fill_rect(output, 0, header_height - style.accent, output.width(), header_height, theme.accent);
+                std::vector<size_t> selected;
+                if (legend.ticks.empty())
+                    return selected;
 
-                const int width = output.width();
-                int y = style.padding;
+                const int minimum_gap = std::max(style.gap, style.body / 2);
+                const size_t last_index = legend.ticks.size() - 1;
+                const LegendTick &last_tick = legend.ticks[last_index];
+                const int last_center =
+                    x0 + (int)std::round(clamp_value(last_tick.position, 0.0, 1.0) * std::max(0, bar_width - 1));
+                const int last_width = measured(drawer, style.body, last_tick.label).width;
+                const int last_left = last_center - last_width / 2;
 
-                int badge_width = 0;
-                int badge_height = 0;
-                if (!spec.pass.quality.empty())
+                int previous_right = x0 - minimum_gap;
+                for (size_t index = 0; index < legend.ticks.size(); index++)
                 {
-                    TextSize quality_size = measured(drawer, style.body, spec.pass.quality);
-                    TextSize detail_size = measured(drawer, style.small, spec.pass.quality_detail);
-                    badge_width = std::max(quality_size.width, detail_size.width) + style.padding;
-                    badge_height = quality_size.line_height + style.gap;
-                    if (!spec.pass.quality_detail.empty())
-                        badge_height += detail_size.line_height;
-                    badge_height += style.gap;
-                }
+                    const LegendTick &tick = legend.ticks[index];
+                    const int center =
+                        x0 + (int)std::round(clamp_value(tick.position, 0.0, 1.0) * std::max(0, bar_width - 1));
+                    const int label_width = measured(drawer, style.body, tick.label).width;
+                    int left = center - label_width / 2;
+                    int right = left + label_width;
+                    left = std::max(x0, std::min(x0 + bar_width - label_width, left));
+                    right = left + label_width;
 
-                std::string identity = join_nonempty({spec.pass.satellite, spec.pass.instrument}, "  /  ");
-                const int title_available = std::max(1, width - style.padding * 2 - (badge_width > 0 ? badge_width + style.gap * 2 : 0));
-                std::vector<std::string> identity_lines = wrap_text(drawer, identity, style.title, title_available);
-                if (identity_lines.empty())
-                    identity_lines.push_back("");
-                if (identity_lines.size() > 2)
-                    identity_lines.resize(2);
-
-                for (const std::string &line : identity_lines)
-                {
-                    if (drawer.font_ready() && !line.empty())
-                        drawer.draw_text(output, style.padding, y, theme.text, style.title, line);
-                    y += measured(drawer, style.title, line.empty() ? "Ag" : line).line_height;
-                }
-
-                if (badge_width > 0)
-                {
-                    int badge_x = width - style.padding - badge_width;
-                    fill_rect(output, badge_x, style.padding, badge_x + badge_width, style.padding + badge_height, theme.panel_secondary);
-                    fill_rect(output, badge_x, style.padding, badge_x + style.accent, style.padding + badge_height, theme.accent);
-                    if (drawer.font_ready())
+                    const bool endpoint = index == 0 || index == last_index;
+                    const bool clears_previous = left >= previous_right + minimum_gap;
+                    const bool clears_last = index == last_index || right <= last_left - minimum_gap;
+                    if (endpoint || (clears_previous && clears_last))
                     {
-                        drawer.draw_text(output, badge_x + style.gap, style.padding + style.gap / 2, theme.text, style.body, spec.pass.quality);
-                        if (!spec.pass.quality_detail.empty())
-                            drawer.draw_text(output, badge_x + style.gap, style.padding + style.gap / 2 + measured(drawer, style.body, spec.pass.quality).line_height, theme.muted_text, style.small, spec.pass.quality_detail);
+                        selected.push_back(index);
+                        previous_right = right;
                     }
                 }
 
-                if (!spec.pass.product.empty())
-                {
-                    y += style.gap / 2;
-                    std::vector<std::string> product_lines = wrap_text(drawer, spec.pass.product, style.product, width - style.padding * 2);
-                    for (const std::string &line : product_lines)
-                    {
-                        if (drawer.font_ready())
-                            drawer.draw_text(output, style.padding, y, theme.text, style.product, line);
-                        y += measured(drawer, style.product, line).line_height;
-                    }
-                }
-
-                std::string pass_line = join_nonempty({spec.pass.acquisition_time, spec.pass.pass_summary}, "   |   ");
-                if (!pass_line.empty())
-                {
-                    y += style.gap / 2;
-                    for (const std::string &line : wrap_text(drawer, pass_line, style.body, width - style.padding * 2))
-                    {
-                        if (drawer.font_ready())
-                            drawer.draw_text(output, style.padding, y, theme.muted_text, style.body, line);
-                        y += measured(drawer, style.body, line).line_height;
-                    }
-                }
-
-                std::string detail_line = join_fields(spec.pass.details);
-                if (!detail_line.empty())
-                {
-                    y += style.gap / 2;
-                    for (const std::string &line : wrap_text(drawer, detail_line, style.small, width - style.padding * 2))
-                    {
-                        if (drawer.font_ready())
-                            drawer.draw_text(output, style.padding, y, theme.muted_text, style.small, line);
-                        y += measured(drawer, style.small, line).line_height;
-                    }
-                }
+                if (selected.empty() || selected.back() != last_index)
+                    selected.push_back(last_index);
+                return selected;
             }
 
-            void draw_continuous_legend(Image &output, TextDrawer &drawer, const PresentationSpec &spec, const TextStyle &style, int &y)
+            void draw_continuous_legend(Image &output,
+                                        TextDrawer &drawer,
+                                        const PresentationSpec &spec,
+                                        const TextStyle &style,
+                                        int &y)
             {
-                const Theme &theme = spec.theme;
-                const LegendSpec &legend = spec.legend;
                 const int x0 = style.padding;
-                const int x1 = output.width() - style.padding;
-                const int bar_height = scaled(28, (double)style.body / 17.0);
+                const int x1 = (int)output.width() - style.padding;
                 const int bar_width = std::max(1, x1 - x0);
-
                 for (int x = 0; x < bar_width; x++)
                 {
-                    double position = bar_width <= 1 ? 0.0 : (double)x / (double)(bar_width - 1);
-                    Color color = sample_stops(legend.color_stops, position, theme);
-                    output.draw_line(x0 + x, y, x0 + x, y + bar_height - 1, color);
+                    const double position = bar_width <= 1 ? 0.0 : (double)x / (double)(bar_width - 1);
+                    output.draw_line(
+                        x0 + x,
+                        y,
+                        x0 + x,
+                        y + style.legend_bar - 1,
+                        sample_stops(spec.legend.color_stops, position, spec.theme));
                 }
-
-                output.draw_line(x0, y, x1 - 1, y, theme.border);
-                output.draw_line(x0, y + bar_height - 1, x1 - 1, y + bar_height - 1, theme.border);
-                y += bar_height + style.gap / 2;
+                output.draw_line(x0, y, x1 - 1, y, spec.theme.border);
+                output.draw_line(
+                    x0,
+                    y + style.legend_bar - 1,
+                    x1 - 1,
+                    y + style.legend_bar - 1,
+                    spec.theme.border);
+                y += style.legend_bar + style.gap / 2;
 
                 const int tick_height = std::max(3, style.gap / 2);
+                for (const LegendTick &tick : spec.legend.ticks)
+                {
+                    const int x =
+                        x0 + (int)std::round(clamp_value(tick.position, 0.0, 1.0) * std::max(0, bar_width - 1));
+                    output.draw_line(x, y - style.gap / 2, x, y + tick_height, spec.theme.muted_text);
+                }
+
+                const std::vector<size_t> labels = selected_tick_labels(drawer, spec.legend, style, x0, bar_width);
                 const int label_y = y + tick_height;
-                for (const LegendTick &tick : legend.ticks)
+                for (size_t index : labels)
                 {
-                    const double position = clamp_value(tick.position, 0.0, 1.0);
-                    const int x = x0 + (int)std::round(position * (bar_width - 1));
-                    output.draw_line(x, y - style.gap / 2, x, y + tick_height, theme.muted_text);
-
-                    if (drawer.font_ready() && !tick.label.empty())
-                    {
-                        TextSize size = measured(drawer, style.body, tick.label);
-                        int label_x = x - size.width / 2;
-                        label_x = std::max(x0, std::min(x1 - size.width, label_x));
-                        drawer.draw_text(output, label_x, label_y, theme.text, style.body, tick.label);
-                    }
+                    const LegendTick &tick = spec.legend.ticks[index];
+                    const int x =
+                        x0 + (int)std::round(clamp_value(tick.position, 0.0, 1.0) * std::max(0, bar_width - 1));
+                    const TextSize text_size = measured(drawer, style.body, tick.label);
+                    int label_x = x - text_size.width / 2;
+                    label_x = std::max(x0, std::min(x1 - text_size.width, label_x));
+                    drawer.draw_text(
+                        output,
+                        label_x,
+                        label_y,
+                        spec.theme.text,
+                        style.body,
+                        tick.label);
                 }
-                y = label_y + measured(drawer, style.body, "Ag").line_height;
+                y = label_y + line_height(drawer, style.body) + style.gap / 2;
             }
 
-            void draw_categorical_legend(Image &output, TextDrawer &drawer, const PresentationSpec &spec, const TextStyle &style, int &y)
+            void draw_categorical_legend(Image &output,
+                                         TextDrawer &drawer,
+                                         const PresentationSpec &spec,
+                                         const TextStyle &style,
+                                         int &y)
             {
-                const Theme &theme = spec.theme;
-                const LegendSpec &legend = spec.legend;
-                const int columns = output.width() >= 1100 ? 2 : 1;
-                const int available = output.width() - style.padding * 2;
-                const int cell_width = available / columns;
+                const int available = (int)output.width() - style.padding * 2;
+                const int columns = style.wide && available >= 900 ? 2 : 1;
+                const int cell_width = std::max(1, available / columns);
                 const int marker = std::max(8, scaled(13, (double)style.body / 17.0));
-                const int line_height = measured(drawer, style.body, "Ag").line_height;
+                const int label_width = std::max(1, cell_width - marker - style.gap * 2);
 
-                for (size_t i = 0; i < legend.categories.size(); i++)
+                for (size_t row_start = 0; row_start < spec.legend.categories.size(); row_start += (size_t)columns)
                 {
-                    const int row = (int)i / columns;
-                    const int column = (int)i % columns;
-                    const int x = style.padding + column * cell_width;
-                    const int row_y = y + row * (line_height + style.gap);
-                    fill_rect(output, x, row_y + (line_height - marker) / 2, x + marker, row_y + (line_height - marker) / 2 + marker, normalized_color(legend.categories[i].color, theme.accent));
-                    if (drawer.font_ready())
-                        drawer.draw_text(output, x + marker + style.gap, row_y, theme.text, style.body, legend.categories[i].label);
-                }
-
-                const int rows = (int)std::ceil((double)legend.categories.size() / (double)columns);
-                y += rows * (line_height + style.gap);
-            }
-
-            void draw_composite_legend(Image &output, TextDrawer &drawer, const PresentationSpec &spec, const TextStyle &style, int &y)
-            {
-                const Theme &theme = spec.theme;
-                const LegendSpec &legend = spec.legend;
-                const int marker = std::max(10, scaled(14, (double)style.body / 17.0));
-                const int component_width = scaled(56, (double)style.body / 17.0);
-                const int description_x = style.padding + component_width + style.gap;
-                const int description_width = std::max(1, output.width() - style.padding - description_x);
-                const int body_line = measured(drawer, style.body, "Ag").line_height;
-                const int small_line = measured(drawer, style.small, "Ag").line_height;
-
-                for (const CompositeComponent &component : legend.components)
-                {
-                    std::vector<std::string> lines = wrap_text(drawer, component_description(component), style.small, description_width);
-                    if (lines.empty())
-                        lines.push_back("Канал не указан");
-                    const int row_height = std::max(body_line, (int)lines.size() * small_line);
-
-                    Color marker_color = component_color(component, theme);
-                    fill_rect(output, style.padding, y + (body_line - marker) / 2, style.padding + marker, y + (body_line - marker) / 2 + marker, marker_color);
-
-                    if (drawer.font_ready())
+                    std::vector<std::vector<std::string>> row_lines((size_t)columns);
+                    int row_height = line_height(drawer, style.body);
+                    for (int column = 0; column < columns; column++)
                     {
-                        const std::string component_label = component.component.empty() ? "IN" : component.component;
-                        drawer.draw_text(output, style.padding + marker + style.gap / 2, y, marker_color, style.body, component_label);
-                        for (size_t i = 0; i < lines.size(); i++)
-                            drawer.draw_text(output, description_x, y + (int)i * small_line, theme.text, style.small, lines[i]);
+                        const size_t index = row_start + (size_t)column;
+                        if (index >= spec.legend.categories.size())
+                            break;
+                        row_lines[(size_t)column] = wrap_text(
+                            drawer,
+                            spec.legend.categories[index].label,
+                            style.body,
+                            label_width,
+                            3);
+                        if (row_lines[(size_t)column].empty())
+                            row_lines[(size_t)column].push_back("");
+                        row_height = std::max(
+                            row_height,
+                            (int)row_lines[(size_t)column].size() * line_height(drawer, style.body));
                     }
 
+                    for (int column = 0; column < columns; column++)
+                    {
+                        const size_t index = row_start + (size_t)column;
+                        if (index >= spec.legend.categories.size())
+                            break;
+                        const int x = style.padding + column * cell_width;
+                        fill_rect(
+                            output,
+                            x,
+                            y + (line_height(drawer, style.body) - marker) / 2,
+                            x + marker,
+                            y + (line_height(drawer, style.body) - marker) / 2 + marker,
+                            normalized_color(spec.legend.categories[index].color, spec.theme.accent));
+                        draw_lines(
+                            output,
+                            drawer,
+                            row_lines[(size_t)column],
+                            x + marker + style.gap,
+                            y,
+                            style.body,
+                            spec.theme.text);
+                    }
                     y += row_height + style.gap;
                 }
             }
 
-            void draw_footer(Image &output, TextDrawer &drawer, const PresentationSpec &spec, const TextStyle &style, int footer_y, int footer_height_value)
+            void draw_composite_legend(Image &output,
+                                       TextDrawer &drawer,
+                                       const PresentationSpec &spec,
+                                       const TextStyle &style,
+                                       int &y)
             {
-                const Theme &theme = spec.theme;
-                const LegendSpec &legend = spec.legend;
-                fill_rect(output, 0, footer_y, output.width(), footer_y + footer_height_value, theme.panel);
-                fill_rect(output, 0, footer_y, output.width(), footer_y + 1, theme.border);
+                const int available = (int)output.width() - style.padding * 2;
+                const int marker = std::max(10, scaled(14, (double)style.body / 17.0));
+                const int component_width = scaled(72, (double)style.body / 17.0);
+                const int description_x = style.padding + component_width + style.gap;
+                const int description_width = std::max(1, available - component_width - style.gap);
+
+                for (const CompositeComponent &component : spec.legend.components)
+                {
+                    std::vector<std::string> lines = wrap_text(
+                        drawer,
+                        component_description(component),
+                        style.small,
+                        description_width,
+                        style.portrait ? 6 : 4);
+                    if (lines.empty())
+                        lines.push_back("Канал не указан");
+
+                    const int row_height = std::max(
+                        line_height(drawer, style.body),
+                        (int)lines.size() * line_height(drawer, style.small));
+                    const Color color = component_color(component, spec.theme);
+                    fill_rect(
+                        output,
+                        style.padding,
+                        y + (line_height(drawer, style.body) - marker) / 2,
+                        style.padding + marker,
+                        y + (line_height(drawer, style.body) - marker) / 2 + marker,
+                        color);
+                    drawer.draw_text(
+                        output,
+                        style.padding + marker + style.gap / 2,
+                        y,
+                        color,
+                        style.body,
+                        component.component.empty() ? "IN" : component.component);
+                    draw_lines(
+                        output,
+                        drawer,
+                        lines,
+                        description_x,
+                        y,
+                        style.small,
+                        spec.theme.text);
+                    y += row_height + style.gap;
+                }
+            }
+
+            void draw_footer(Image &output,
+                             TextDrawer &drawer,
+                             const PresentationSpec &spec,
+                             const TextStyle &style,
+                             int footer_y,
+                             int footer_height_value)
+            {
+                const int available = (int)output.width() - style.padding * 2;
+                fill_rect(
+                    output,
+                    0,
+                    footer_y,
+                    (int)output.width(),
+                    footer_y + footer_height_value,
+                    spec.theme.panel);
+                fill_rect(
+                    output,
+                    0,
+                    footer_y,
+                    (int)output.width(),
+                    footer_y + 1,
+                    spec.theme.border);
 
                 int y = footer_y + style.padding;
-                if (!legend.title.empty())
+                if (!spec.legend.title.empty())
                 {
-                    std::string title = legend.title;
-                    if (!legend.unit.empty())
-                        title += "  [" + legend.unit + "]";
-                    if (drawer.font_ready())
-                        drawer.draw_text(output, style.padding, y, theme.text, style.product, title);
-                    y += measured(drawer, style.product, title).line_height + style.gap / 2;
-                }
-
-                if (!legend.subtitle.empty())
-                {
-                    for (const std::string &line : wrap_text(drawer, legend.subtitle, style.small, output.width() - style.padding * 2))
-                    {
-                        if (drawer.font_ready())
-                            drawer.draw_text(output, style.padding, y, theme.muted_text, style.small, line);
-                        y += measured(drawer, style.small, line).line_height;
-                    }
+                    const std::string title = spec.legend.unit.empty()
+                                                  ? spec.legend.title
+                                                  : spec.legend.title + "  [" + spec.legend.unit + "]";
+                    y = draw_lines(
+                        output,
+                        drawer,
+                        wrap_text(drawer, title, style.product, available, 2),
+                        style.padding,
+                        y,
+                        style.product,
+                        spec.theme.text);
                     y += style.gap / 2;
                 }
 
-                if (legend.kind == LegendKind::Continuous)
+                if (!spec.legend.subtitle.empty())
+                {
+                    y = draw_lines(
+                        output,
+                        drawer,
+                        wrap_text(
+                            drawer,
+                            spec.legend.subtitle,
+                            style.small,
+                            available,
+                            style.portrait ? 4 : 3),
+                        style.padding,
+                        y,
+                        style.small,
+                        spec.theme.muted_text);
+                    y += style.gap / 2;
+                }
+
+                if (spec.legend.kind == LegendKind::Continuous)
                     draw_continuous_legend(output, drawer, spec, style, y);
-                else if (legend.kind == LegendKind::Categorical)
+                else if (spec.legend.kind == LegendKind::Categorical)
                     draw_categorical_legend(output, drawer, spec, style, y);
-                else if (legend.kind == LegendKind::Composite)
+                else if (spec.legend.kind == LegendKind::Composite)
                     draw_composite_legend(output, drawer, spec, style, y);
 
-                const int available = output.width() - style.padding * 2;
-                for (const std::string &note : legend.notes)
+                for (const std::string &note : spec.legend.notes)
                 {
-                    for (const std::string &line : wrap_text(drawer, note, style.small, available))
+                    const std::vector<std::string> lines = wrap_text(
+                        drawer,
+                        note,
+                        style.small,
+                        available,
+                        style.portrait ? 6 : 4);
+                    if (!lines.empty())
                     {
-                        if (drawer.font_ready())
-                            drawer.draw_text(output, style.padding, y, theme.muted_text, style.small, line);
-                        y += measured(drawer, style.small, line).line_height;
+                        y = draw_lines(
+                            output,
+                            drawer,
+                            lines,
+                            style.padding,
+                            y,
+                            style.small,
+                            spec.theme.muted_text);
+                        y += style.gap / 2;
                     }
-                    y += style.gap / 2;
                 }
 
-                if (spec.show_branding && !spec.branding.empty() && drawer.font_ready())
+                if (spec.show_branding && !spec.branding.empty())
                 {
-                    TextSize size = measured(drawer, style.small, spec.branding);
-                    int branding_y = footer_y + footer_height_value - style.padding - size.line_height;
-                    drawer.draw_text(output, output.width() - style.padding - size.width, branding_y, theme.muted_text, style.small, spec.branding);
+                    const TextSize size = measured(drawer, style.small, spec.branding);
+                    const int branding_x = std::max(
+                        style.padding,
+                        (int)output.width() - style.padding - size.width);
+                    drawer.draw_text(
+                        output,
+                        branding_x,
+                        y,
+                        spec.theme.muted_text,
+                        style.small,
+                        spec.branding);
                 }
             }
         }
@@ -546,41 +933,30 @@ namespace image
         Image render(const Image &source, TextDrawer &text_drawer, const PresentationSpec &spec)
         {
             Image rgb = make_rgb(source);
-            const TextStyle style = build_text_style(rgb.width(), spec.theme);
+            if (rgb.size() == 0)
+                return rgb;
 
-            const int width = rgb.width();
-            const int title_line = measured(text_drawer, style.title, "Ag").line_height;
-            const int product_line = measured(text_drawer, style.product, "Ag").line_height;
-            const int body_line = measured(text_drawer, style.body, "Ag").line_height;
-            const int small_line = measured(text_drawer, style.small, "Ag").line_height;
-
-            std::string identity = join_nonempty({spec.pass.satellite, spec.pass.instrument}, "  /  ");
-            int quality_reserve = spec.pass.quality.empty() ? 0 : measured(text_drawer, style.body, spec.pass.quality).width + style.padding + style.gap * 2;
-            int identity_width = std::max(1, width - style.padding * 2 - quality_reserve);
-            int identity_lines = std::max(1, (int)wrap_text(text_drawer, identity, style.title, identity_width).size());
-            identity_lines = std::min(2, identity_lines);
-
-            int header_height = style.padding + identity_lines * title_line;
-            if (!spec.pass.product.empty())
-                header_height += style.gap / 2 + std::max(1, (int)wrap_text(text_drawer, spec.pass.product, style.product, width - style.padding * 2).size()) * product_line;
-
-            std::string pass_line = join_nonempty({spec.pass.acquisition_time, spec.pass.pass_summary}, "   |   ");
-            if (!pass_line.empty())
-                header_height += style.gap / 2 + std::max(1, (int)wrap_text(text_drawer, pass_line, style.body, width - style.padding * 2).size()) * body_line;
-
-            std::string detail_line = join_fields(spec.pass.details);
-            if (!detail_line.empty())
-                header_height += style.gap / 2 + std::max(1, (int)wrap_text(text_drawer, detail_line, style.small, width - style.padding * 2).size()) * small_line;
-
-            header_height += style.padding + style.accent;
+            const TextStyle style = build_text_style(rgb.width(), rgb.height(), spec.theme);
+            const int width = (int)rgb.width();
+            const HeaderPlan header = build_header_plan(text_drawer, width, spec, style);
             const int footer_height_value = footer_height(text_drawer, width, spec, style);
 
-            Image output(rgb.depth(), width, header_height + rgb.height() + footer_height_value, 3);
+            Image output(
+                rgb.depth(),
+                rgb.width(),
+                (size_t)header.height + rgb.height() + (size_t)footer_height_value,
+                3);
             output.fill_color(spec.theme.panel);
-            output.draw_image(0, rgb, 0, header_height);
+            output.draw_image(0, rgb, 0, header.height);
 
-            draw_header(output, text_drawer, spec, style, header_height);
-            draw_footer(output, text_drawer, spec, style, header_height + rgb.height(), footer_height_value);
+            draw_header(output, text_drawer, spec, style, header);
+            draw_footer(
+                output,
+                text_drawer,
+                spec,
+                style,
+                header.height + (int)rgb.height(),
+                footer_height_value);
             return output;
         }
     }
