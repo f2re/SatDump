@@ -4,6 +4,7 @@
 #include "common/image/presentation.h"
 #include "common/image/text.h"
 
+#include <cctype>
 #include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
