@@ -14,6 +14,11 @@
 
 namespace
 {
+    void stage(const std::string &name)
+    {
+        std::cerr << "[presentation-test] " << name << std::endl;
+    }
+
     image::Image make_source_image(int width, int height)
     {
         image::Image source(8, width, height, 3);
@@ -182,8 +187,6 @@ namespace
         if (descending.transform != image::presentation::RasterTransform::None || !descending.north_up_verified)
             return false;
 
-        // Positive scalar_y makes latitude increase downwards. The actual target
-        // projection metadata must take precedence over the generic projected hint.
         image::Image projected(8, 64, 128, 3);
         image::set_metadata_proj_cfg(projected, {
             {"type", "equirec"},
@@ -205,9 +208,12 @@ namespace
                          const std::filesystem::path &path,
                          const std::string &label)
     {
+        stage("render " + label);
         image::Image output = image::presentation::render_layout(source, drawer, spec, layout);
+        stage("validate " + label);
         if (!validate_result(source, output, label))
             return false;
+        stage("save " + label);
         image::save_img(output, path.string());
         return std::filesystem::exists(path) && std::filesystem::file_size(path) > 0;
     }
@@ -224,6 +230,7 @@ int main(int argc, char **argv)
     const std::filesystem::path output_directory = argc >= 3 ? argv[2] : "presentation-test-output";
     std::filesystem::create_directories(output_directory);
 
+    stage("initialize font");
     image::TextDrawer text_drawer;
     text_drawer.init_font(argv[1]);
     if (!text_drawer.font_ready())
@@ -232,17 +239,21 @@ int main(int argc, char **argv)
         return 3;
     }
 
+    stage("validate raster transforms");
     if (!validate_transform())
     {
         std::cerr << "Raster transform tests failed\n";
         return 4;
     }
+
+    stage("validate north-up analysis");
     if (!validate_orientation_analysis())
     {
         std::cerr << "North-up orientation analysis tests failed\n";
         return 5;
     }
 
+    stage("create synthetic rasters");
     const image::Image landscape = make_source_image(1280, 620);
     const image::Image portrait = make_source_image(720, 1320);
     if (image::presentation::classify_frame(landscape) != image::presentation::FrameKind::Landscape ||
@@ -274,6 +285,7 @@ int main(int argc, char **argv)
                          output_directory / "continuous_minimal_portrait.png", "continuous minimal portrait"))
         return 16;
 
+    stage("all smoke tests passed");
     std::cout << "Presentation smoke tests passed; artifacts: " << output_directory << "\n";
     return 0;
 }
