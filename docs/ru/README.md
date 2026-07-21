@@ -11,6 +11,7 @@
 |---|---|
 | [Установка в Astra Linux](INSTALL_ASTRA.md) | Astra Linux SE 1.6/1.7, репозитории, зависимости, офлайн-контур |
 | [Сборка](BUILD.md) | Профили, параметры CMake, переносимость и тесты |
+| [Portable glibc 2.24](PORTABLE_ASTRA.md) | Переносимый CLI-бандл, повторяющий рабочую технологию ветки `astra` |
 | [Проверка Astra Linux](ASTRA_VALIDATION.md) | Уровни CI/UBI/нативной проверки, эталонные изображения и приёмка |
 | [Запуск и обработка](RUN.md) | CLI, GUI, офлайн- и live-обработка |
 | [Настройка](CONFIGURATION.md) | `satdump_cfg.json`, `settings.json`, каталоги, TLE и логирование |
@@ -19,25 +20,44 @@
 | [Развёртывание](DEPLOYMENT.md) | Установка на рабочую станцию/сервер, обновления и откат |
 | [Диагностика](TROUBLESHOOTING.md) | Ошибки CMake, C++17, библиотек, GUI и обработки |
 
-## Быстрый маршрут
+## Два режима сборки Astra
+
+### Нативный
+
+Для установки на ту же машину, где выполняется сборка:
 
 ```bash
-git clone --branch release/1.2.2 https://github.com/f2re/SatDump.git
-cd SatDump
-chmod +x scripts/astra/*.sh
-
 bash scripts/astra/install-deps.sh --profile headless --bootstrap-missing
-bash scripts/astra/build.sh --profile headless --install
+bash scripts/astra/build.sh --mode native --profile headless --install
 bash scripts/astra/run.sh -- version
 ```
 
-Для графической рабочей станции:
+Параметр `--mode native` можно опустить: он используется по умолчанию.
+
+### Переносимый glibc 2.24
+
+Для сборки один раз и развёртывания на нескольких Astra Linux 1.6/1.7:
+
+```bash
+bash scripts/astra/build.sh \
+  --mode portable-glibc224 \
+  --profile reference
+```
+
+Этот режим создаёт изолированный Debian Stretch chroot, фиксирует toolchain,
+устанавливает результат в чистый staging и формирует самодостаточный tar.gz.
+Подробно: [Portable glibc 2.24](PORTABLE_ASTRA.md).
+
+## Графическая рабочая станция
 
 ```bash
 bash scripts/astra/install-deps.sh --profile desktop --bootstrap-missing
-bash scripts/astra/build.sh --profile desktop --sdr rtl --install
+bash scripts/astra/build.sh --mode native --profile desktop --sdr rtl --install
 bash scripts/astra/run.sh --ui
 ```
+
+GUI и локальные SDR-драйверы относятся к native-профилю. Эталонный portable-бандл
+является CLI-only.
 
 ## Какие файлы создаются
 
