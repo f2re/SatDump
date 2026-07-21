@@ -1,0 +1,22 @@
+# Astra Linux Special Edition 1.7 — ПРИМЕР, НЕ ГОТОВЫЙ sources.list
+#
+# Основной stable-репозиторий можно использовать как базу. Репозиторий обновления
+# должен точно соответствовать установленному и утверждённому обновлению 1.7.x/UU.
+# Не копируйте условный путь 1.7.X в рабочую систему без замены.
+# В защищённом контуре предпочтительно использовать утверждённое локальное зеркало.
+#
+# Версию ОС можно проверить:
+#   cat /etc/astra/build_version
+
+# Основной репозиторий
+deb https://dl.astralinux.ru/astra/stable/1.7_x86-64/repository-main/ 1.7_x86-64 main contrib non-free
+
+# Пример шаблона репозитория оперативного обновления — заменить 1.7.X:
+# deb https://dl.astralinux.ru/astra/frozen/1.7_x86-64/1.7.X/repository-update/ 1.7_x86-64 main contrib non-free
+
+# Для UU путь может иметь вид — заменить X, N и проверить бюллетень:
+# deb https://dl.astralinux.ru/astra/frozen/1.7_x86-64/1.7.X/uu/N/repository-update/ 1.7_x86-64 main contrib non-free
+
+# Если администратором разрешены base/extended репозитории конкретного обновления:
+# deb https://dl.astralinux.ru/astra/frozen/1.7_x86-64/1.7.X/uu/N/repository-base/ 1.7_x86-64 main contrib non-free
+# deb https://dl.astralinux.ru/astra/frozen/1.7_x86-64/1.7.X/uu/N/repository-extended/ 1.7_x86-64 main contrib non-free
