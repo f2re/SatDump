@@ -8,6 +8,7 @@ PREFIX="${ASTRA_DEPS_PREFIX}"
 ARCHIVE_DIR=""
 JOBS="$(jobs_count)"
 FORCE=0
+TEMP_DIRS=()
 
 NNG_VERSION="1.5.2"
 NNG_ARCHIVE="nng-${NNG_VERSION}.tar.gz"
@@ -17,11 +18,20 @@ NNG_SHA256="f8b25ab86738864b1f2e3128e8badab581510fa8085ff5ca9bb980d317334c46"
 VOLK_VERSION="2.5.2"
 VOLK_ARCHIVE="volk-${VOLK_VERSION}.tar.gz"
 VOLK_URL="https://www.libvolk.org/releases/${VOLK_ARCHIVE}"
+# Для архивов этой версии upstream публикует MD5 и detached signature.
 VOLK_MD5="7872b4dde4415dab100710e3583b0af9"
+
+cleanup() {
+    local directory
+    for directory in "${TEMP_DIRS[@]}"; do
+        [[ -n "${directory}" ]] && rm -rf "${directory}"
+    done
+}
+trap cleanup EXIT
 
 usage() {
     cat <<EOF
-Использование: $0 [параметры]
+Использование: bash scripts/astra/bootstrap-thirdparty.sh [параметры]
 
 Параметры:
   --component all|nng|volk  Что собирать (по умолчанию: all)
@@ -53,10 +63,11 @@ case "${COMPONENT}" in
     all|nng|volk) ;;
     *) die "Допустимые компоненты: all, nng, volk" ;;
 esac
+[[ "${JOBS}" =~ ^[1-9][0-9]*$ ]] || die "--jobs должен быть положительным целым числом."
 
 select_compiler
 CMAKE_EXECUTABLE="$(find_cmake 3.18.0 2>/dev/null || true)"
-[[ -n "${CMAKE_EXECUTABLE}" ]] || die "Требуется CMake 3.18+. Сначала запустите scripts/astra/bootstrap-cmake.sh."
+[[ -n "${CMAKE_EXECUTABLE}" ]] || die "Требуется CMake 3.18+. Сначала запустите bash scripts/astra/bootstrap-cmake.sh."
 
 ensure_directory "${ASTRA_CACHE_DIR}"
 ensure_directory "${PREFIX}"
@@ -92,25 +103,34 @@ fetch_archive() {
     printf '%s\n' "${output}"
 }
 
+new_work_directory() {
+    local template="$1"
+    local directory
+    directory="$(mktemp -d "${TMPDIR:-/tmp}/${template}.XXXXXX")"
+    TEMP_DIRS+=("${directory}")
+    printf '%s\n' "${directory}"
+}
+
 build_nng() {
     if [[ -f "${PREFIX}/include/nng/nng.h" && "${FORCE}" == "0" ]]; then
         log_ok "NNG уже установлен в ${PREFIX}"
         return
     fi
 
-    local archive actual work source build
+    local archive actual work source_directory build_directory
     archive="$(fetch_archive "${NNG_ARCHIVE}" "${NNG_URL}")"
     actual="$(sha256sum "${archive}" | awk '{print $1}')"
     [[ "${actual}" == "${NNG_SHA256}" ]] || die "SHA-256 NNG не совпал: ${actual}"
+    log_ok "SHA-256 NNG подтверждён"
 
-    work="$(mktemp -d "${TMPDIR:-/tmp}/satdump-nng.XXXXXX")"
-    trap 'rm -rf "${work}"' RETURN
+    work="$(new_work_directory satdump-nng)"
     tar -xzf "${archive}" -C "${work}"
-    source="$(find "${work}" -mindepth 1 -maxdepth 1 -type d | head -n1)"
-    build="${work}/build"
+    source_directory="$(find "${work}" -mindepth 1 -maxdepth 1 -type d | head -n1)"
+    [[ -n "${source_directory}" ]] || die "В архиве NNG не найден каталог исходников."
+    build_directory="${work}/build"
 
     log_info "Сборка NNG ${NNG_VERSION}"
-    "${CMAKE_EXECUTABLE}" -S "${source}" -B "${build}" \
+    "${CMAKE_EXECUTABLE}" -S "${source_directory}" -B "${build_directory}" \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX="${PREFIX}" \
         -DCMAKE_INSTALL_LIBDIR=lib \
@@ -118,12 +138,14 @@ build_nng() {
         -DNNG_TESTS=OFF \
         -DNNG_TOOLS=OFF \
         -DNNG_ENABLE_TLS=OFF
-    "${CMAKE_EXECUTABLE}" --build "${build}" --parallel "${JOBS}"
-    "${CMAKE_EXECUTABLE}" --install "${build}"
+    "${CMAKE_EXECUTABLE}" --build "${build_directory}" --parallel "${JOBS}"
+    "${CMAKE_EXECUTABLE}" --install "${build_directory}"
+
     [[ -f "${PREFIX}/include/nng/nng.h" ]] || die "NNG не установлен."
+    if ! compgen -G "${PREFIX}/lib/libnng.so*" >/dev/null && [[ ! -f "${PREFIX}/lib/libnng.a" ]]; then
+        die "Библиотека NNG не найдена в ${PREFIX}/lib."
+    fi
     log_ok "NNG ${NNG_VERSION} установлен в ${PREFIX}"
-    rm -rf "${work}"
-    trap - RETURN
 }
 
 build_volk() {
@@ -132,31 +154,34 @@ build_volk() {
         return
     fi
 
-    local archive actual work source build
+    command_exists python3 || die "Для сборки VOLK требуется Python 3."
+    python3 -c 'import mako' >/dev/null 2>&1 \
+        || die "Для сборки VOLK требуется модуль python3-mako."
+
+    local archive actual work source_directory build_directory
     archive="$(fetch_archive "${VOLK_ARCHIVE}" "${VOLK_URL}")"
     actual="$(md5sum "${archive}" | awk '{print $1}')"
     [[ "${actual}" == "${VOLK_MD5}" ]] || die "MD5 официального архива VOLK не совпал: ${actual}"
+    log_ok "Контрольная сумма официального архива VOLK подтверждена"
 
-    work="$(mktemp -d "${TMPDIR:-/tmp}/satdump-volk.XXXXXX")"
-    trap 'rm -rf "${work}"' RETURN
+    work="$(new_work_directory satdump-volk)"
     tar -xzf "${archive}" -C "${work}"
-    source="$(find "${work}" -mindepth 1 -maxdepth 1 -type d | head -n1)"
-    build="${work}/build"
+    source_directory="$(find "${work}" -mindepth 1 -maxdepth 1 -type d | head -n1)"
+    [[ -n "${source_directory}" ]] || die "В архиве VOLK не найден каталог исходников."
+    build_directory="${work}/build"
 
     log_info "Сборка VOLK ${VOLK_VERSION}"
-    "${CMAKE_EXECUTABLE}" -S "${source}" -B "${build}" \
+    "${CMAKE_EXECUTABLE}" -S "${source_directory}" -B "${build_directory}" \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX="${PREFIX}" \
         -DCMAKE_INSTALL_LIBDIR=lib \
         -DENABLE_TESTING=OFF
-    "${CMAKE_EXECUTABLE}" --build "${build}" --parallel "${JOBS}"
-    "${CMAKE_EXECUTABLE}" --install "${build}"
+    "${CMAKE_EXECUTABLE}" --build "${build_directory}" --parallel "${JOBS}"
+    "${CMAKE_EXECUTABLE}" --install "${build_directory}"
 
     export PKG_CONFIG_PATH="${PREFIX}/lib/pkgconfig:${PKG_CONFIG_PATH}"
     pkg-config --exists volk || die "VOLK установлен, но volk.pc не найден в ${PKG_CONFIG_PATH}."
     log_ok "VOLK $(pkg-config --modversion volk) установлен в ${PREFIX}"
-    rm -rf "${work}"
-    trap - RETURN
 }
 
 case "${COMPONENT}" in
