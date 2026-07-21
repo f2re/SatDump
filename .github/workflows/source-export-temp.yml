@@ -1,21 +1,48 @@
-name: Temporary source export
+name: Temporary one-shot source fix
 
 on:
-  pull_request:
+  push:
     branches:
-      - release/1.2.2
+      - agent/astra-portable-glibc224
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  export:
+  fix:
+    if: ${{ github.actor != 'github-actions[bot]' }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/upload-artifact@v4
         with:
-          name: presentation-source-temp
-          path: src-core/common/image/presentation.cpp
-          if-no-files-found: error
-          retention-days: 1
+          ref: agent/astra-portable-glibc224
+          fetch-depth: 0
+
+      - name: Apply exact type fix and remove this workflow
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          file=src-core/common/image/presentation.cpp
+          old='const int description_width = std::max(1, output.width() - style.padding - description_x);'
+          new='const int description_width = std::max(1, (int)output.width() - style.padding - description_x);'
+
+          grep -Fq "${old}" "${file}"
+          python3 - "${file}" "${old}" "${new}" <<'PY'
+          import pathlib
+          import sys
+
+          path = pathlib.Path(sys.argv[1])
+          old = sys.argv[2]
+          new = sys.argv[3]
+          text = path.read_text(encoding="utf-8")
+          if text.count(old) != 1:
+              raise SystemExit(f"expected exactly one match, got {text.count(old)}")
+          path.write_text(text.replace(old, new), encoding="utf-8")
+          PY
+
+          rm .github/workflows/source-export-temp.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "${file}" .github/workflows/source-export-temp.yml
+          git commit -m "Исправить тип ширины RGB-легенды"
+          git push origin HEAD:agent/astra-portable-glibc224
