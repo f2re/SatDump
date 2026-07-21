@@ -1,0 +1,21 @@
+# Astra Linux Special Edition 1.6 — ПРИМЕР, НЕ ГОТОВЫЙ sources.list
+#
+# 1. Замените 1.6.15 на фактически установленное и разрешённое обновление.
+# 2. Не смешивайте stable/frozen и сторонние Debian-репозитории без решения администратора.
+# 3. В защищённом контуре используйте утверждённое локальное зеркало.
+# 4. Для компилятора и заголовочных файлов нужны repository-dev и repository-dev-update.
+#
+# Версию ОС можно проверить:
+#   cat /etc/astra/build_version
+
+# Основной репозиторий установочного диска
+deb https://dl.astralinux.ru/astra/frozen/1.6_x86-64/1.6.15/repository smolensk main contrib non-free
+
+# Оперативное обновление основного репозитория
+deb https://dl.astralinux.ru/astra/frozen/1.6_x86-64/1.6.15/repository-update/ smolensk main contrib non-free
+
+# Средства разработки
+deb https://dl.astralinux.ru/astra/frozen/1.6_x86-64/1.6.15/repository-dev/ smolensk main contrib non-free
+
+# Обновление средств разработки
+deb https://dl.astralinux.ru/astra/frozen/1.6_x86-64/1.6.15/repository-dev-update/ smolensk main contrib non-free
