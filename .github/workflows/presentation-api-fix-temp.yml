@@ -1,0 +1,73 @@
+name: Temporary presentation API fixes
+
+on:
+  push:
+    branches:
+      - agent/astra-portable-glibc224
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/astra-portable-glibc224
+          fetch-depth: 0
+
+      - name: Apply exact SatDump 1.2.2 API fixes
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          replacements = {
+              Path("src-core/products/processor/presentation_outputs.cpp"): [
+                  (
+                      '''                    if (products.has_tle())
+                          config["metadata"]["tle"] = products.get_tle();''',
+                      '''                    if (products.has_tle())
+                      {
+                          const satdump::TLE tle = products.get_tle();
+                          config["metadata"]["tle"] = {
+                              {"norad", tle.norad},
+                              {"name", tle.name},
+                              {"line1", tle.line1},
+                              {"line2", tle.line2}};
+                      }'''
+                  ),
+                  (
+                      '                    image::save_img(rendered, path);',
+                      '''                    image::Image writable_rendered = rendered;
+                      image::save_img(writable_rendered, path);'''
+                  ),
+              ],
+              Path(".github/workflows/astra-portable-glibc224.yml"): [
+                  ('  cancel-in-progress: false', '  cancel-in-progress: true'),
+              ],
+          }
+
+          for path, items in replacements.items():
+              text = path.read_text(encoding="utf-8")
+              for old, new in items:
+                  count = text.count(old)
+                  if count != 1:
+                      raise SystemExit(f"{path}: expected exactly one match, got {count}: {old!r}")
+                  text = text.replace(old, new)
+              path.write_text(text, encoding="utf-8")
+          PY
+
+          rm .github/workflows/presentation-api-fix-temp.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            src-core/products/processor/presentation_outputs.cpp \
+            .github/workflows/astra-portable-glibc224.yml \
+            .github/workflows/presentation-api-fix-temp.yml
+          git commit -m "Исправить API-совместимость presentation outputs"
+          git push origin HEAD:agent/astra-portable-glibc224
