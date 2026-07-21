@@ -460,7 +460,7 @@ namespace image
                 const int marker = std::max(10, scaled(14, (double)style.body / 17.0));
                 const int component_width = scaled(56, (double)style.body / 17.0);
                 const int description_x = style.padding + component_width + style.gap;
-                const int description_width = std::max(1, output.width() - style.padding - description_x);
+                const int description_width = std::max(1, (int)output.width() - style.padding - description_x);
                 const int body_line = measured(drawer, style.body, "Ag").line_height;
                 const int small_line = measured(drawer, style.small, "Ag").line_height;
 
