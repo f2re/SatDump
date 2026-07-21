@@ -1,0 +1,80 @@
+name: SatDump 1.2.2 Presentation CI
+
+on:
+  push:
+    branches:
+      - feature/1.2.2-presentation
+  pull_request:
+    branches:
+      - release/1.2.2
+
+permissions:
+  contents: read
+
+concurrency:
+  group: presentation-1.2.2-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-core:
+    name: Linux build and presentation smoke tests
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install required dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            pkg-config \
+            libfftw3-dev \
+            libpng-dev \
+            libtiff-dev \
+            libjemalloc-dev \
+            libcurl4-openssl-dev \
+            libnng-dev
+
+          if ! sudo apt-get install -y libvolk2-dev; then
+            sudo apt-get install -y libvolk-dev
+          fi
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_GUI=OFF
+          -DBUILD_TESTING=ON
+          -DBUILD_TOOLS=OFF
+          -DBUILD_OPENCL=OFF
+          -DBUILD_ZIQ=OFF
+          -DENABLE_INSTALL=OFF
+
+      - name: Build
+        run: cmake --build build --parallel 2
+
+      - name: Render smoke-test products
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/build
+        run: |
+          ./build/satdump-presentation-test \
+            resources/fonts/Roboto-Medium.ttf \
+            presentation-test-output
+
+          test -s presentation-test-output/continuous.png
+          test -s presentation-test-output/categorical.png
+          test -s presentation-test-output/composite.png
+
+      - name: Upload visual test products
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: presentation-reference-images
+          path: presentation-test-output/*.png
+          if-no-files-found: warn
+          retention-days: 14

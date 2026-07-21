@@ -101,7 +101,7 @@ namespace image
         }
 
         // Standard int get. No bound check!
-        inline int get(size_t p)
+        inline int get(size_t p) const
         {
             if (d_depth > 8)
                 return ((uint16_t *)d_data)[p];
@@ -119,7 +119,7 @@ namespace image
         }
 
         // Standard double get. No bound check!
-        inline double getf(size_t p)
+        inline double getf(size_t p) const
         {
             if (d_depth > 8)
                 return (double)((uint16_t *)d_data)[p] / (double)d_maxv;
@@ -129,15 +129,15 @@ namespace image
 
         // Easier int set/get
         inline void set(size_t channel, size_t p, int v) { set(channel * d_width * d_height + p, v); }
-        inline int get(size_t channel, size_t p) { return get(channel * d_width * d_height + p); }
+        inline int get(size_t channel, size_t p) const { return get(channel * d_width * d_height + p); }
         inline void set(size_t channel, size_t x, size_t y, int v) { set(channel * d_width * d_height + y * d_width + x, v); }
-        inline int get(size_t channel, size_t x, size_t y) { return get(channel * d_width * d_height + y * d_width + x); }
+        inline int get(size_t channel, size_t x, size_t y) const { return get(channel * d_width * d_height + y * d_width + x); }
 
         // Easier double setf/getf
         inline void setf(size_t channel, size_t p, double v) { setf(channel * d_width * d_height + p, v); }
-        inline double getf(size_t channel, size_t p) { return getf(channel * d_width * d_height + p); }
+        inline double getf(size_t channel, size_t p) const { return getf(channel * d_width * d_height + p); }
         inline void setf(size_t channel, size_t x, size_t y, double v) { setf(channel * d_width * d_height + y * d_width + x, v); }
-        inline double getf(size_t channel, size_t x, size_t y) { return getf(channel * d_width * d_height + y * d_width + x); }
+        inline double getf(size_t channel, size_t x, size_t y) const { return getf(channel * d_width * d_height + y * d_width + x); }
     };
 
     // Copy part of an image over. Safe way to do it with variable bit depths
