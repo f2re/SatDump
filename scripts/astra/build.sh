@@ -18,7 +18,7 @@ EXTRA_CMAKE_ARGS=()
 
 usage() {
     cat <<EOF
-Использование: scripts/astra/build.sh [параметры] [-- дополнительные CMake-параметры]
+Использование: bash scripts/astra/build.sh [параметры] [-- дополнительные CMake-параметры]
 
 Параметры:
   --profile headless|desktop|full  Профиль сборки (по умолчанию: headless)
@@ -35,9 +35,9 @@ usage() {
   -h, --help                      Показать справку
 
 Примеры:
-  scripts/astra/build.sh --profile headless
-  scripts/astra/build.sh --profile desktop --sdr rtl --install
-  scripts/astra/build.sh --profile headless -- --DPLUGIN_FY3=ON
+  bash scripts/astra/build.sh --profile headless
+  bash scripts/astra/build.sh --profile desktop --sdr rtl --install
+  bash scripts/astra/build.sh --profile headless -- -DPLUGIN_FY3=ON
 EOF
 }
 
@@ -68,6 +68,11 @@ case "${SDR_PROFILE}" in
     auto|none|rtl|common|all) ;;
     *) die "Неизвестный SDR-профиль: ${SDR_PROFILE}" ;;
 esac
+case "${BUILD_TYPE}" in
+    Release|RelWithDebInfo|Debug) ;;
+    *) die "Допустимые типы сборки: Release, RelWithDebInfo, Debug" ;;
+esac
+[[ "${JOBS}" =~ ^[1-9][0-9]*$ ]] || die "--jobs должен быть положительным целым числом."
 
 ASTRA_VERSION="$(detect_astra_version)"
 if [[ -z "${BUILD_DIR}" ]]; then
@@ -76,8 +81,11 @@ fi
 
 print_platform_summary
 select_compiler
+log_info "C: $(${CC} --version | head -n1)"
+log_info "C++: $(${CXX} --version | head -n1)"
+
 CMAKE_EXECUTABLE="$(find_cmake 3.18.0 2>/dev/null || true)"
-[[ -n "${CMAKE_EXECUTABLE}" ]] || die "CMake 3.18+ не найден. Запустите scripts/astra/bootstrap-cmake.sh."
+[[ -n "${CMAKE_EXECUTABLE}" ]] || die "CMake 3.18+ не найден. Запустите bash scripts/astra/bootstrap-cmake.sh."
 log_ok "CMake: ${CMAKE_EXECUTABLE} ($(cmake_version "${CMAKE_EXECUTABLE}"))"
 
 export CMAKE_PREFIX_PATH="${ASTRA_DEPS_PREFIX}${CMAKE_PREFIX_PATH:+:${CMAKE_PREFIX_PATH}}"
@@ -118,9 +126,12 @@ case "${PROFILE}" in
 esac
 
 OPENCL=OFF
-ZIq=OFF
+ZIQ=OFF
 [[ "${ENABLE_OPENCL}" == "1" ]] && OPENCL=ON
-[[ "${ENABLE_ZIQ}" == "1" ]] && ZIq=ON
+[[ "${ENABLE_ZIQ}" == "1" ]] && ZIQ=ON
+
+TESTS=OFF
+[[ "${RUN_TESTS}" == "1" ]] && TESTS=ON
 
 RTLSDR=OFF
 AIRSPY=OFF
@@ -166,11 +177,14 @@ CMAKE_ARGS=(
     "-DCMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}"
     "-DCMAKE_BUILD_RPATH=${ASTRA_DEPS_PREFIX}/lib;${ASTRA_DEPS_PREFIX}/lib64"
     "-DCMAKE_INSTALL_RPATH=${ASTRA_DEPS_PREFIX}/lib;${ASTRA_DEPS_PREFIX}/lib64"
+    -DCMAKE_INSTALL_RPATH_USE_LINK_PATH=ON
+    -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON
     "-DBUILD_GUI=${GUI}"
-    "-DBUILD_TESTING=$([[ ${RUN_TESTS} == 1 ]] && printf ON || printf OFF)"
+    "-DBUILD_TESTING=${TESTS}"
     -DBUILD_TOOLS=OFF
     "-DBUILD_OPENCL=${OPENCL}"
-    "-DBUILD_ZIQ=${ZIq}"
+    "-DBUILD_ZIQ=${ZIQ}"
     -DBUILD_ZIQ2=OFF
     -DBUILD_OPENMP=ON
     -DENABLE_INSTALL=ON
@@ -220,7 +234,7 @@ if (( ${#EXTRA_CMAKE_ARGS[@]} > 0 )); then
 fi
 
 log_info "Конфигурация профиля ${PROFILE}; SDR=${SDR_PROFILE}; build=${BUILD_DIR}"
-# В SatDump 1.2.2 переменная CI отключает автоматическое -march=native.
+# В исходном SatDump 1.2.2 переменная CI отключает автоматическое -march=native.
 # Это необходимо для переносимости бинарников между машинами Astra Linux.
 env CI=astra-linux CC="${CC}" CXX="${CXX}" "${CMAKE_EXECUTABLE}" "${CMAKE_ARGS[@]}"
 
@@ -250,12 +264,17 @@ chmod +x "${BUILD_DIR}/astra-env.sh"
 
 if [[ "${DO_INSTALL}" == "1" ]]; then
     log_info "Установка в ${INSTALL_PREFIX}"
-    if [[ -d "${INSTALL_PREFIX}" && -w "${INSTALL_PREFIX}" ]] || [[ -w "$(dirname "${INSTALL_PREFIX}")" ]]; then
+
+    if [[ "${INSTALL_PREFIX}" == "${HOME}"/* ]]; then
+        mkdir -p "${INSTALL_PREFIX}"
+    fi
+
+    if [[ -d "${INSTALL_PREFIX}" && -w "${INSTALL_PREFIX}" ]]; then
         "${CMAKE_EXECUTABLE}" --install "${BUILD_DIR}"
     elif command_exists sudo; then
         sudo env LD_LIBRARY_PATH="${LD_LIBRARY_PATH}" "${CMAKE_EXECUTABLE}" --install "${BUILD_DIR}"
     else
-        die "Нет прав на ${INSTALL_PREFIX}; выполните установку от администратора."
+        die "Нет прав на ${INSTALL_PREFIX}; выберите пользовательский --prefix или выполните установку от администратора."
     fi
     log_ok "SatDump установлен в ${INSTALL_PREFIX}"
 fi
@@ -263,9 +282,9 @@ fi
 log_ok "Сборка завершена: ${BUILD_DIR}"
 cat <<EOF
 
-Запуск CLI из дерева сборки:
-  scripts/astra/run.sh --build-dir "${BUILD_DIR}" -- --help
+Подготовить пользовательское установленное дерево и проверить версию:
+  bash scripts/astra/run.sh --build-dir "${BUILD_DIR}" --prefix "${INSTALL_PREFIX}" --prepare -- version
 
-Установка:
-  scripts/astra/build.sh --profile ${PROFILE} --build-dir "${BUILD_DIR}" --prefix "${INSTALL_PREFIX}" --install
+Повторить установку из существующего build-каталога:
+  bash scripts/astra/build.sh --profile ${PROFILE} --build-dir "${BUILD_DIR}" --prefix "${INSTALL_PREFIX}" --install
 EOF
