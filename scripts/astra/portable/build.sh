@@ -121,19 +121,35 @@ if [[ -n "${OFFLINE_DIR}" ]]; then
     fi
 fi
 
-unmount_rootfs_tree() {
-    [[ -e "${ROOTFS}" ]] || return 0
-    mapfile -t stale_mounts < <(findmnt -R -n -o TARGET "${ROOTFS}" 2>/dev/null | tac || true)
+unmount_rootfs_children() {
+    [[ -d "${ROOTFS}" ]] || return 0
+
+    # Не используем `findmnt -R ${ROOTFS}`: если сам ROOTFS не является отдельным
+    # mountpoint, findmnt может выбрать родительскую файловую систему. Сначала
+    # получаем полный список mountpoints, затем строго фильтруем только пути,
+    # начинающиеся с `${ROOTFS}/`. Сам ROOTFS никогда не размонтируется.
+    local root_prefix="${ROOTFS%/}/"
     local target
+    local -a stale_mounts=()
+    while IFS= read -r target; do
+        [[ "${target}" == "${root_prefix}"* ]] || continue
+        stale_mounts+=("${target}")
+    done < <(
+        findmnt -rn -o TARGET \
+            | awk '{ print length($0), $0 }' \
+            | sort -rn \
+            | cut -d' ' -f2-
+    )
+
     for target in "${stale_mounts[@]}"; do
         [[ -n "${target}" ]] || continue
-        log_warn "Отключение оставшегося mount: ${target}"
-        "${SUDO[@]}" umount -l "${target}" || die "Не удалось отключить ${target}"
+        log_warn "Отключение оставшегося дочернего mount: ${target}"
+        "${SUDO[@]}" umount -l -- "${target}" || die "Не удалось отключить ${target}"
     done
 }
 
 if [[ "${CLEAN_ROOTFS}" == "1" ]]; then
-    unmount_rootfs_tree
+    unmount_rootfs_children
 fi
 
 PREPARE_ARGS=(
@@ -177,14 +193,14 @@ cleanup_mounts() {
     local index target
     for (( index=${#MOUNTED[@]}-1; index>=0; index-- )); do
         target="${MOUNTED[index]}"
-        "${SUDO[@]}" umount -l "${target}" >/dev/null 2>&1 || true
+        "${SUDO[@]}" umount -l -- "${target}" >/dev/null 2>&1 || true
     done
 }
 trap cleanup_mounts EXIT INT TERM
 
 # Перед новым запуском устраняем следы прерванной предыдущей сборки, но не
 # удаляем сам rootfs/toolchain.
-unmount_rootfs_tree
+unmount_rootfs_children
 
 mount_rbind /dev "${ROOTFS}/dev"
 mount_rbind /sys "${ROOTFS}/sys"
