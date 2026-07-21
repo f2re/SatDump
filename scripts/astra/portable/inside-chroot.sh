@@ -39,6 +39,11 @@ for marker in "${MIXED_TREE_MARKERS[@]}"; do
     [[ ! -e "${SOURCE_DIR}/${marker}" ]] || fail "Обнаружен маркер смешанного дерева 2.x: ${marker}"
 done
 
+[[ "$(dpkg --print-architecture)" == "amd64" ]] || fail "Внутренний rootfs должен иметь архитектуру amd64."
+BUILD_GLIBC="$(ldd --version 2>&1 | head -n1 | grep -o '[0-9][0-9.]*$' || true)"
+[[ "${BUILD_GLIBC}" == "${SATDUMP_PORTABLE_GLIBC_BASELINE}" ]] \
+    || fail "Ожидалась glibc ${SATDUMP_PORTABLE_GLIBC_BASELINE}, обнаружена ${BUILD_GLIBC:-unknown}. Пересоздайте rootfs."
+
 mkdir -p "${WORK_DIR}" "${OUTPUT_DIR}" "${CACHE_DIR}"
 export DEBIAN_FRONTEND=noninteractive
 export LC_ALL=C
@@ -82,7 +87,15 @@ verify_sha256() {
 
 install_cmake() {
     local prefix="/opt/cmake-${SATDUMP_PORTABLE_CMAKE_VERSION}"
-    [[ -x "${prefix}/bin/cmake" ]] && return
+    local actual=""
+    if [[ -x "${prefix}/bin/cmake" ]]; then
+        actual="$("${prefix}/bin/cmake" --version | awk 'NR == 1 { print $3 }')"
+        if [[ "${actual}" == "${SATDUMP_PORTABLE_CMAKE_VERSION}" ]]; then
+            log "CMake ${actual} уже подготовлен"
+            return
+        fi
+        log "CMake ${actual:-unknown} не совпадает с lock.env; переустановка"
+    fi
 
     local archive checksums expected
     archive="$(fetch_file "${SATDUMP_PORTABLE_CMAKE_ARCHIVE}" "${SATDUMP_PORTABLE_CMAKE_URL}")"
@@ -96,11 +109,22 @@ install_cmake() {
     mkdir -p "${prefix}"
     tar -xzf "${archive}" --strip-components=1 -C "${prefix}"
     [[ -x "${prefix}/bin/cmake" ]] || fail "CMake не установлен в ${prefix}"
+    actual="$("${prefix}/bin/cmake" --version | awk 'NR == 1 { print $3 }')"
+    [[ "${actual}" == "${SATDUMP_PORTABLE_CMAKE_VERSION}" ]] \
+        || fail "После установки получен CMake ${actual}, ожидался ${SATDUMP_PORTABLE_CMAKE_VERSION}."
 }
 
 build_gcc() {
     local prefix="/opt/gcc9"
-    [[ -x "${prefix}/bin/g++" ]] && return
+    local actual=""
+    if [[ -x "${prefix}/bin/g++" ]]; then
+        actual="$("${prefix}/bin/g++" -dumpfullversion -dumpversion)"
+        if [[ "${actual}" == "${SATDUMP_PORTABLE_GCC_VERSION}" ]]; then
+            log "GCC ${actual} уже подготовлен"
+            return
+        fi
+        log "GCC ${actual:-unknown} не совпадает с lock.env; пересборка"
+    fi
 
     local archive source build
     archive="$(fetch_file "${SATDUMP_PORTABLE_GCC_ARCHIVE}" "${SATDUMP_PORTABLE_GCC_URL}")"
@@ -126,14 +150,27 @@ build_gcc() {
         make install
     )
     [[ -x "${prefix}/bin/g++" ]] || fail "GCC 9.5 не установлен."
+    actual="$("${prefix}/bin/g++" -dumpfullversion -dumpversion)"
+    [[ "${actual}" == "${SATDUMP_PORTABLE_GCC_VERSION}" ]] \
+        || fail "После установки получен GCC ${actual}, ожидался ${SATDUMP_PORTABLE_GCC_VERSION}."
 }
 
 build_nng() {
     local prefix="/usr/local"
+    local marker="${prefix}/share/satdump-portable/nng.lock"
     if [[ -f "${prefix}/include/nng/nng.h" ]] && \
-       compgen -G "${prefix}/lib/libnng.so*" >/dev/null; then
+       compgen -G "${prefix}/lib/libnng.so*" >/dev/null && \
+       [[ -f "${marker}" ]] && \
+       grep -Fxq "commit=${SATDUMP_PORTABLE_NNG_COMMIT}" "${marker}"; then
+        log "NNG ${SATDUMP_PORTABLE_NNG_VERSION} уже подготовлен"
         return
     fi
+
+    log "Очистка несовпадающей локальной NNG"
+    rm -rf "${prefix}/include/nng"
+    rm -f "${prefix}"/lib/libnng.so* "${prefix}/lib/pkgconfig/nng.pc"
+    rm -f "${marker}"
+    ldconfig
 
     local source="${WORK_DIR}/toolchain/nng-${SATDUMP_PORTABLE_NNG_VERSION}"
     local build="${WORK_DIR}/toolchain/nng-build"
@@ -165,6 +202,14 @@ build_nng() {
     /opt/cmake-${SATDUMP_PORTABLE_CMAKE_VERSION}/bin/cmake --install "${build}"
     ldconfig
     [[ -f "${prefix}/include/nng/nng.h" ]] || fail "NNG не установлен."
+    compgen -G "${prefix}/lib/libnng.so*" >/dev/null || fail "Библиотека NNG не установлена."
+
+    mkdir -p "$(dirname "${marker}")"
+    cat > "${marker}" <<EOF
+version=${SATDUMP_PORTABLE_NNG_VERSION}
+commit=${SATDUMP_PORTABLE_NNG_COMMIT}
+profile_version=${SATDUMP_PORTABLE_PROFILE_VERSION}
+EOF
 }
 
 install_cmake
@@ -174,6 +219,15 @@ build_nng
 export PATH="/opt/gcc9/bin:/opt/cmake-${SATDUMP_PORTABLE_CMAKE_VERSION}/bin:${PATH}"
 export LD_LIBRARY_PATH="/opt/gcc9/lib64:/usr/local/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 export CMAKE_PREFIX_PATH="/usr/local"
+
+cat > /etc/satdump-portable-toolchain <<EOF
+profile_version=${SATDUMP_PORTABLE_PROFILE_VERSION}
+glibc=${BUILD_GLIBC}
+gcc=$(/opt/gcc9/bin/g++ -dumpfullversion -dumpversion)
+cmake=$(cmake --version | awk 'NR == 1 { print $3 }')
+nng_version=${SATDUMP_PORTABLE_NNG_VERSION}
+nng_commit=${SATDUMP_PORTABLE_NNG_COMMIT}
+EOF
 
 BUILD_DIR="${WORK_DIR}/satdump-build-${PLUGIN_PROFILE}"
 STAGE_ROOT="${WORK_DIR}/stage-${PLUGIN_PROFILE}"
@@ -266,6 +320,7 @@ bash "${PORTABLE_DIR}/make-bundle.sh" \
     --output "${OUTPUT_DIR}" \
     --profile "${PLUGIN_PROFILE}" \
     --gcc-runtime /opt/gcc9/lib64 \
-    --glibc-max "${SATDUMP_PORTABLE_GLIBC_BASELINE}"
+    --glibc-max "${SATDUMP_PORTABLE_GLIBC_BASELINE}" \
+    --glibc-warn "${SATDUMP_PORTABLE_GLIBC_WARN_ABOVE}"
 
 log "Portable-сборка завершена. Артефакты: ${OUTPUT_DIR}"
