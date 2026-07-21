@@ -4,6 +4,7 @@
 
 #include "nlohmann/json.hpp"
 
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -50,9 +51,9 @@ namespace
             {"presentation",
              {
                  {"enabled", true},
-                 {"outputs", {{"minimal", true}, {"presentation", false}, {"legacy_alias", true}}},
-                 {"orientation", {{"mode", "rotate_180"}, {"north_up", false}}}
-             }}}
+                 {"outputs", { {"minimal", true}, {"presentation", false}, {"legacy_alias", true} }},
+                 {"orientation", { {"mode", "rotate_180"}, {"north_up", false} }}
+             }}
         };
 
         const satdump::product_presentation::OutputSettings settings =
@@ -131,16 +132,16 @@ int main(int argc, char **argv)
          {
              {"enabled", true},
              {"title", "Ночная микрофизика облаков"},
-             {"outputs", {{"minimal", true}, {"presentation", true}, {"legacy_alias", true}}},
-             {"orientation", {{"mode", "auto"}, {"north_up", true}}},
-             {"minimal", {{"branding", "SatDump test · minimal"}}},
-             {"editorial", {{"branding", "SatDump test · editorial"}}}
-         }}}
+             {"outputs", { {"minimal", true}, {"presentation", true}, {"legacy_alias", true} }},
+             {"orientation", { {"mode", "auto"}, {"north_up", true} }},
+             {"minimal", { {"branding", "SatDump test · minimal"} }},
+             {"editorial", { {"branding", "SatDump test · editorial"} }}
+         }}
     };
 
     const nlohmann::json metadata = {
-        {"acquisition", {{"downlink", {{"center_frequency_hz", 137900000}, {"sample_rate_hz", 240000}}}}},
-        {"quality", {{"score", 96}, {"packet_loss_percent", 0.3}, {"snr_db", 18.2}}}
+        {"acquisition", { {"downlink", { {"center_frequency_hz", 137900000}, {"sample_rate_hz", 240000} }} }},
+        {"quality", { {"score", 96}, {"packet_loss_percent", 0.3}, {"snr_db", 18.2} }}
     };
     const std::vector<double> timestamps = {1784515276.0, 1784515700.0, 1784516138.0};
     const std::filesystem::path base = output_directory / "meteor_cloud_rgb";
