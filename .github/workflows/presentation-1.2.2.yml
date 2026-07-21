@@ -128,7 +128,7 @@ jobs:
         shell: bash
         run: |
           build_dir="${GITHUB_WORKSPACE}/build/astra-${{ matrix.astra }}-ci"
-          install_prefix="${GITHUB_WORKSPACE}/build/install-astra-${{ matrix.astra }}-ci"
+          install_prefix="${GITHUB_WORKSPACE}/build/satdump-install-astra-${{ matrix.astra }}-ci"
           mkdir -p "${build_dir}"
           set -o pipefail
           bash scripts/astra/build.sh \
@@ -137,6 +137,7 @@ jobs:
             --build-dir "${build_dir}" \
             --prefix "${install_prefix}" \
             --jobs 2 \
+            --clean-prefix \
             --install \
             2>&1 | tee "${build_dir}/native-build.log"
 
@@ -145,11 +146,12 @@ jobs:
           ASTRA_VERSION_OVERRIDE: ${{ matrix.astra }}
         shell: bash
         run: |
-          prefix="${GITHUB_WORKSPACE}/build/install-astra-${{ matrix.astra }}-ci"
+          prefix="${GITHUB_WORKSPACE}/build/satdump-install-astra-${{ matrix.astra }}-ci"
           test -x "${prefix}/bin/satdump"
           test -d "${prefix}/share/satdump/resources"
           test -d "${prefix}/share/satdump/pipelines"
           test -f "${prefix}/share/satdump/satdump_cfg.json"
+          test -f "${prefix}/.satdump-install-root"
           bash scripts/astra/run.sh \
             --prefix "${prefix}" \
             -- version \
@@ -226,11 +228,12 @@ jobs:
                 --mode native \
                 --profile headless \
                 --build-dir /workspace/build/astra-ubi17-ci \
-                --prefix /workspace/build/install-astra-ubi17-ci \
+                --prefix /workspace/build/satdump-install-astra-ubi17-ci \
                 --jobs 2 \
+                --clean-prefix \
                 --install
               bash scripts/astra/run.sh \
-                --prefix /workspace/build/install-astra-ubi17-ci \
+                --prefix /workspace/build/satdump-install-astra-ubi17-ci \
                 -- version
             '
 
@@ -238,7 +241,8 @@ jobs:
         run: |
           test -s build/astra-ubi17-ci/presentation-test-output/continuous_editorial_landscape.png
           test -s build/astra-ubi17-ci/presentation-test-output/continuous_minimal_portrait.png
-          test -x build/install-astra-ubi17-ci/bin/satdump
+          test -x build/satdump-install-astra-ubi17-ci/bin/satdump
+          test -f build/satdump-install-astra-ubi17-ci/.satdump-install-root
 
       - name: Upload UBI reference products
         if: always()
