@@ -1,0 +1,59 @@
+name: SatDump 1.2.2 Presentation CI
+
+on:
+  push:
+    branches:
+      - feature/1.2.2-presentation
+  pull_request:
+    branches:
+      - release/1.2.2
+
+permissions:
+  contents: read
+
+concurrency:
+  group: presentation-1.2.2-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-core:
+    name: Linux core build
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install required dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            pkg-config \
+            libfftw3-dev \
+            libpng-dev \
+            libtiff-dev \
+            libjemalloc-dev \
+            libcurl4-openssl-dev \
+            libnng-dev
+
+          if ! sudo apt-get install -y libvolk2-dev; then
+            sudo apt-get install -y libvolk-dev
+          fi
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_GUI=OFF
+          -DBUILD_TESTING=OFF
+          -DBUILD_TOOLS=OFF
+          -DBUILD_OPENCL=OFF
+          -DBUILD_ZIQ=OFF
+          -DENABLE_INSTALL=OFF
+
+      - name: Build
+        run: cmake --build build --parallel 2
