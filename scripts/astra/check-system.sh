@@ -108,24 +108,26 @@ if command_exists dpkg-architecture; then
     fi
 fi
 
-check_header() {
+check_any_header() {
     local display="$1"
-    local header="$2"
-    local root
-    for root in "${INCLUDE_ROOTS[@]}"; do
-        if [[ -e "${root}/${header}" ]]; then
-            check_ok "${display}: ${root}/${header}"
-            return 0
-        fi
+    shift
+    local root header
+    for header in "$@"; do
+        for root in "${INCLUDE_ROOTS[@]}"; do
+            if [[ -e "${root}/${header}" ]]; then
+                check_ok "${display}: ${root}/${header}"
+                return 0
+            fi
+        done
     done
-    check_fail "${display}: заголовок ${header} не найден"
+    check_fail "${display}: не найден ни один заголовок из списка: $*"
     return 1
 }
 
-check_header "libpng" "png.h" || check_header "libpng" "libpng16/png.h" || true
-check_header "libtiff" "tiffio.h" || true
-check_header "jemalloc" "jemalloc/jemalloc.h" || true
-check_header "NNG" "nng/nng.h" || true
+check_any_header "libpng" "png.h" "libpng16/png.h" || true
+check_any_header "libtiff" "tiffio.h" || true
+check_any_header "jemalloc" "jemalloc/jemalloc.h" || true
+check_any_header "NNG" "nng/nng.h" || true
 
 if [[ -d "${ASTRA_DEPS_PREFIX}" ]]; then
     check_ok "Локальный префикс зависимостей: ${ASTRA_DEPS_PREFIX}"
