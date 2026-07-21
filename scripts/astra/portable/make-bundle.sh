@@ -9,6 +9,7 @@ OUTPUT_DIR=""
 PROFILE="reference"
 GCC_RUNTIME="/opt/gcc9/lib64"
 GLIBC_MAX="2.24"
+GLIBC_WARN="2.22"
 
 usage() {
     cat <<'EOF'
@@ -18,6 +19,7 @@ usage() {
   --profile reference|meteor
   --gcc-runtime PATH
   --glibc-max VERSION
+  --glibc-warn VERSION
 EOF
 }
 
@@ -30,6 +32,7 @@ while (( $# > 0 )); do
         --profile) PROFILE="$2"; shift 2 ;;
         --gcc-runtime) GCC_RUNTIME="$2"; shift 2 ;;
         --glibc-max) GLIBC_MAX="$2"; shift 2 ;;
+        --glibc-warn) GLIBC_WARN="$2"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
         *) printf 'Неизвестный параметр: %s\n' "$1" >&2; exit 2 ;;
     esac
@@ -37,6 +40,7 @@ done
 
 fail() { printf '[bundle] ERROR: %s\n' "$*" >&2; exit 1; }
 log() { printf '[bundle] %s\n' "$*"; }
+warn() { printf '[bundle] WARNING: %s\n' "$*" >&2; }
 
 [[ -x "${STAGE}/bin/satdump" ]] || fail "Не найден staged satdump: ${STAGE}/bin/satdump"
 [[ -d "${STAGE}/share/satdump" ]] || fail "Не найден staged share/satdump"
@@ -201,18 +205,16 @@ GLIBCXX_REQUIRED="$(max_symbol_version GLIBCXX)"
 if ! dpkg --compare-versions "${GLIBC_REQUIRED}" le "${GLIBC_MAX}"; then
     fail "Требуется GLIBC_${GLIBC_REQUIRED}, допустимый максимум GLIBC_${GLIBC_MAX}."
 fi
-
-VERSION_LOG="${BUNDLE}/portable-version.log"
-"${BUNDLE}/satdump" version >"${VERSION_LOG}" 2>&1
-if ! grep -q 'SatDump v1.2.2' "${VERSION_LOG}"; then
-    cat "${VERSION_LOG}" >&2
-    fail "Portable-бандл не подтвердил версию SatDump 1.2.2."
+if ! dpkg --compare-versions "${GLIBC_REQUIRED}" le "${GLIBC_WARN}"; then
+    warn "Бандл требует GLIBC_${GLIBC_REQUIRED}; проверенный рабочий эталон требовал не выше GLIBC_${GLIBC_WARN}."
 fi
 
+# Все runtime-пробы запускаются из пустого каталога. Иначе локальные pipelines,
+# settings.json или plugins из исходного дерева могут скрыть дефект relocatable-бандла.
 PROBE_ROOT="$(mktemp -d /tmp/satdump-portable-probe.XXXXXX)"
 cleanup_probe() { rm -rf "${PROBE_ROOT}"; }
 trap cleanup_probe EXIT
-mkdir -p "${PROBE_ROOT}/home/.config/satdump" "${PROBE_ROOT}/output"
+mkdir -p "${PROBE_ROOT}/home/.config/satdump" "${PROBE_ROOT}/output" "${PROBE_ROOT}/cwd"
 cat > "${PROBE_ROOT}/home/.config/satdump/settings.json" <<'EOF'
 {
   "satdump_general": {
@@ -223,10 +225,22 @@ cat > "${PROBE_ROOT}/home/.config/satdump/settings.json" <<'EOF'
 }
 EOF
 
+VERSION_LOG="${BUNDLE}/portable-version.log"
+(
+    cd "${PROBE_ROOT}/cwd"
+    HOME="${PROBE_ROOT}/home" "${BUNDLE}/satdump" version
+) >"${VERSION_LOG}" 2>&1
+if ! grep -q 'SatDump v1.2.2' "${VERSION_LOG}"; then
+    cat "${VERSION_LOG}" >&2
+    fail "Portable-бандл не подтвердил версию SatDump 1.2.2."
+fi
+
 PROBE_LOG="${BUNDLE}/portable-plugin-probe.log"
-HOME="${PROBE_ROOT}/home" "${BUNDLE}/satdump" \
-    __portable_plugin_probe__ raw /dev/null "${PROBE_ROOT}/output" \
-    >"${PROBE_LOG}" 2>&1 || true
+(
+    cd "${PROBE_ROOT}/cwd"
+    HOME="${PROBE_ROOT}/home" "${BUNDLE}/satdump" \
+        __portable_plugin_probe__ raw /dev/null "${PROBE_ROOT}/output"
+) >"${PROBE_LOG}" 2>&1 || true
 
 if grep -Eqi 'Error loading .*undefined symbol|Error loading .*No such file|cannot open shared object file|not found' "${PROBE_LOG}"; then
     grep -Ei 'Error loading|undefined symbol|No such file|cannot open shared object file|not found' "${PROBE_LOG}" >&2 || true
@@ -244,6 +258,8 @@ fi
 GIT_SHA="$(git -C "${SOURCE_DIR}" rev-parse HEAD 2>/dev/null || printf unknown)"
 GIT_BRANCH="$(git -C "${SOURCE_DIR}" rev-parse --abbrev-ref HEAD 2>/dev/null || printf archive)"
 SOURCE_EPOCH="${SOURCE_DATE_EPOCH:-$(date +%s)}"
+NNG_VERSION="$(awk -F= '$1 == "version" { print $2 }' /usr/local/share/satdump-portable/nng.lock 2>/dev/null || true)"
+NNG_COMMIT="$(awk -F= '$1 == "commit" { print $2 }' /usr/local/share/satdump-portable/nng.lock 2>/dev/null || true)"
 
 {
     printf 'profile=satdump-portable-glibc224\n'
@@ -251,13 +267,16 @@ SOURCE_EPOCH="${SOURCE_DATE_EPOCH:-$(date +%s)}"
     printf 'source_commit=%s\n' "${GIT_SHA}"
     printf 'source_branch=%s\n' "${GIT_BRANCH}"
     printf 'source_date_epoch=%s\n' "${SOURCE_EPOCH}"
+    printf 'glibc_build=%s\n' "$(ldd --version 2>&1 | head -n1 | grep -o '[0-9][0-9.]*$' || printf unknown)"
     printf 'glibc_required=%s\n' "${GLIBC_REQUIRED}"
+    printf 'glibc_reference_max=%s\n' "${GLIBC_WARN}"
     printf 'glibc_allowed_max=%s\n' "${GLIBC_MAX}"
     printf 'glibcxx_required=%s\n' "${GLIBCXX_REQUIRED}"
     printf 'plugin_count=%s\n' "${PLUGIN_COUNT}"
     printf 'compiler=%s\n' "$(/opt/gcc9/bin/g++ --version | head -n1)"
     printf 'cmake=%s\n' "$(cmake --version | head -n1)"
-    printf 'nng=%s\n' "$(strings "${BUNDLE}/lib/libnng.so.1" 2>/dev/null | grep -m1 -E '^1\.8\.0$' || printf 1.8.0)"
+    printf 'nng_version=%s\n' "${NNG_VERSION:-unknown}"
+    printf 'nng_commit=%s\n' "${NNG_COMMIT:-unknown}"
     printf '\n[plugins]\n'
     find "${BUNDLE}/lib/satdump/plugins" -maxdepth 1 -type f -name '*.so' -printf '%f\n' | sort
     printf '\n[libraries]\n'
