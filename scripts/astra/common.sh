@@ -70,7 +70,9 @@ detect_astra_version() {
     local candidate=""
 
     if [[ -n "${ASTRA_VERSION_OVERRIDE:-}" ]]; then
-        extract_astra_version "${ASTRA_VERSION_OVERRIDE}" || true
+        if ! extract_astra_version "${ASTRA_VERSION_OVERRIDE}"; then
+            printf 'unknown\n'
+        fi
         return
     fi
 
