@@ -1,0 +1,112 @@
+name: Presentation renderer sanitizers
+
+on:
+  pull_request:
+    branches:
+      - release/1.2.2
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  asan-ubsan:
+    name: ASan and UBSan presentation tests
+    runs-on: ubuntu-22.04
+    timeout-minutes: 55
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake pkg-config \
+            libfftw3-dev libpng-dev libtiff-dev libjemalloc-dev \
+            libcurl4-openssl-dev libnng-dev libvolk2-dev
+
+      - name: Configure minimal sanitizer build
+        run: |
+          cmake -S . -B build/sanitizers \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_FLAGS="-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer" \
+            -DCMAKE_CXX_FLAGS="-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" \
+            -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address,undefined" \
+            -DBUILD_GUI=OFF \
+            -DBUILD_TESTING=ON \
+            -DBUILD_TOOLS=OFF \
+            -DBUILD_OPENCL=OFF \
+            -DBUILD_ZIQ=OFF \
+            -DBUILD_ZIQ2=OFF \
+            -DBUILD_OPENMP=OFF \
+            -DENABLE_INSTALL=OFF \
+            -DPLUGINS_ALL=OFF \
+            -DPLUGIN_SIMD_SSE41=OFF \
+            -DPLUGIN_SIMD_AVX2=OFF \
+            -DPLUGIN_SIMD_NEON=OFF \
+            -DPLUGIN_AIRSPY_SDR_SUPPORT=OFF \
+            -DPLUGIN_AIRSPYHF_SDR_SUPPORT=OFF \
+            -DPLUGIN_HACKRF_SDR_SUPPORT=OFF \
+            -DPLUGIN_LIMESDR_SDR_SUPPORT=OFF \
+            -DPLUGIN_SDRPLAY_SDR_SUPPORT=OFF \
+            -DPLUGIN_PLUTOSDR_SDR_SUPPORT=OFF \
+            -DPLUGIN_BLADERF_SDR_SUPPORT=OFF \
+            -DPLUGIN_USRP_SDR_SUPPORT=OFF \
+            -DPLUGIN_RTLSDR_SDR_SUPPORT=OFF \
+            -DPLUGIN_MIRISDR_SDR_SUPPORT=OFF \
+            -DPLUGIN_SPYSERVER_SUPPORT=OFF \
+            -DPLUGIN_RTLTCP_SUPPORT=OFF \
+            -DPLUGIN_SDRPP_SERVER_SUPPORT=OFF \
+            -DPLUGIN_RFNM_SDR_SUPPORT=OFF \
+            -DPLUGIN_NET_SOURCE_SDR_SUPPORT=OFF \
+            -DPLUGIN_REMOTE_SDR_SUPPORT=OFF \
+            -DPLUGIN_PORTAUDIO_SINK=OFF \
+            -DPLUGIN_RTAUDIO_SINK=OFF \
+            -DPLUGIN_AAUDIO_SINK=OFF
+
+      - name: Build presentation tests
+        run: |
+          cmake --build build/sanitizers \
+            --target satdump-presentation-test satdump-presentation-output-test \
+            --parallel 2 2>&1 | tee build/sanitizers/sanitizer-build.log
+
+      - name: Run renderer smoke test under sanitizers
+        env:
+          ASAN_OPTIONS: detect_leaks=0:abort_on_error=1:symbolize=1:strict_string_checks=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+          LD_LIBRARY_PATH: ${{ github.workspace }}/build/sanitizers
+        run: |
+          set -o pipefail
+          build/sanitizers/satdump-presentation-test \
+            resources/fonts/Roboto-Medium.ttf \
+            build/sanitizers/presentation-test-output 2>&1 \
+            | tee build/sanitizers/presentation-sanitizer.log
+
+      - name: Run output integration test under sanitizers
+        env:
+          ASAN_OPTIONS: detect_leaks=0:abort_on_error=1:symbolize=1:strict_string_checks=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+          LD_LIBRARY_PATH: ${{ github.workspace }}/build/sanitizers
+        run: |
+          set -o pipefail
+          build/sanitizers/satdump-presentation-output-test \
+            resources/fonts/Roboto-Medium.ttf \
+            build/sanitizers/presentation-output-test 2>&1 \
+            | tee build/sanitizers/output-sanitizer.log
+
+      - name: Upload sanitizer logs and images
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: presentation-sanitizer-results
+          path: |
+            build/sanitizers/sanitizer-build.log
+            build/sanitizers/presentation-sanitizer.log
+            build/sanitizers/output-sanitizer.log
+            build/sanitizers/presentation-test-output/*.png
+            build/sanitizers/presentation-output-test/*
+          if-no-files-found: warn
+          retention-days: 14
