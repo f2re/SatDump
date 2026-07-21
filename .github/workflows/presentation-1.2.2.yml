@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   linux-core:
-    name: Linux core build
+    name: Linux build and presentation smoke tests
     runs-on: ubuntu-22.04
     timeout-minutes: 45
 
@@ -49,7 +49,7 @@ jobs:
           cmake -S . -B build
           -DCMAKE_BUILD_TYPE=Release
           -DBUILD_GUI=OFF
-          -DBUILD_TESTING=OFF
+          -DBUILD_TESTING=ON
           -DBUILD_TOOLS=OFF
           -DBUILD_OPENCL=OFF
           -DBUILD_ZIQ=OFF
@@ -57,3 +57,24 @@ jobs:
 
       - name: Build
         run: cmake --build build --parallel 2
+
+      - name: Render smoke-test products
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/build
+        run: |
+          ./build/satdump-presentation-test \
+            resources/fonts/Roboto-Medium.ttf \
+            presentation-test-output
+
+          test -s presentation-test-output/continuous.png
+          test -s presentation-test-output/categorical.png
+          test -s presentation-test-output/composite.png
+
+      - name: Upload visual test products
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: presentation-reference-images
+          path: presentation-test-output/*.png
+          if-no-files-found: warn
+          retention-days: 14
