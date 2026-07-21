@@ -55,5 +55,14 @@ namespace image
     void load_img(Image &img, uint8_t *buffer, int size);
     void save_img(Image &img, std::string file, bool fast = true);
 
+    // The legacy encoders accept a mutable Image even though the generic save
+    // operation is logically read-only. This overload keeps const call sites
+    // safe by making an explicit working copy for the encoder.
+    inline void save_img(const Image &img, std::string file, bool fast = true)
+    {
+        Image working_copy = img;
+        save_img(working_copy, file, fast);
+    }
+
     bool append_ext(std::string *file, bool prod = false);
 }
