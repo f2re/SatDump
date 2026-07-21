@@ -11,3 +11,7 @@ target_link_libraries(satdump-testing PUBLIC satdump_core) # mfhdf)
 add_executable(satdump-presentation-test presentation_test.cpp)
 target_include_directories(satdump-presentation-test PUBLIC src-testing src-core)
 target_link_libraries(satdump-presentation-test PUBLIC satdump_core)
+
+add_executable(satdump-presentation-output-test presentation_outputs_test.cpp)
+target_include_directories(satdump-presentation-output-test PUBLIC src-testing src-core)
+target_link_libraries(satdump-presentation-output-test PUBLIC satdump_core)
