@@ -4,6 +4,7 @@
 #include "offline.h"
 #include "record.h"
 #include "autotrack/autotrack.h"
+#include "level1c.h"
 
 #include "sdr_probe.h"
 
@@ -50,6 +51,10 @@ int main(int argc, char *argv[])
         {
             logger->error("Error running project! %s", e.what());
         }
+    }
+    else if (std::string(argv[1]) == "level1c")
+    {
+        return main_level1c(argc - 1, argv + 1);
     }
     else if (std::string(argv[1]) == "version" || std::string(argv[1]) == "--v")
     {
