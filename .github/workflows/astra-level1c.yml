@@ -36,14 +36,17 @@ jobs:
           clean: true
           fetch-depth: 1
 
-      - name: Проверка системы
-        run: bash scripts/astra/check-system.sh --strict
+      - name: Предварительная диагностика
+        run: bash scripts/astra/check-system.sh
 
       - name: Зависимости headless
         run: |
           bash scripts/astra/install-deps.sh \
             --profile headless \
             --bootstrap-missing
+
+      - name: Строгая проверка системы
+        run: bash scripts/astra/check-system.sh --strict
 
       - name: Нативная сборка
         env:
