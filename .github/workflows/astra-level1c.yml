@@ -1,0 +1,89 @@
+name: Astra Level-1C
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - release/1.2.2
+    paths:
+      - "src-cli/level1c.cpp"
+      - "src-cli/level1c.h"
+      - "src-cli/main.cpp"
+      - "src-core/products/**"
+      - "src-core/common/projection/**"
+      - "scripts/astra/**"
+      - ".github/workflows/astra-level1c.yml"
+
+concurrency:
+  group: satdump-astra-level1c-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: astra-1.6
+          - label: astra-1.7
+    runs-on: [self-hosted, linux, x64, "${{ matrix.label }}"]
+    timeout-minutes: 240
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release/1.2.2
+          clean: true
+          fetch-depth: 1
+
+      - name: Проверка системы
+        run: bash scripts/astra/check-system.sh --strict
+
+      - name: Зависимости headless
+        run: |
+          bash scripts/astra/install-deps.sh \
+            --profile headless \
+            --bootstrap-missing
+
+      - name: Нативная сборка
+        env:
+          BUILD_DIR: ${{ runner.temp }}/satdump-level1c-build
+          PREFIX: ${{ runner.temp }}/satdump
+        run: |
+          bash scripts/astra/build.sh \
+            --mode native \
+            --profile headless \
+            --sdr none \
+            --build-dir "$BUILD_DIR" \
+            --prefix "$PREFIX" \
+            --clean \
+            --clean-prefix \
+            --install
+
+      - name: Smoke-test runtime и экспортёра
+        env:
+          PREFIX: ${{ runner.temp }}/satdump
+        run: |
+          bash scripts/astra/run.sh --prefix "$PREFIX" -- version
+          bash scripts/astra/run.sh --prefix "$PREFIX" -- level1c --help
+          test -x "$PREFIX/bin/satdump"
+          test -d "$PREFIX/share/satdump/resources"
+          test -d "$PREFIX/share/satdump/pipelines"
+
+      - name: Паспорт сборки
+        env:
+          PREFIX: ${{ runner.temp }}/satdump
+        run: |
+          {
+            echo "commit=$GITHUB_SHA"
+            echo "runner=${{ matrix.label }}"
+            echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            cat "$PREFIX/.satdump-install-root"
+          } > "$RUNNER_TEMP/satdump-level1c-build.txt"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: satdump-level1c-${{ matrix.label }}-${{ github.sha }}
+          path: ${{ runner.temp }}/satdump-level1c-build.txt
+          if-no-files-found: error
+          retention-days: 30
