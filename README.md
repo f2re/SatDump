@@ -114,10 +114,23 @@ bash scripts/astra/build.sh \
   --clean \
   --install
 
-bash scripts/astra/run.sh --ui
+### 5. Сборка оффлайн установочного бандла
+
+Для формирования самодостаточного архива без интернет-зависимостей:
+
+```bash
+bash scripts/build-and-bundle.sh --profile headless
 ```
 
-> Не запускайте весь `install-deps.sh` через `sudo`. Сценарий сам повышает права только для APT; локальные CMake, NNG и VOLK должны принадлежать обычному пользователю.
+Результат сохранится в `dist/satdump-1.2.2-offline-x86_64.tar.gz`. На целевой машине без доступа в сеть установка выполняется одной командой:
+
+```bash
+tar -xzf satdump-1.2.2-offline-x86_64.tar.gz
+cd satdump-1.2.2-offline-x86_64
+./install.sh
+```
+
+> Не запускайте весь `install-deps.sh` через `sudo`. Сценарий сам повышает права только для APT; локальные библиотеки (CMake, NNG, VOLK, FFTW, cURL, TIFF, jemalloc) должны принадлежать обычному пользователю.
 
 ## 🛡️ Astra Linux 1.6
 

@@ -21,6 +21,22 @@ VOLK_URL="https://www.libvolk.org/releases/${VOLK_ARCHIVE}"
 # Для архивов этой версии upstream публикует MD5 и detached signature.
 VOLK_MD5="7872b4dde4415dab100710e3583b0af9"
 
+FFTW_VERSION="3.3.10"
+FFTW_ARCHIVE="fftw-${FFTW_VERSION}.tar.gz"
+FFTW_URL="http://www.fftw.org/${FFTW_ARCHIVE}"
+
+CURL_VERSION="7.88.1"
+CURL_ARCHIVE="curl-${CURL_VERSION}.tar.gz"
+CURL_URL="https://curl.se/download/${CURL_ARCHIVE}"
+
+TIFF_VERSION="4.5.1"
+TIFF_ARCHIVE="tiff-${TIFF_VERSION}.tar.gz"
+TIFF_URL="https://download.osgeo.org/libtiff/${TIFF_ARCHIVE}"
+
+JEMALLOC_VERSION="5.3.0"
+JEMALLOC_ARCHIVE="jemalloc-${JEMALLOC_VERSION}.tar.bz2"
+JEMALLOC_URL="https://github.com/jemalloc/jemalloc/releases/download/${JEMALLOC_VERSION}/${JEMALLOC_ARCHIVE}"
+
 cleanup() {
     local directory
     for directory in "${TEMP_DIRS[@]}"; do
@@ -34,16 +50,20 @@ usage() {
 Использование: bash scripts/astra/bootstrap-thirdparty.sh [параметры]
 
 Параметры:
-  --component all|nng|volk  Что собирать (по умолчанию: all)
-  --prefix PATH             Локальный префикс (по умолчанию: ${PREFIX})
-  --archive-dir PATH        Каталог с офлайн-архивами
-  --jobs N                  Число параллельных задач
-  --force                   Пересобрать установленные компоненты
-  -h, --help                Показать справку
+  --component all|nng|volk|fftw|curl|tiff|jemalloc  Что собирать (по умолчанию: all)
+  --prefix PATH                                      Локальный префикс (по умолчанию: ${PREFIX})
+  --archive-dir PATH                                 Каталог с офлайн-архивами
+  --jobs N                                           Число параллельных задач
+  --force                                            Пересобрать установленные компоненты
+  -h, --help                                         Показать справку
 
 Архивы для офлайн-сборки:
   ${NNG_ARCHIVE}
   ${VOLK_ARCHIVE}
+  ${FFTW_ARCHIVE}
+  ${CURL_ARCHIVE}
+  ${TIFF_ARCHIVE}
+  ${JEMALLOC_ARCHIVE}
 EOF
 }
 
@@ -60,8 +80,8 @@ while (( $# > 0 )); do
 done
 
 case "${COMPONENT}" in
-    all|nng|volk) ;;
-    *) die "Допустимые компоненты: all, nng, volk" ;;
+    all|nng|volk|fftw|curl|tiff|jemalloc) ;;
+    *) die "Допустимые компоненты: all, nng, volk, fftw, curl, tiff, jemalloc" ;;
 esac
 [[ "${JOBS}" =~ ^[1-9][0-9]*$ ]] || die "--jobs должен быть положительным целым числом."
 
@@ -90,7 +110,7 @@ fetch_archive() {
 
     output="${ASTRA_CACHE_DIR}/${archive}"
     if [[ ! -s "${output}" ]]; then
-        log_info "Загрузка ${url}"
+        log_info "Загрузка ${url}" >&2
         if command_exists curl; then
             curl --fail --location --retry 3 --output "${output}.part" "${url}"
         elif command_exists wget; then
@@ -184,10 +204,126 @@ build_volk() {
     log_ok "VOLK $(pkg-config --modversion volk) установлен в ${PREFIX}"
 }
 
+build_fftw() {
+    if pkg-config --exists fftw3f 2>/dev/null && [[ "${FORCE}" == "0" ]]; then
+        log_ok "FFTW3f уже доступен: $(pkg-config --modversion fftw3f)"
+        return
+    fi
+
+    local archive work source_directory build_directory
+    archive="$(fetch_archive "${FFTW_ARCHIVE}" "${FFTW_URL}")"
+
+    work="$(new_work_directory satdump-fftw)"
+    tar -xzf "${archive}" -C "${work}"
+    source_directory="$(find "${work}" -mindepth 1 -maxdepth 1 -type d | head -n1)"
+    [[ -n "${source_directory}" ]] || die "В архиве FFTW не найден каталог исходников."
+
+    log_info "Сборка FFTW ${FFTW_VERSION} (single precision)"
+    (
+        cd "${source_directory}"
+        ./configure --prefix="${PREFIX}" --enable-single --enable-shared --disable-fortran CC="${CC}"
+        make -j"${JOBS}"
+        make install
+    )
+
+    export PKG_CONFIG_PATH="${PREFIX}/lib/pkgconfig:${PKG_CONFIG_PATH}"
+    pkg-config --exists fftw3f || die "FFTW установлен, но fftw3f.pc не найден в ${PKG_CONFIG_PATH}."
+    log_ok "FFTW3f $(pkg-config --modversion fftw3f) установлен в ${PREFIX}"
+}
+
+build_curl() {
+    if pkg-config --exists libcurl 2>/dev/null && [[ "${FORCE}" == "0" ]]; then
+        log_ok "libcurl уже доступен: $(pkg-config --modversion libcurl)"
+        return
+    fi
+
+    local archive work source_directory build_directory
+    archive="$(fetch_archive "${CURL_ARCHIVE}" "${CURL_URL}")"
+
+    work="$(new_work_directory satdump-curl)"
+    tar -xzf "${archive}" -C "${work}"
+    source_directory="$(find "${work}" -mindepth 1 -maxdepth 1 -type d | head -n1)"
+    [[ -n "${source_directory}" ]] || die "В архиве cURL не найден каталог исходников."
+    build_directory="${work}/build"
+
+    log_info "Сборка cURL ${CURL_VERSION}"
+    "${CMAKE_EXECUTABLE}" -S "${source_directory}" -B "${build_directory}" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX="${PREFIX}" \
+        -DCMAKE_INSTALL_LIBDIR=lib \
+        -DBUILD_SHARED_LIBS=ON \
+        -DBUILD_CURL_EXE=OFF \
+        -DBUILD_TESTING=OFF \
+        -DCURL_DISABLE_TESTS=ON
+    "${CMAKE_EXECUTABLE}" --build "${build_directory}" --parallel "${JOBS}"
+    "${CMAKE_EXECUTABLE}" --install "${build_directory}"
+
+    export PKG_CONFIG_PATH="${PREFIX}/lib/pkgconfig:${PKG_CONFIG_PATH}"
+    pkg-config --exists libcurl || die "cURL установлен, но libcurl.pc не найден в ${PKG_CONFIG_PATH}."
+    log_ok "libcurl $(pkg-config --modversion libcurl) установлен в ${PREFIX}"
+}
+
+build_tiff() {
+    if [[ -f "${PREFIX}/include/tiffio.h" && "${FORCE}" == "0" ]]; then
+        log_ok "libtiff уже доступен в ${PREFIX}"
+        return
+    fi
+
+    local archive work source_directory build_directory
+    archive="$(fetch_archive "${TIFF_ARCHIVE}" "${TIFF_URL}")"
+
+    work="$(new_work_directory satdump-tiff)"
+    tar -xzf "${archive}" -C "${work}"
+    source_directory="$(find "${work}" -mindepth 1 -maxdepth 1 -type d | head -n1)"
+    [[ -n "${source_directory}" ]] || die "В архиве TIFF не найден каталог исходников."
+    build_directory="${work}/build"
+
+    log_info "Сборка TIFF ${TIFF_VERSION}"
+    "${CMAKE_EXECUTABLE}" -S "${source_directory}" -B "${build_directory}" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX="${PREFIX}" \
+        -DCMAKE_INSTALL_LIBDIR=lib
+    "${CMAKE_EXECUTABLE}" --build "${build_directory}" --parallel "${JOBS}"
+    "${CMAKE_EXECUTABLE}" --install "${build_directory}"
+
+    [[ -f "${PREFIX}/include/tiffio.h" ]] || die "libtiff установлен, но tiffio.h не найден."
+    log_ok "libtiff установлен в ${PREFIX}"
+}
+
+build_jemalloc() {
+    if pkg-config --exists jemalloc 2>/dev/null || [[ -f "${PREFIX}/include/jemalloc/jemalloc.h" ]] && [[ "${FORCE}" == "0" ]]; then
+        log_ok "jemalloc уже доступен в ${PREFIX}"
+        return
+    fi
+
+    local archive work source_directory
+    archive="$(fetch_archive "${JEMALLOC_ARCHIVE}" "${JEMALLOC_URL}")"
+
+    work="$(new_work_directory satdump-jemalloc)"
+    tar -xjf "${archive}" -C "${work}"
+    source_directory="$(find "${work}" -mindepth 1 -maxdepth 1 -type d | head -n1)"
+    [[ -n "${source_directory}" ]] || die "В архиве jemalloc не найден каталог исходников."
+
+    log_info "Сборка jemalloc ${JEMALLOC_VERSION}"
+    (
+        cd "${source_directory}"
+        ./configure --prefix="${PREFIX}" CC="${CC}"
+        make -j"${JOBS}"
+        make install
+    )
+
+    [[ -f "${PREFIX}/include/jemalloc/jemalloc.h" ]] || die "jemalloc установлен, но jemalloc.h не найден."
+    log_ok "jemalloc установлен в ${PREFIX}"
+}
+
 case "${COMPONENT}" in
-    all) build_nng; build_volk ;;
+    all) build_nng; build_volk; build_fftw; build_curl; build_tiff; build_jemalloc ;;
     nng) build_nng ;;
     volk) build_volk ;;
+    fftw) build_fftw ;;
+    curl) build_curl ;;
+    tiff) build_tiff ;;
+    jemalloc) build_jemalloc ;;
 esac
 
 cat <<EOF

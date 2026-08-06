@@ -64,9 +64,12 @@ dist/astra-portable/
 | `check-system.sh` | Диагностика версии ОС, C++17, CMake и обязательных библиотек |
 | `install-deps.sh` | Установка пакетов из уже подключённых Astra-репозиториев |
 | `bootstrap-cmake.sh` | Локальная сборка CMake 3.18.6 для native-профиля |
-| `bootstrap-thirdparty.sh` | Локальная сборка NNG/VOLK для native-профиля |
+| `bootstrap-thirdparty.sh` | Локальная сборка NNG, VOLK, FFTW3f, cURL, TIFF, jemalloc |
 | `build.sh` | Безопасный диспетчер `native` / `portable-glibc224` |
 | `build-native.sh` | Нативные профили headless/desktop/full |
+| `create-offline-bundle.sh` | Сборка переносимого оффлайн-бандла (.tar.gz) со всеми .so и встроенным `install.sh` |
+| `run-build-and-bundle.sh` | Скрипт-обёртка для компиляции SatDump и генерации оффлайн-бандла в `dist/` |
+| `../build-and-bundle.sh` | Корневая команда единого цикла сборки и упаковывания оффлайн-пакета |
 | `run.sh` | Проверка установленного дерева и запуск CLI/GUI |
 | `collect-build-info.sh` | Манифест воспроизводимости native-сборки |
 | `portable/lock.env` | Зафиксированные версии portable toolchain |
