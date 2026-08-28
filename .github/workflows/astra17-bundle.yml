@@ -79,6 +79,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           mkdir -p build/astra17-native dist/astra17
+          : > build/astra17-native/native-build.log
           docker run --rm \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -w /workspace \
@@ -100,8 +101,26 @@ jobs:
                 --work-dir /workspace/build/astra17-native \
                 --output-dir /workspace/dist/astra17 \
                 --jobs 2 \
-                --revision "r${GITHUB_RUN_NUMBER}"
+                --revision "r${GITHUB_RUN_NUMBER}" \
+                2>&1 | tee /workspace/build/astra17-native/native-build.log
             '
+
+      - name: Upload native build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: astra17-native-build-diagnostics
+          path: |
+            build/astra17-native/native-build.log
+            build/astra17-native/**/CMakeCache.txt
+            build/astra17-native/**/CMakeOutput.log
+            build/astra17-native/**/CMakeError.log
+            build/astra17-native/**/CMakeConfigureLog.yaml
+            build/astra17-native/**/compile_commands.json
+            dist/astra17/**/ASTRA17-MANIFEST.txt
+            dist/astra17/**/RUNTIME-LIBRARIES.txt
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Check archive, manifest and checksum
         shell: bash
@@ -202,6 +221,7 @@ jobs:
                   --library-path /opt/satdump-test/lib:/opt/satdump-test/lib/satdump/plugins \
                   --list /opt/satdump-test/bin/satdump-ui >/tmp/ui-libs.log
               fi
+              /opt/satdump-test/verify.sh
               echo "Fresh Astra 1.7 zero-install runtime: OK"
             '
 
@@ -252,6 +272,7 @@ jobs:
           sha256sum -c satdump-1.2.2-astra17-desktop-full-x86_64.tar.gz.sha256
           tar -xzf satdump-1.2.2-astra17-desktop-full-x86_64.tar.gz
           cd satdump-1.2.2-astra17-desktop-full-x86_64
+          ./verify.sh
           ./satdump version
           ./satdump-ui
           # либо постоянная установка:
