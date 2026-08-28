@@ -36,8 +36,8 @@ mkdir -p "${BUNDLE}"
 cp -a "${STAGE}/." "${BUNDLE}/"
 mkdir -p "${BUNDLE}/lib" "${BUNDLE}/lib/satdump/plugins"
 
-# Эти компоненты предоставляются целевой Astra 1.7. Перенос собственной glibc вместе
-# с системным loader/NSS небезопасен и как раз создаёт трудноотлавливаемые ABI-сбои.
+# Эти компоненты предоставляет целевая Astra 1.7. Перенос собственной glibc вместе
+# с системным loader/NSS небезопасен и создаёт ABI-сбои с NSS, DNS и драйверами.
 GLIBC_RE='^(ld-linux.*|libc\.so|libm\.so|libpthread\.so|libdl\.so|librt\.so|libresolv\.so|libnsl\.so|libnss_|libutil\.so|libcrypt\.so|libanl\.so|libBrokenLocale\.so)'
 SEARCH_PATHS="${BUNDLE}/lib:${BUNDLE}/lib/satdump/plugins:/usr/local/lib:/usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu:/usr/lib:/lib"
 
@@ -45,7 +45,9 @@ is_elf() { readelf -h "$1" >/dev/null 2>&1; }
 sha() { sha256sum "$1" | awk '{print $1}'; }
 
 ensure_link() {
-    local name="$1" target="$2" dst="${BUNDLE}/lib/${name}"
+    local name="$1"
+    local target="$2"
+    local dst="${BUNDLE}/lib/${name}"
     [[ -n "${name}" && "${name}" != "${target}" ]] || return 0
     if [[ -L "${dst}" ]]; then
         [[ "$(readlink "${dst}")" == "${target}" ]] || fail "Конфликт symlink ${name}: $(readlink "${dst}") vs ${target}"
@@ -60,7 +62,8 @@ ensure_link() {
 }
 
 copy_dependency() {
-    local needed="$1" resolved="$2"
+    local needed="$1"
+    local resolved="$2"
     [[ -n "${needed}" && -f "${resolved}" ]] || return 0
     [[ ! "${needed}" =~ ${GLIBC_RE} ]] || return 0
 
@@ -99,7 +102,8 @@ copy_dependency() {
 }
 
 collect_from_elf() {
-    local elf="$1" changed=0 needed resolved rc
+    local elf="$1"
+    local changed=0 needed resolved rc
     while IFS=$'\t' read -r needed resolved; do
         [[ -n "${needed}" && -n "${resolved}" ]] || continue
         set +e
@@ -131,7 +135,7 @@ for pass in $(seq 1 12); do
     [[ "${pass}" != "12" ]] || fail "Dependency closure не сошёлся за 12 проходов"
 done
 
-# Убираем любые абсолютные build/install RPATH и задаём только относительные пути.
+# Убираем абсолютные build/install RPATH и задаём только относительные пути.
 while IFS= read -r -d '' elf; do
     is_elf "${elf}" || continue
     rel="${elf#${BUNDLE}/}"
