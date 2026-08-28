@@ -13,6 +13,7 @@ SATDUMP_ROOT="$(cd "${ASTRA_SCRIPT_DIR}/../.." && pwd)"
 ASTRA_WORK_ROOT="${SATDUMP_ASTRA_WORK_ROOT:-${HOME}/.local/opt/satdump-astra}"
 ASTRA_DEPS_PREFIX="${ASTRA_DEPS_PREFIX:-${ASTRA_WORK_ROOT}/deps}"
 ASTRA_TOOLS_DIR="${ASTRA_TOOLS_DIR:-${ASTRA_WORK_ROOT}/tools}"
+ASTRA_CACHE_DIR="${ASTRA_CACHE_DIR:-${ASTRA_WORK_ROOT}/cache}"
 
 if [[ -t 1 && "${NO_COLOR:-0}" != "1" ]]; then
     C_RESET=$'\033[0m'
