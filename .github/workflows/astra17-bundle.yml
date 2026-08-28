@@ -90,8 +90,13 @@ jobs:
           test -s "${archive}.sha256"
           bash scripts/astra/astra17/validate-bundle.sh "${archive}"
           manifest="$(find dist/astra17 -type f -name ASTRA17-MANIFEST.txt -print -quit)"
+          test -s "${manifest}"
           grep -q '^glibc_build=2.28$' "${manifest}"
-          awk -F= '$1=="glibc_required" { if ($2 > 2.28) exit 1 }' "${manifest}"
+          required="$(awk -F= '$1=="glibc_required" {print $2}' "${manifest}")"
+          test -n "${required}"
+          dpkg --compare-versions "${required}" le 2.28
+          echo '===== ASTRA17-MANIFEST.txt ====='
+          cat "${manifest}"
       - name: Upload bundle
         uses: actions/upload-artifact@v4
         with:
