@@ -8,7 +8,6 @@ PROFILE="desktop"
 GLIBC_MAX="2.28"
 
 log() { printf '[astra17/bundle] %s\n' "$*"; }
-warn() { printf '[astra17/bundle] WARNING: %s\n' "$*" >&2; }
 fail() { printf '[astra17/bundle] ERROR: %s\n' "$*" >&2; exit 1; }
 
 while (( $# > 0 )); do
@@ -44,6 +43,8 @@ SEARCH_PATHS="${BUNDLE}/lib:${BUNDLE}/lib/satdump/plugins:/usr/local/lib:/usr/li
 is_elf() { readelf -h "$1" >/dev/null 2>&1; }
 sha() { sha256sum "$1" | awk '{print $1}'; }
 
+# return 10 = в closure появился новый файл/alias. Этот код всегда вызывается
+# из if-конструкции, поэтому `set -e` не превращает его в фатальную ошибку.
 ensure_link() {
     local name="$1"
     local target="$2"
@@ -80,36 +81,42 @@ copy_dependency() {
         added=1
     fi
 
-    set +e
-    ensure_link "${needed}" "${realname}"
-    rc=$?
-    set -e
+    if ensure_link "${needed}" "${realname}"; then
+        rc=0
+    else
+        rc=$?
+    fi
     [[ "${rc}" == "10" ]] && added=1
     [[ "${rc}" == "0" || "${rc}" == "10" ]] || return "${rc}"
 
     soname="$(readelf -d "${real}" 2>/dev/null | sed -n 's/.*(SONAME).*\[\(.*\)\].*/\1/p' | head -n1)"
     if [[ -n "${soname}" ]]; then
-        set +e
-        ensure_link "${soname}" "${realname}"
-        rc=$?
-        set -e
+        if ensure_link "${soname}" "${realname}"; then
+            rc=0
+        else
+            rc=$?
+        fi
         [[ "${rc}" == "10" ]] && added=1
         [[ "${rc}" == "0" || "${rc}" == "10" ]] || return "${rc}"
     fi
 
-    [[ "${added}" == "1" ]] && return 10
+    if [[ "${added}" == "1" ]]; then
+        return 10
+    fi
     return 0
 }
 
+# return 1 = как минимум одна новая non-glibc runtime-зависимость добавлена.
 collect_from_elf() {
     local elf="$1"
     local changed=0 needed resolved rc
     while IFS=$'\t' read -r needed resolved; do
         [[ -n "${needed}" && -n "${resolved}" ]] || continue
-        set +e
-        copy_dependency "${needed}" "${resolved}"
-        rc=$?
-        set -e
+        if copy_dependency "${needed}" "${resolved}"; then
+            rc=0
+        else
+            rc=$?
+        fi
         [[ "${rc}" == "10" ]] && changed=1
         [[ "${rc}" == "0" || "${rc}" == "10" ]] || return "${rc}"
     done < <(
@@ -124,13 +131,15 @@ for pass in $(seq 1 12); do
     changed=0
     while IFS= read -r -d '' elf; do
         is_elf "${elf}" || continue
-        set +e
-        collect_from_elf "${elf}"
-        rc=$?
-        set -e
+        if collect_from_elf "${elf}"; then
+            rc=0
+        else
+            rc=$?
+        fi
         [[ "${rc}" == "1" ]] && changed=1
-        [[ "${rc}" == "0" || "${rc}" == "1" ]] || fail "Ошибка анализа ${elf}"
+        [[ "${rc}" == "0" || "${rc}" == "1" ]] || fail "Ошибка анализа ${elf}, status=${rc}"
     done < <(find "${BUNDLE}/bin" "${BUNDLE}/lib" -type f -print0)
+    log "runtime closure: проход ${pass}, changed=${changed}"
     [[ "${changed}" == "1" ]] || break
     [[ "${pass}" != "12" ]] || fail "Dependency closure не сошёлся за 12 проходов"
 done
