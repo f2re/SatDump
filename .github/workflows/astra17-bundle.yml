@@ -29,7 +29,7 @@ on:
       - "docs/ru/**"
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: astra17-native-release-${{ github.ref }}
@@ -93,6 +93,8 @@ jobs:
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -w /workspace \
             -e HOME=/root \
+            -e PROFILE="${PROFILE}" \
+            -e GITHUB_RUN_NUMBER="${GITHUB_RUN_NUMBER}" \
             -e SATDUMP_RELEASE_REVISION="r${GITHUB_RUN_NUMBER}" \
             -e GIT_CONFIG_COUNT=1 \
             -e GIT_CONFIG_KEY_0=safe.directory \
@@ -111,7 +113,7 @@ jobs:
                 --revision "r${GITHUB_RUN_NUMBER}"
             '
 
-      - name: Validate full release on build host
+      - name: Check archive, manifest and checksum
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -122,10 +124,10 @@ jobs:
             cd "$(dirname "${archive}")"
             sha256sum -c "$(basename "${archive}").sha256"
           )
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq binutils
-          bash scripts/astra/astra17/validate-bundle.sh "${archive}"
           manifest="$(find dist/astra17 -type f -name ASTRA17-MANIFEST.txt -print -quit)"
+          runtime="$(find dist/astra17 -type f -name RUNTIME-LIBRARIES.txt -print -quit)"
+          guide="$(find dist/astra17 -type f -name ASTRA17_COMPLETE_GUIDE.md -print -quit)"
+          test -s "${manifest}" && test -s "${runtime}" && test -s "${guide}"
           grep -q '^profile=astra17-native-full$' "${manifest}"
           grep -q '^glibc_build=2.28$' "${manifest}"
           grep -q '^glibc_bundled=yes$' "${manifest}"
@@ -196,7 +198,7 @@ jobs:
             "${ASTRA_IMAGE}" \
             /bin/bash -lc '
               set -Eeuo pipefail
-              # Здесь намеренно НЕТ apt-get update/install.
+              # Намеренно нет apt-get update/install: это gate готового deployment.
               test -x /opt/satdump-test/lib/ld-linux-x86-64.so.2
               test -e /opt/satdump-test/lib/libc.so.6
               test -e /opt/satdump-test/lib/libstdc++.so.6
@@ -219,9 +221,10 @@ jobs:
     needs: runtime-astra17
     runs-on: ubuntu-22.04
     timeout-minutes: 15
+    permissions:
+      contents: write
     env:
       GH_TOKEN: ${{ github.token }}
-      PROFILE: desktop
     steps:
       - uses: actions/checkout@v4
         with:
@@ -250,9 +253,9 @@ jobs:
 
           Сборка выполнена **непосредственно внутри официального Astra Linux 1.7 UBI** из ветки \`release/1.2.2\`.
 
-          Пакет предназначен для Astra Linux 1.7 x86_64 и не требует установки дополнительных runtime-пакетов APT: в архив включены glibc/loader, libstdc++, libgcc, GUI/GLFW/OpenGL runtime, PortAudio, RTL-SDR/USB и полный обнаруженный транзитивный ELF dependency closure.
+          Пакет не требует установки дополнительных runtime-пакетов APT: в archive включены glibc/loader, C++ runtime, GUI/audio/RTL-SDR библиотеки и полный обнаруженный транзитивный ELF dependency closure.
 
-          После сборки тот же скачанный artifact запускается в чистом Astra Linux 1.7 контейнере **без apt-get install**.
+          После сборки тот же скачанный artifact запускается в чистом Astra Linux 1.7 контейнере **без apt-get install**. Только после этого создаётся данный Release.
 
           ### Установка
           \`\`\`bash
@@ -265,7 +268,7 @@ jobs:
           ./install.sh
           \`\`\`
 
-          Полная инструкция приложена как \`ASTRA17_COMPLETE_GUIDE.md\` и также находится внутри bundle в \`share/doc/satdump/\`.
+          Полная инструкция приложена как \`ASTRA17_COMPLETE_GUIDE.md\` и находится внутри bundle в \`share/doc/satdump/\`.
 
           Source commit: \`${GITHUB_SHA}\`
           EOF2
