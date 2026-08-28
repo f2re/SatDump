@@ -52,11 +52,24 @@ if [[ ! -f "${NNG_MARKER}" ]] || ! grep -Fxq "commit=${NNG_COMMIT}" "${NNG_MARKE
         -DBUILD_SHARED_LIBS=ON \
         -DNNG_TESTS=OFF -DNNG_TOOLS=OFF -DNNG_ENABLE_TLS=OFF
     cmake --build "${NNG_BUILD}" --parallel "${JOBS}"
-    cmake --install "${NNG_BUILD}"
+    # Debian 10 ships CMake 3.13: `cmake --install` only appeared in 3.15.
+    # Use the portable install target so the shared library is really installed.
+    cmake --build "${NNG_BUILD}" --target install --parallel "${JOBS}"
     ldconfig
     mkdir -p "$(dirname "${NNG_MARKER}")"
     printf 'version=%s\ncommit=%s\n' "${NNG_VERSION}" "${NNG_COMMIT}" > "${NNG_MARKER}"
 fi
+
+NNG_LIBRARY_PATH=""
+for candidate in /usr/local/lib/libnng.so /usr/local/lib64/libnng.so; do
+    if [[ -e "${candidate}" ]]; then
+        NNG_LIBRARY_PATH="$(readlink -f "${candidate}")"
+        break
+    fi
+done
+[[ -n "${NNG_LIBRARY_PATH}" && -f "${NNG_LIBRARY_PATH}" ]] \
+    || fail "NNG install target не создал /usr/local/lib*/libnng.so"
+log "NNG runtime: ${NNG_LIBRARY_PATH}"
 
 BUILD_DIR="${WORK_DIR}/satdump-${PROFILE}"
 STAGE_ROOT="${WORK_DIR}/stage-${PROFILE}"
@@ -81,6 +94,7 @@ cmake -S "${SOURCE_DIR}" -B "${BUILD_DIR}" \
     -DCMAKE_INSTALL_LIBDIR=lib \
     -DCMAKE_PREFIX_PATH=/usr/local \
     -DCMAKE_LIBRARY_PATH=/usr/local/lib \
+    -DNNG_LIBRARY="${NNG_LIBRARY_PATH}" \
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
     -DCMAKE_SKIP_RPATH=OFF \
     -DCMAKE_BUILD_WITH_INSTALL_RPATH=OFF \
@@ -132,9 +146,10 @@ cmake --build "${BUILD_DIR}" --parallel "${JOBS}"
 
 rm -rf "${STAGE_ROOT}"
 mkdir -p "${STAGE_ROOT}"
-DESTDIR="${STAGE_ROOT}" cmake --install "${BUILD_DIR}"
+# Same CMake 3.13 compatibility rule as for NNG: install via the target.
+DESTDIR="${STAGE_ROOT}" cmake --build "${BUILD_DIR}" --target install --parallel "${JOBS}"
 STAGE="${STAGE_ROOT}/opt/satdump"
-[[ -x "${STAGE}/bin/satdump" ]] || fail "cmake --install не создал bin/satdump"
+[[ -x "${STAGE}/bin/satdump" ]] || fail "install target не создал bin/satdump"
 if [[ "${PROFILE}" == "desktop" ]]; then
     [[ -x "${STAGE}/bin/satdump-ui" ]] || fail "desktop-профиль не создал bin/satdump-ui"
 fi
