@@ -1,0 +1,172 @@
+name: Astra Linux 1.7 self-contained bundle
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "Профиль SatDump"
+        required: true
+        default: desktop
+        type: choice
+        options:
+          - desktop
+          - headless
+  push:
+    branches:
+      - release/1.2.2
+    paths:
+      - "scripts/astra/astra17/**"
+      - "scripts/astra/build.sh"
+      - ".github/workflows/astra17-bundle.yml"
+      - "docs/ru/ASTRA17_BUNDLE.md"
+  pull_request:
+    branches:
+      - release/1.2.2
+    paths:
+      - "scripts/astra/astra17/**"
+      - "scripts/astra/build.sh"
+      - ".github/workflows/astra17-bundle.yml"
+      - "docs/ru/ASTRA17_BUNDLE.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: astra17-bundle-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Shell safety checks
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ShellCheck
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+      - name: Bash syntax
+        run: |
+          bash -n scripts/astra/build.sh
+          find scripts/astra/astra17 -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+      - name: ShellCheck errors
+        run: |
+          shellcheck --severity=error --external-sources --exclude=SC1091 \
+            scripts/astra/build.sh scripts/astra/astra17/*.sh
+      - name: Dispatcher exposes Astra 1.7 mode
+        run: |
+          bash scripts/astra/build.sh --help | grep -q portable-astra17
+          bash scripts/astra/astra17/build.sh --help | grep -q 'glibc 2.28'
+
+  bundle:
+    name: Build on Debian 10 / glibc 2.28
+    needs: lint
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    env:
+      PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.profile || 'desktop' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install chroot tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y debootstrap debian-archive-keyring rsync binutils util-linux
+      - name: Build Astra 1.7 bundle
+        run: |
+          sudo bash scripts/astra/astra17/build.sh \
+            --profile "${PROFILE}" \
+            --rootfs /var/lib/satdump-build/astra17-buster-amd64 \
+            --work-dir "${GITHUB_WORKSPACE}/build/astra17-portable" \
+            --output-dir "${GITHUB_WORKSPACE}/dist/astra17" \
+            --jobs 2 \
+            --clean-rootfs
+      - name: Validate produced archive on runner
+        run: |
+          archive="$(find dist/astra17 -maxdepth 1 -type f -name "satdump-1.2.2-astra17-${PROFILE}-glibc228-x86_64.tar.gz" -print -quit)"
+          test -s "${archive}"
+          test -s "${archive}.sha256"
+          (
+            cd "$(dirname "${archive}")"
+            sha256sum -c "$(basename "${archive}").sha256"
+          )
+          bash scripts/astra/astra17/validate-bundle.sh "${archive}"
+          manifest="$(find dist/astra17 -type f -name ASTRA17-MANIFEST.txt -print -quit)"
+          test -s "${manifest}"
+          grep -q '^glibc_build=2.28$' "${manifest}"
+          required="$(awk -F= '$1=="glibc_required" {print $2}' "${manifest}")"
+          test -n "${required}"
+          dpkg --compare-versions "${required}" le 2.28
+          echo '===== ASTRA17-MANIFEST.txt ====='
+          cat "${manifest}"
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: satdump-1.2.2-astra17-${{ env.PROFILE }}-glibc228
+          path: |
+            dist/astra17/*.tar.gz
+            dist/astra17/*.sha256
+            dist/astra17/*/ASTRA17-MANIFEST.txt
+            dist/astra17/*/SHA256SUMS
+            dist/astra17/*/astra17-version.log
+          if-no-files-found: error
+          retention-days: 30
+
+  astra17-runtime:
+    name: Run downloaded bundle on official Astra Linux 1.7
+    needs: bundle
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    env:
+      PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.profile || 'desktop' }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: satdump-1.2.2-astra17-${{ env.PROFILE }}-glibc228
+          path: downloaded
+      - name: Extract downloaded artifact
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          archive="$(find downloaded -type f -name "satdump-1.2.2-astra17-${PROFILE}-glibc228-x86_64.tar.gz" -print -quit)"
+          test -s "${archive}"
+          (
+            cd "$(dirname "${archive}")"
+            sha256sum -c "$(basename "${archive}").sha256"
+          )
+          mkdir -p runtime-bundle
+          tar -xzf "${archive}" -C runtime-bundle
+          bundle="$(find runtime-bundle -mindepth 1 -maxdepth 1 -type d -name 'satdump-1.2.2-astra17-*' -print -quit)"
+          test -d "${bundle}"
+          printf 'BUNDLE_DIR=%s\n' "$(readlink -f "${bundle}")" >> "${GITHUB_ENV}"
+      - name: Smoke test on Astra Linux UBI 1.7
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker pull registry.astralinux.ru/library/astra/ubi17:1.7.5
+          docker run --rm \
+            -v "${BUNDLE_DIR}:/opt/satdump-test:ro" \
+            registry.astralinux.ru/library/astra/ubi17:1.7.5 \
+            /bin/bash -lc '
+              set -Eeuo pipefail
+              ldd --version | head -n1 | grep -q "2.28"
+              /opt/satdump-test/satdump version 2>&1 | tee /tmp/version.log
+              grep -q "SatDump v1.2.2" /tmp/version.log
+
+              failed=0
+              for elf in \
+                /opt/satdump-test/bin/satdump* \
+                /opt/satdump-test/lib/*.so* \
+                /opt/satdump-test/lib/satdump/plugins/*.so*; do
+                [[ -f "${elf}" ]] || continue
+                out="$(ldd -r "${elf}" 2>&1 || true)"
+                if grep -Eqi "not found|undefined symbol" <<<"${out}"; then
+                  echo "ELF relocation failure: ${elf}" >&2
+                  printf "%s\n" "${out}" >&2
+                  failed=1
+                fi
+              done
+              test "${failed}" = 0
+            '

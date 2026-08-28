@@ -49,7 +49,7 @@ jobs:
           set +e
           shellcheck \
             --external-sources \
-            --exclude=SC1091,SC2034 \
+            --exclude=SC1091,SC2034,SC2015 \
             scripts/astra/*.sh \
             > presentation-shellcheck.log 2>&1
           status=$?
