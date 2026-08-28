@@ -155,26 +155,17 @@ jobs:
               /opt/satdump-test/satdump version 2>&1 | tee /tmp/version.log
               grep -q "SatDump v1.2.2" /tmp/version.log
 
-              missing=0
+              failed=0
               while IFS= read -r -d "" elf; do
-                if ldd "${elf}" >/tmp/ldd.log 2>&1; then
-                  :
+                if ! file "${elf}" | grep -q ELF; then
+                  continue
                 fi
-                if grep -qi "not found" /tmp/ldd.log; then
-                  echo "Unresolved dependencies: ${elf}" >&2
-                  cat /tmp/ldd.log >&2
-                  missing=1
+                out="$(ldd -r "${elf}" 2>&1 || true)"
+                if grep -Eqi "not found|undefined symbol" <<<"${out}"; then
+                  echo "ELF relocation failure: ${elf}" >&2
+                  printf "%s\n" "${out}" >&2
+                  failed=1
                 fi
               done < <(find /opt/satdump-test/bin /opt/satdump-test/lib -type f -print0)
-              test "${missing}" = 0
-
-              HOME=/tmp/satdump-home mkdir -p /tmp/satdump-home/.config/satdump
-              printf "%s\n" "{\"satdump_general\":{\"tle_update_interval\":{\"value\":\"Never\"},\"log_to_file\":{\"value\":false}}}" \
-                > /tmp/satdump-home/.config/satdump/settings.json
-              HOME=/tmp/satdump-home /opt/satdump-test/satdump sdr_probe \
-                > /tmp/plugin-probe.log 2>&1 || true
-              cat /tmp/plugin-probe.log
-              if grep -Eqi "Error loading|undefined symbol|cannot open shared object file|not found" /tmp/plugin-probe.log; then
-                exit 1
-              fi
+              test "${failed}" = 0
             '
