@@ -7,30 +7,29 @@ BUILD_MODE="${SATDUMP_BUILD_MODE:-native}"
 FORWARDED_ARGS=()
 
 usage() {
-    cat <<'EOF'
+    cat <<'EOF2'
 Использование: bash scripts/astra/build.sh [--mode MODE] [параметры профиля]
 
 Режимы:
   native                 Сборка непосредственно на текущей Astra Linux.
                          Поддерживает headless, desktop, full и SDR-профили.
 
-  portable-glibc224      Воспроизводимый CLI-бандл через изолированный Debian
-                         Stretch chroot с контролируемой glibc, GCC, CMake и NNG.
-                         Повторяет рабочую технологию ветки astra.
+  portable-astra17       Рекомендуемый переносимый бандл для Astra Linux 1.7.
+  portable-glibc228      Алиас portable-astra17. Сборка идёт в Debian 10 Buster
+                         rootfs с glibc 2.28; non-glibc runtime-зависимости
+                         включаются в архив, RPATH переводится на $ORIGIN.
+
+  portable-glibc224      Legacy-профиль Debian Stretch/glibc 2.24.
+                         Оставлен для ранее подготовленных окружений.
 
 Примеры:
-  bash scripts/astra/build.sh --mode native --profile headless
   bash scripts/astra/build.sh --mode native --profile desktop --sdr rtl --install
+  bash scripts/astra/build.sh --mode portable-astra17 --profile desktop --clean-rootfs
+  bash scripts/astra/build.sh --mode portable-astra17 --profile headless
   bash scripts/astra/build.sh --mode portable-glibc224 --profile reference
-  bash scripts/astra/build.sh --mode portable-glibc224 --profile meteor
 
-Подробная справка:
-  bash scripts/astra/build-native.sh --help
-  bash scripts/astra/portable/build.sh --help
-
-Без --mode используется native, поэтому существующие команды сохраняют поведение.
-Переменная окружения SATDUMP_BUILD_MODE задаёт режим по умолчанию для автоматизации.
-EOF
+Без --mode используется native.
+EOF2
 }
 
 while (( $# > 0 )); do
@@ -59,12 +58,15 @@ case "${BUILD_MODE}" in
     native)
         exec bash "${ASTRA_SCRIPT_DIR}/build-native.sh" "${FORWARDED_ARGS[@]}"
         ;;
+    portable-astra17|portable-glibc228|astra17)
+        exec bash "${ASTRA_SCRIPT_DIR}/astra17/build.sh" "${FORWARDED_ARGS[@]}"
+        ;;
     portable|portable-glibc224|astra-reference)
         exec bash "${ASTRA_SCRIPT_DIR}/portable/build.sh" "${FORWARDED_ARGS[@]}"
         ;;
     *)
         printf 'Неизвестный режим сборки: %s\n' "${BUILD_MODE}" >&2
-        printf 'Допустимы native и portable-glibc224.\n' >&2
+        printf 'Допустимы native, portable-astra17 и portable-glibc224.\n' >&2
         exit 2
         ;;
 esac

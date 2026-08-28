@@ -1,0 +1,106 @@
+name: Astra Linux 1.7 self-contained bundle
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "Профиль SatDump"
+        required: true
+        default: desktop
+        type: choice
+        options:
+          - desktop
+          - headless
+  push:
+    branches:
+      - release/1.2.2
+    paths:
+      - "scripts/astra/astra17/**"
+      - "scripts/astra/build.sh"
+      - ".github/workflows/astra17-bundle.yml"
+      - "docs/ru/ASTRA17_BUNDLE.md"
+  pull_request:
+    branches:
+      - release/1.2.2
+    paths:
+      - "scripts/astra/astra17/**"
+      - "scripts/astra/build.sh"
+      - ".github/workflows/astra17-bundle.yml"
+      - "docs/ru/ASTRA17_BUNDLE.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: astra17-bundle-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Shell safety checks
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ShellCheck
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+      - name: Bash syntax
+        run: |
+          bash -n scripts/astra/build.sh
+          find scripts/astra/astra17 -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+      - name: ShellCheck errors
+        run: |
+          shellcheck --severity=error --external-sources --exclude=SC1091 \
+            scripts/astra/build.sh scripts/astra/astra17/*.sh
+      - name: Dispatcher exposes Astra 1.7 mode
+        run: |
+          bash scripts/astra/build.sh --help | grep -q portable-astra17
+          bash scripts/astra/astra17/build.sh --help | grep -q 'glibc 2.28'
+
+  bundle:
+    name: Build on Debian 10 / glibc 2.28
+    needs: lint
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    env:
+      PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.profile || 'desktop' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install chroot tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y debootstrap debian-archive-keyring rsync binutils util-linux
+      - name: Build Astra 1.7 bundle
+        run: |
+          sudo bash scripts/astra/astra17/build.sh \
+            --profile "${PROFILE}" \
+            --rootfs /var/lib/satdump-build/astra17-buster-amd64 \
+            --work-dir "${GITHUB_WORKSPACE}/build/astra17-portable" \
+            --output-dir "${GITHUB_WORKSPACE}/dist/astra17" \
+            --jobs 2 \
+            --clean-rootfs
+      - name: Validate produced archive on runner
+        run: |
+          archive="$(find dist/astra17 -maxdepth 1 -type f -name "satdump-1.2.2-astra17-${PROFILE}-glibc228-x86_64.tar.gz" -print -quit)"
+          test -s "${archive}"
+          test -s "${archive}.sha256"
+          bash scripts/astra/astra17/validate-bundle.sh "${archive}"
+          manifest="$(find dist/astra17 -type f -name ASTRA17-MANIFEST.txt -print -quit)"
+          grep -q '^glibc_build=2.28$' "${manifest}"
+          awk -F= '$1=="glibc_required" { if ($2 > 2.28) exit 1 }' "${manifest}"
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: satdump-1.2.2-astra17-${{ env.PROFILE }}-glibc228
+          path: |
+            dist/astra17/*.tar.gz
+            dist/astra17/*.sha256
+            dist/astra17/*/ASTRA17-MANIFEST.txt
+            dist/astra17/*/SHA256SUMS
+            dist/astra17/*/astra17-version.log
+          if-no-files-found: error
+          retention-days: 30
