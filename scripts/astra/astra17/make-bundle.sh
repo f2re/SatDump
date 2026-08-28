@@ -276,6 +276,10 @@ PLUGIN_COUNT="$(find "${BUNDLE}/lib/satdump/plugins" -maxdepth 1 -type f -name '
 EPOCH="${SOURCE_DATE_EPOCH:-$(date +%s)}"
 tar --sort=name --mtime="@${EPOCH}" --owner=0 --group=0 --numeric-owner \
     -C "${OUTPUT_DIR}" -cf - "${BASENAME}" | gzip -n > "${ARCHIVE}"
-sha256sum "${ARCHIVE}" > "${ARCHIVE}.sha256"
+(
+    cd "${OUTPUT_DIR}"
+    sha256sum "${BASENAME}.tar.gz" > "${BASENAME}.tar.gz.sha256"
+    sha256sum -c "${BASENAME}.tar.gz.sha256"
+)
 log "Готово: ${ARCHIVE}"
 log "GLIBC required=${GLIBC_REQUIRED}; GLIBCXX=${GLIBCXX_REQUIRED}; plugins=${PLUGIN_COUNT}"
