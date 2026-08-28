@@ -11,24 +11,27 @@ usage() {
 Использование: bash scripts/astra/build.sh [--mode MODE] [параметры профиля]
 
 Режимы:
-  native                 Сборка непосредственно на текущей Astra Linux.
+  native                 Обычная сборка непосредственно на текущей Astra Linux.
                          Поддерживает headless, desktop, full и SDR-профили.
 
-  portable-astra17       Рекомендуемый переносимый бандл для Astra Linux 1.7.
-  portable-glibc228      Алиас portable-astra17. Сборка идёт в Debian 10 Buster
-                         rootfs с glibc 2.28; non-glibc runtime-зависимости
-                         включаются в архив, RPATH переводится на $ORIGIN.
+  portable-astra17       Release-профиль для Astra Linux 1.7 x86_64.
+  astra17-full           Алиас portable-astra17.
+                         Сборка ОБЯЗАТЕЛЬНО выполняется непосредственно в
+                         фактической Astra Linux 1.7/glibc 2.28. Готовый архив
+                         содержит полный runtime closure, включая glibc/loader,
+                         libstdc++, GUI/audio/RTL-SDR зависимости.
 
   portable-glibc224      Legacy-профиль Debian Stretch/glibc 2.24.
-                         Оставлен для ранее подготовленных окружений.
+                         Не используется для новых Astra 1.7 releases.
 
 Примеры:
   bash scripts/astra/build.sh --mode native --profile desktop --sdr rtl --install
-  bash scripts/astra/build.sh --mode portable-astra17 --profile desktop --clean-rootfs
+  bash scripts/astra/build.sh --mode portable-astra17 --profile desktop --prepare-build-env
   bash scripts/astra/build.sh --mode portable-astra17 --profile headless
   bash scripts/astra/build.sh --mode portable-glibc224 --profile reference
 
-Без --mode используется native.
+Для GitHub Release применяется portable-astra17/desktop внутри официальной
+Astra Linux 1.7. Целевая Astra не устанавливает дополнительные runtime-пакеты.
 EOF2
 }
 
@@ -58,7 +61,7 @@ case "${BUILD_MODE}" in
     native)
         exec bash "${ASTRA_SCRIPT_DIR}/build-native.sh" "${FORWARDED_ARGS[@]}"
         ;;
-    portable-astra17|portable-glibc228|astra17)
+    portable-astra17|astra17-full|astra17)
         exec bash "${ASTRA_SCRIPT_DIR}/astra17/build.sh" "${FORWARDED_ARGS[@]}"
         ;;
     portable|portable-glibc224|astra-reference)

@@ -1,4 +1,4 @@
-name: Astra Linux 1.7 self-contained bundle
+name: Astra Linux 1.7 native release bundle
 
 on:
   workflow_dispatch:
@@ -14,30 +14,23 @@ on:
   push:
     branches:
       - release/1.2.2
-    paths:
-      - "scripts/astra/astra17/**"
-      - "scripts/astra/build.sh"
-      - ".github/workflows/astra17-bundle.yml"
-      - "docs/ru/ASTRA17_BUNDLE.md"
   pull_request:
     branches:
       - release/1.2.2
-    paths:
-      - "scripts/astra/astra17/**"
-      - "scripts/astra/build.sh"
-      - ".github/workflows/astra17-bundle.yml"
-      - "docs/ru/ASTRA17_BUNDLE.md"
 
 permissions:
   contents: read
 
 concurrency:
-  group: astra17-bundle-${{ github.ref }}
+  group: astra17-native-release-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  ASTRA_IMAGE: registry.astralinux.ru/library/astra/ubi17:1.7.5
 
 jobs:
   lint:
-    name: Shell safety checks
+    name: Shell and documentation checks
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     steps:
@@ -54,13 +47,20 @@ jobs:
         run: |
           shellcheck --severity=error --external-sources --exclude=SC1091 \
             scripts/astra/build.sh scripts/astra/astra17/*.sh
-      - name: Dispatcher exposes Astra 1.7 mode
+      - name: Required documentation
+        run: |
+          test -s docs/ru/ASTRA17_COMPLETE_GUIDE.md
+          test -s docs/ru/PRESENTATION.md
+          test -s docs/ru/PRESENTATION_LAYOUTS.md
+          test -s docs/ru/RUN.md
+          test -s docs/ru/CONFIGURATION.md
+      - name: Dispatcher points to native Astra 1.7 builder
         run: |
           bash scripts/astra/build.sh --help | grep -q portable-astra17
-          bash scripts/astra/astra17/build.sh --help | grep -q 'glibc 2.28'
+          bash scripts/astra/astra17/build.sh --help | grep -q 'НЕПОСРЕДСТВЕННО в Astra Linux 1.7'
 
-  bundle:
-    name: Build on Debian 10 / glibc 2.28
+  build-astra17:
+    name: Compile and bundle inside official Astra Linux 1.7
     needs: lint
     runs-on: ubuntu-22.04
     timeout-minutes: 180
@@ -70,67 +70,122 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Install chroot tooling
+
+      - name: Pull official Astra Linux 1.7 build image
+        run: docker pull "${ASTRA_IMAGE}"
+
+      - name: Build inside Astra Linux 1.7
+        shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y debootstrap debian-archive-keyring rsync binutils util-linux
-      - name: Build Astra 1.7 bundle
+          set -Eeuo pipefail
+          mkdir -p build/astra17-native dist/astra17
+          : > build/astra17-native/native-build.log
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -w /workspace \
+            -e HOME=/root \
+            -e PROFILE="${PROFILE}" \
+            -e GITHUB_RUN_NUMBER="${GITHUB_RUN_NUMBER}" \
+            -e SATDUMP_RELEASE_REVISION="r${GITHUB_RUN_NUMBER}" \
+            -e GIT_CONFIG_COUNT=1 \
+            -e GIT_CONFIG_KEY_0=safe.directory \
+            -e GIT_CONFIG_VALUE_0=/workspace \
+            "${ASTRA_IMAGE}" \
+            /bin/bash -lc '
+              set -Eeuo pipefail
+              printf "Build host: "
+              if [[ -r /etc/astra_version ]]; then cat /etc/astra_version; else cat /etc/os-release; fi
+              bash scripts/astra/astra17/build.sh \
+                --profile "${PROFILE}" \
+                --prepare-build-env \
+                --work-dir /workspace/build/astra17-native \
+                --output-dir /workspace/dist/astra17 \
+                --jobs 2 \
+                --revision "r${GITHUB_RUN_NUMBER}" \
+                2>&1 | tee /workspace/build/astra17-native/native-build.log
+            '
+
+      - name: Upload native build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: astra17-native-build-diagnostics
+          path: |
+            build/astra17-native/native-build.log
+            build/astra17-native/**/CMakeCache.txt
+            build/astra17-native/**/CMakeOutput.log
+            build/astra17-native/**/CMakeError.log
+            build/astra17-native/**/CMakeConfigureLog.yaml
+            build/astra17-native/**/compile_commands.json
+            dist/astra17/**/ASTRA17-MANIFEST.txt
+            dist/astra17/**/RUNTIME-LIBRARIES.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Check archive, manifest and checksum
+        shell: bash
         run: |
-          sudo bash scripts/astra/astra17/build.sh \
-            --profile "${PROFILE}" \
-            --rootfs /var/lib/satdump-build/astra17-buster-amd64 \
-            --work-dir "${GITHUB_WORKSPACE}/build/astra17-portable" \
-            --output-dir "${GITHUB_WORKSPACE}/dist/astra17" \
-            --jobs 2 \
-            --clean-rootfs
-      - name: Validate produced archive on runner
-        run: |
-          archive="$(find dist/astra17 -maxdepth 1 -type f -name "satdump-1.2.2-astra17-${PROFILE}-glibc228-x86_64.tar.gz" -print -quit)"
+          set -Eeuo pipefail
+          archive="$(find dist/astra17 -maxdepth 1 -type f -name "satdump-1.2.2-astra17-${PROFILE}-full-x86_64.tar.gz" -print -quit)"
           test -s "${archive}"
           test -s "${archive}.sha256"
           (
             cd "$(dirname "${archive}")"
             sha256sum -c "$(basename "${archive}").sha256"
           )
-          bash scripts/astra/astra17/validate-bundle.sh "${archive}"
           manifest="$(find dist/astra17 -type f -name ASTRA17-MANIFEST.txt -print -quit)"
-          test -s "${manifest}"
+          runtime="$(find dist/astra17 -type f -name RUNTIME-LIBRARIES.txt -print -quit)"
+          guide="$(find dist/astra17 -type f -name ASTRA17_COMPLETE_GUIDE.md -print -quit)"
+          test -s "${manifest}" && test -s "${runtime}" && test -s "${guide}"
+          grep -q '^profile=astra17-native-full$' "${manifest}"
           grep -q '^glibc_build=2.28$' "${manifest}"
-          required="$(awk -F= '$1=="glibc_required" {print $2}' "${manifest}")"
-          test -n "${required}"
-          dpkg --compare-versions "${required}" le 2.28
+          grep -q '^glibc_bundled=yes$' "${manifest}"
+          grep -q '^runtime_closure=complete$' "${manifest}"
           echo '===== ASTRA17-MANIFEST.txt ====='
           cat "${manifest}"
-      - name: Upload bundle
+
+      - name: Upload QA presentation images
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: satdump-1.2.2-astra17-${{ env.PROFILE }}-glibc228
+          name: astra17-presentation-reference-${{ env.PROFILE }}
+          path: build/astra17-native/presentation-test-output-${{ env.PROFILE }}/*.png
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload complete Astra 1.7 bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: satdump-1.2.2-astra17-${{ env.PROFILE }}-full
           path: |
             dist/astra17/*.tar.gz
-            dist/astra17/*.sha256
+            dist/astra17/*.tar.gz.sha256
             dist/astra17/*/ASTRA17-MANIFEST.txt
+            dist/astra17/*/RUNTIME-LIBRARIES.txt
             dist/astra17/*/SHA256SUMS
-            dist/astra17/*/astra17-version.log
+            dist/astra17/*/README-ASTRA17.txt
+            dist/astra17/*/share/doc/satdump/ASTRA17_COMPLETE_GUIDE.md
           if-no-files-found: error
           retention-days: 30
 
-  astra17-runtime:
-    name: Run downloaded bundle on official Astra Linux 1.7
-    needs: bundle
+  runtime-astra17:
+    name: Deploy with zero package installation on fresh Astra Linux 1.7
+    needs: build-astra17
     runs-on: ubuntu-22.04
-    timeout-minutes: 25
+    timeout-minutes: 30
     env:
       PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.profile || 'desktop' }}
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: satdump-1.2.2-astra17-${{ env.PROFILE }}-glibc228
+          name: satdump-1.2.2-astra17-${{ env.PROFILE }}-full
           path: downloaded
-      - name: Extract downloaded artifact
+
+      - name: Verify downloaded checksum and extract
         shell: bash
         run: |
           set -Eeuo pipefail
-          archive="$(find downloaded -type f -name "satdump-1.2.2-astra17-${PROFILE}-glibc228-x86_64.tar.gz" -print -quit)"
+          archive="$(find downloaded -type f -name "satdump-1.2.2-astra17-${PROFILE}-full-x86_64.tar.gz" -print -quit)"
           test -s "${archive}"
           (
             cd "$(dirname "${archive}")"
@@ -138,36 +193,107 @@ jobs:
           )
           mkdir -p runtime-bundle
           tar -xzf "${archive}" -C runtime-bundle
-          bundle="$(find runtime-bundle -mindepth 1 -maxdepth 1 -type d -name 'satdump-1.2.2-astra17-*' -print -quit)"
+          bundle="$(find runtime-bundle -mindepth 1 -maxdepth 1 -type d -name 'satdump-1.2.2-astra17-*-full-*' -print -quit)"
           test -d "${bundle}"
           printf 'BUNDLE_DIR=%s\n' "$(readlink -f "${bundle}")" >> "${GITHUB_ENV}"
-      - name: Smoke test on Astra Linux UBI 1.7
+
+      - name: Fresh Astra Linux 1.7 runtime test without apt install
         shell: bash
         run: |
           set -Eeuo pipefail
-          docker pull registry.astralinux.ru/library/astra/ubi17:1.7.5
+          docker pull "${ASTRA_IMAGE}"
           docker run --rm \
             -v "${BUNDLE_DIR}:/opt/satdump-test:ro" \
-            registry.astralinux.ru/library/astra/ubi17:1.7.5 \
+            "${ASTRA_IMAGE}" \
             /bin/bash -lc '
               set -Eeuo pipefail
-              ldd_version="$(ldd --version 2>&1 || true)"
-              grep -q "2.28" <<<"${ldd_version}"
+              # Намеренно нет apt-get update/install: это gate готового deployment.
+              test -x /opt/satdump-test/lib/ld-linux-x86-64.so.2
+              test -e /opt/satdump-test/lib/libc.so.6
+              test -e /opt/satdump-test/lib/libstdc++.so.6
               /opt/satdump-test/satdump version 2>&1 | tee /tmp/version.log
               grep -q "SatDump v1.2.2" /tmp/version.log
-
-              failed=0
-              for elf in \
-                /opt/satdump-test/bin/satdump* \
-                /opt/satdump-test/lib/*.so* \
-                /opt/satdump-test/lib/satdump/plugins/*.so*; do
-                [[ -f "${elf}" ]] || continue
-                out="$(ldd -r "${elf}" 2>&1 || true)"
-                if grep -Eqi "not found|undefined symbol" <<<"${out}"; then
-                  echo "ELF relocation failure: ${elf}" >&2
-                  printf "%s\n" "${out}" >&2
-                  failed=1
-                fi
-              done
-              test "${failed}" = 0
+              /opt/satdump-test/lib/ld-linux-x86-64.so.2 \
+                --library-path /opt/satdump-test/lib:/opt/satdump-test/lib/satdump/plugins \
+                --list /opt/satdump-test/bin/satdump >/tmp/cli-libs.log
+              if [[ -x /opt/satdump-test/bin/satdump-ui ]]; then
+                /opt/satdump-test/lib/ld-linux-x86-64.so.2 \
+                  --library-path /opt/satdump-test/lib:/opt/satdump-test/lib/satdump/plugins \
+                  --list /opt/satdump-test/bin/satdump-ui >/tmp/ui-libs.log
+              fi
+              /opt/satdump-test/verify.sh
+              echo "Fresh Astra 1.7 zero-install runtime: OK"
             '
+
+  publish-release:
+    name: Publish GitHub Release from release/1.2.2
+    if: github.event_name == 'push' && github.ref == 'refs/heads/release/1.2.2'
+    needs: runtime-astra17
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: satdump-1.2.2-astra17-desktop-full
+          path: release-assets
+
+      - name: Create immutable versioned GitHub Release
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          tag="v1.2.2-astra17-r${GITHUB_RUN_NUMBER}"
+          title="SatDump 1.2.2 — Astra Linux 1.7 full bundle r${GITHUB_RUN_NUMBER}"
+          archive="$(find release-assets -type f -name 'satdump-1.2.2-astra17-desktop-full-x86_64.tar.gz' -print -quit)"
+          checksum="${archive}.sha256"
+          manifest="$(find release-assets -type f -name ASTRA17-MANIFEST.txt -print -quit)"
+          runtime="$(find release-assets -type f -name RUNTIME-LIBRARIES.txt -print -quit)"
+          guide="$(find release-assets -type f -name ASTRA17_COMPLETE_GUIDE.md -print -quit)"
+          test -s "${archive}" && test -s "${checksum}" && test -s "${manifest}" && test -s "${runtime}" && test -s "${guide}"
+
+          cat > release-notes.md <<EOF2
+          ## SatDump 1.2.2 для Astra Linux 1.7
+
+          Сборка выполнена **непосредственно внутри официального Astra Linux 1.7 UBI** из ветки \`release/1.2.2\`.
+
+          Пакет не требует установки дополнительных runtime-пакетов APT: в archive включены glibc/loader, C++ runtime, GUI/audio/RTL-SDR библиотеки и полный обнаруженный транзитивный ELF dependency closure.
+
+          После сборки тот же скачанный artifact запускается в чистом Astra Linux 1.7 контейнере **без apt-get install**. Только после этого создаётся данный Release.
+
+          ### Установка
+          \`\`\`bash
+          sha256sum -c satdump-1.2.2-astra17-desktop-full-x86_64.tar.gz.sha256
+          tar -xzf satdump-1.2.2-astra17-desktop-full-x86_64.tar.gz
+          cd satdump-1.2.2-astra17-desktop-full-x86_64
+          ./verify.sh
+          ./satdump version
+          ./satdump-ui
+          # либо постоянная установка:
+          ./install.sh
+          \`\`\`
+
+          Полная инструкция приложена как \`ASTRA17_COMPLETE_GUIDE.md\` и находится внутри bundle в \`share/doc/satdump/\`.
+
+          Source commit: \`${GITHUB_SHA}\`
+          EOF2
+
+          assets=("${archive}" "${checksum}" "${manifest}" "${runtime}" "${guide}")
+          if gh release view "${tag}" >/dev/null 2>&1; then
+            gh release upload "${tag}" --clobber "${assets[@]}"
+            gh release edit "${tag}" --title "${title}" --notes-file release-notes.md --latest
+          else
+            gh release create "${tag}" \
+              --target "${GITHUB_SHA}" \
+              --title "${title}" \
+              --notes-file release-notes.md \
+              --latest \
+              "${assets[@]}"
+          fi
+          gh release view "${tag}" --json url,tagName,name

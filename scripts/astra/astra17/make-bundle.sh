@@ -5,6 +5,8 @@ STAGE=""
 SOURCE_DIR=""
 OUTPUT_DIR=""
 PROFILE="desktop"
+RUNTIME_PREFIX=""
+REVISION="local"
 GLIBC_MAX="2.28"
 
 log() { printf '[astra17/bundle] %s\n' "$*"; }
@@ -16,6 +18,8 @@ while (( $# > 0 )); do
         --source) SOURCE_DIR="$2"; shift 2 ;;
         --output) OUTPUT_DIR="$2"; shift 2 ;;
         --profile) PROFILE="$2"; shift 2 ;;
+        --runtime-prefix) RUNTIME_PREFIX="$2"; shift 2 ;;
+        --revision) REVISION="$2"; shift 2 ;;
         *) fail "Неизвестный параметр: $1" ;;
     esac
 done
@@ -23,135 +27,181 @@ done
 [[ -x "${STAGE}/bin/satdump" ]] || fail "Нет ${STAGE}/bin/satdump"
 [[ -d "${SOURCE_DIR}" ]] || fail "Нет source-dir"
 [[ "${PROFILE}" == "headless" || "${PROFILE}" == "desktop" ]] || fail "Некорректный профиль"
-command -v patchelf >/dev/null 2>&1 || fail "Нужен patchelf"
-command -v readelf >/dev/null 2>&1 || fail "Нужен readelf"
+for command in patchelf readelf objdump ldd sha256sum tar gzip; do
+    command -v "${command}" >/dev/null 2>&1 || fail "Нужна команда ${command}"
+done
+
+ASTRA_VERSION="unknown"
+if [[ -r /etc/astra_version ]]; then
+    ASTRA_VERSION="$(tr -d '\r\n' < /etc/astra_version)"
+elif [[ -r /etc/os-release ]]; then
+    ASTRA_VERSION="$(. /etc/os-release; printf '%s' "${PRETTY_NAME:-${VERSION_ID:-unknown}}")"
+fi
+GLIBC_BUILD="$(getconf GNU_LIBC_VERSION 2>/dev/null | awk '{print $2}' || true)"
+[[ "${GLIBC_BUILD}" == "2.28" ]] || fail "Bundle должен формироваться на glibc 2.28, получено ${GLIBC_BUILD:-unknown}"
 
 mkdir -p "${OUTPUT_DIR}"
-BASENAME="satdump-1.2.2-astra17-${PROFILE}-glibc228-x86_64"
+BASENAME="satdump-1.2.2-astra17-${PROFILE}-full-x86_64"
 BUNDLE="${OUTPUT_DIR}/${BASENAME}"
 ARCHIVE="${OUTPUT_DIR}/${BASENAME}.tar.gz"
 rm -rf "${BUNDLE}" "${ARCHIVE}" "${ARCHIVE}.sha256"
 mkdir -p "${BUNDLE}"
 cp -a "${STAGE}/." "${BUNDLE}/"
-mkdir -p "${BUNDLE}/lib" "${BUNDLE}/lib/satdump/plugins"
+mkdir -p "${BUNDLE}/lib" "${BUNDLE}/lib/satdump/plugins" "${BUNDLE}/share/doc/satdump"
 
-# Эти компоненты предоставляет целевая Astra 1.7. Перенос собственной glibc вместе
-# с системным loader/NSS небезопасен и создаёт ABI-сбои с NSS, DNS и драйверами.
-GLIBC_RE='^(ld-linux.*|libc\.so|libm\.so|libpthread\.so|libdl\.so|librt\.so|libresolv\.so|libnsl\.so|libnss_|libutil\.so|libcrypt\.so|libanl\.so|libBrokenLocale\.so)'
-SEARCH_PATHS="${BUNDLE}/lib:${BUNDLE}/lib/satdump/plugins:/usr/local/lib:/usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu:/usr/lib:/lib"
+if [[ -d "${SOURCE_DIR}/docs/ru" ]]; then
+    cp -a "${SOURCE_DIR}/docs/ru/." "${BUNDLE}/share/doc/satdump/"
+fi
+
+RUNTIME_RECORDS="${BUNDLE}/.runtime-libraries.unsorted"
+: > "${RUNTIME_RECORDS}"
+
+SEARCH_PATHS="${BUNDLE}/lib:${BUNDLE}/lib/satdump/plugins"
+if [[ -n "${RUNTIME_PREFIX}" ]]; then
+    SEARCH_PATHS+="${SEARCH_PATHS:+:}${RUNTIME_PREFIX}/lib:${RUNTIME_PREFIX}/lib64"
+fi
+SEARCH_PATHS+="/usr/local/lib:/usr/local/lib64:/usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu:/usr/lib64:/lib64:/usr/lib:/lib"
 
 is_elf() { readelf -h "$1" >/dev/null 2>&1; }
-sha() { sha256sum "$1" | awk '{print $1}'; }
+file_sha() { sha256sum "$1" | awk '{print $1}'; }
 
-# return 10 = в closure появился новый файл/alias. Этот код всегда вызывается
-# из if-конструкции, поэтому `set -e` не превращает его в фатальную ошибку.
+record_runtime() {
+    local name="$1" source="$2" real="$3" package="unowned"
+    if command -v dpkg-query >/dev/null 2>&1; then
+        package="$(dpkg-query -S "${real}" 2>/dev/null | sed -n '1{s/:.*//;p}' || true)"
+        package="${package:-unowned}"
+    fi
+    printf '%s\t%s\t%s\t%s\n' "${name}" "$(basename "${real}")" "${package}" "${source}" >> "${RUNTIME_RECORDS}"
+}
+
+# return 10: создан новый alias.
 ensure_link() {
-    local name="$1"
-    local target="$2"
-    local dst="${BUNDLE}/lib/${name}"
+    local name="$1" target="$2" dst="${BUNDLE}/lib/${name}"
     [[ -n "${name}" && "${name}" != "${target}" ]] || return 0
     if [[ -L "${dst}" ]]; then
-        [[ "$(readlink "${dst}")" == "${target}" ]] || fail "Конфликт symlink ${name}: $(readlink "${dst}") vs ${target}"
+        [[ "$(readlink "${dst}")" == "${target}" ]] \
+            || fail "Конфликт symlink ${name}: $(readlink "${dst}") vs ${target}"
         return 0
     fi
     if [[ -e "${dst}" ]]; then
-        [[ "$(sha "${dst}")" == "$(sha "${BUNDLE}/lib/${target}")" ]] || fail "Конфликт библиотеки ${name}"
+        [[ "$(file_sha "${dst}")" == "$(file_sha "${BUNDLE}/lib/${target}")" ]] \
+            || fail "Конфликт runtime-файла ${name}"
         return 0
     fi
     ln -s "${target}" "${dst}"
     return 10
 }
 
+# Копируем реальный файл и восстанавливаем DT_NEEDED/SONAME aliases.
+# glibc не исключается: полный release содержит libc, loader и NSS.
 copy_dependency() {
-    local needed="$1"
-    local resolved="$2"
-    [[ -n "${needed}" && -f "${resolved}" ]] || return 0
-    [[ ! "${needed}" =~ ${GLIBC_RE} ]] || return 0
+    local needed="$1" resolved="$2"
+    [[ -n "${needed}" && -e "${resolved}" ]] || return 0
 
     local real realname dest soname rc added=0
     real="$(readlink -f "${resolved}")"
+    [[ -f "${real}" ]] || return 0
     realname="$(basename "${real}")"
     dest="${BUNDLE}/lib/${realname}"
 
     if [[ -e "${dest}" && ! -L "${dest}" ]]; then
-        [[ "$(sha "${dest}")" == "$(sha "${real}")" ]] || fail "Две разные библиотеки претендуют на ${realname}: ${resolved}"
+        [[ "$(file_sha "${dest}")" == "$(file_sha "${real}")" ]] \
+            || fail "Разные библиотеки претендуют на ${realname}: ${resolved}"
     else
         rm -f "${dest}"
         cp -p "${real}" "${dest}"
+        record_runtime "${needed}" "${resolved}" "${real}"
         added=1
     fi
 
-    if ensure_link "${needed}" "${realname}"; then
-        rc=0
-    else
-        rc=$?
-    fi
+    if ensure_link "${needed}" "${realname}"; then rc=0; else rc=$?; fi
     [[ "${rc}" == "10" ]] && added=1
     [[ "${rc}" == "0" || "${rc}" == "10" ]] || return "${rc}"
 
-    soname="$(readelf -d "${real}" 2>/dev/null | sed -n 's/.*(SONAME).*\[\(.*\)\].*/\1/p' | head -n1)"
+    soname="$(readelf -d "${real}" 2>/dev/null | sed -n 's/.*(SONAME).*\[\(.*\)\].*/\1/p' | sed -n '1p')"
     if [[ -n "${soname}" ]]; then
-        if ensure_link "${soname}" "${realname}"; then
-            rc=0
-        else
-            rc=$?
-        fi
+        if ensure_link "${soname}" "${realname}"; then rc=0; else rc=$?; fi
         [[ "${rc}" == "10" ]] && added=1
         [[ "${rc}" == "0" || "${rc}" == "10" ]] || return "${rc}"
     fi
 
-    if [[ "${added}" == "1" ]]; then
-        return 10
-    fi
+    (( added == 0 )) || return 10
     return 0
 }
 
-# return 1 = как минимум одна новая non-glibc runtime-зависимость добавлена.
+# return 1: dependency closure расширился.
 collect_from_elf() {
-    local elf="$1"
-    local changed=0 needed resolved rc
+    local elf="$1" changed=0 needed resolved rc
     while IFS=$'\t' read -r needed resolved; do
         [[ -n "${needed}" && -n "${resolved}" ]] || continue
-        if copy_dependency "${needed}" "${resolved}"; then
-            rc=0
-        else
-            rc=$?
-        fi
+        if copy_dependency "${needed}" "${resolved}"; then rc=0; else rc=$?; fi
         [[ "${rc}" == "10" ]] && changed=1
         [[ "${rc}" == "0" || "${rc}" == "10" ]] || return "${rc}"
     done < <(
         LD_LIBRARY_PATH="${SEARCH_PATHS}" ldd "${elf}" 2>/dev/null \
-            | awk '/=> \/.*/ {print $1 "\t" $3}'
+            | awk '
+                /=> \/.*/ { print $1 "\t" $3; next }
+                /^[[:space:]]*\// {
+                    path=$1; name=path; sub(/^.*\//, "", name);
+                    print name "\t" path
+                }
+            '
     )
     return "${changed}"
 }
 
-log "Рекурсивное построение runtime closure"
-for pass in $(seq 1 12); do
+log "Рекурсивное построение полного runtime closure на Astra Linux 1.7"
+for pass in $(seq 1 16); do
     changed=0
     while IFS= read -r -d '' elf; do
         is_elf "${elf}" || continue
-        if collect_from_elf "${elf}"; then
-            rc=0
-        else
-            rc=$?
-        fi
+        if collect_from_elf "${elf}"; then rc=0; else rc=$?; fi
         [[ "${rc}" == "1" ]] && changed=1
         [[ "${rc}" == "0" || "${rc}" == "1" ]] || fail "Ошибка анализа ${elf}, status=${rc}"
     done < <(find "${BUNDLE}/bin" "${BUNDLE}/lib" -type f -print0)
     log "runtime closure: проход ${pass}, changed=${changed}"
     [[ "${changed}" == "1" ]] || break
-    [[ "${pass}" != "12" ]] || fail "Dependency closure не сошёлся за 12 проходов"
+    [[ "${pass}" != "16" ]] || fail "Dependency closure не сошёлся за 16 проходов"
 done
 
-# Убираем абсолютные build/install RPATH и задаём только относительные пути.
+# glibc загружает NSS динамически, поэтому эти модули не всегда видны через ldd.
+for nss in \
+    /lib/x86_64-linux-gnu/libnss_*.so.2 \
+    /usr/lib/x86_64-linux-gnu/libnss_*.so.2 \
+    /lib64/libnss_*.so.2; do
+    [[ -e "${nss}" ]] || continue
+    if copy_dependency "$(basename "${nss}")" "${nss}"; then
+        :
+    else
+        rc=$?
+        [[ "${rc}" == "10" ]] || exit "${rc}"
+    fi
+done
+
+# NSS мог добавить свои зависимости — дополнительный closure-проход.
+while IFS= read -r -d '' elf; do
+    is_elf "${elf}" || continue
+    if collect_from_elf "${elf}"; then
+        :
+    else
+        rc=$?
+        [[ "${rc}" == "1" ]] || exit "${rc}"
+    fi
+done < <(find "${BUNDLE}/lib" -type f -print0)
+
+for required_runtime in libc.so.6 ld-linux-x86-64.so.2 libstdc++.so.6 libgcc_s.so.1; do
+    [[ -e "${BUNDLE}/lib/${required_runtime}" ]] \
+        || fail "В полном release отсутствует обязательный runtime ${required_runtime}"
+done
+
+# RPATH меняется только у ELF SatDump. Системные runtime-библиотеки Astra не патчим.
 while IFS= read -r -d '' elf; do
     is_elf "${elf}" || continue
     rel="${elf#${BUNDLE}/}"
     case "${rel}" in
         bin/*) rpath='$ORIGIN/../lib:$ORIGIN/../lib/satdump/plugins' ;;
+        lib/libsatdump*.so*) rpath='$ORIGIN:$ORIGIN/satdump/plugins' ;;
         lib/satdump/plugins/*) rpath='$ORIGIN/../..:$ORIGIN' ;;
-        lib/*) rpath='$ORIGIN:$ORIGIN/satdump/plugins' ;;
         *) continue ;;
     esac
     patchelf --set-rpath "${rpath}" "${elf}"
@@ -161,10 +211,13 @@ cat > "${BUNDLE}/satdump" <<'EOF2'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 ROOT="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+LOADER="${ROOT}/lib/ld-linux-x86-64.so.2"
+[[ -x "${LOADER}" ]] || { printf 'Bundled loader not found: %s\n' "${LOADER}" >&2; exit 127; }
 export SATDUMP_RESOURCES_PATH="${ROOT}/share/satdump/"
 export SATDUMP_LIBRARIES_PATH="${ROOT}/lib/satdump/"
-export LD_LIBRARY_PATH="${ROOT}/lib:${ROOT}/lib/satdump/plugins${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
-exec "${ROOT}/bin/satdump" "$@"
+exec "${LOADER}" \
+    --library-path "${ROOT}/lib:${ROOT}/lib/satdump/plugins" \
+    "${ROOT}/bin/satdump" "$@"
 EOF2
 chmod +x "${BUNDLE}/satdump"
 
@@ -173,10 +226,13 @@ cat > "${BUNDLE}/satdump-ui" <<'EOF2'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 ROOT="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+LOADER="${ROOT}/lib/ld-linux-x86-64.so.2"
+[[ -x "${LOADER}" ]] || { printf 'Bundled loader not found: %s\n' "${LOADER}" >&2; exit 127; }
 export SATDUMP_RESOURCES_PATH="${ROOT}/share/satdump/"
 export SATDUMP_LIBRARIES_PATH="${ROOT}/lib/satdump/"
-export LD_LIBRARY_PATH="${ROOT}/lib:${ROOT}/lib/satdump/plugins${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
-exec "${ROOT}/bin/satdump-ui" "$@"
+exec "${LOADER}" \
+    --library-path "${ROOT}/lib:${ROOT}/lib/satdump/plugins" \
+    "${ROOT}/bin/satdump-ui" "$@"
 EOF2
 chmod +x "${BUNDLE}/satdump-ui"
 fi
@@ -196,77 +252,145 @@ mkdir -p "${PREFIX}" "${BINDIR}"
 cp -a "${SRC}/." "${PREFIX}/"
 ln -sfn "${PREFIX}/satdump" "${BINDIR}/satdump"
 [[ ! -x "${PREFIX}/satdump-ui" ]] || ln -sfn "${PREFIX}/satdump-ui" "${BINDIR}/satdump-ui"
-printf 'SatDump установлен в %s\n' "${PREFIX}"
+printf 'SatDump 1.2.2 установлен в %s\n' "${PREFIX}"
+printf 'Дополнительные пакеты APT для SatDump не требуются.\n'
 EOF2
 chmod +x "${BUNDLE}/install.sh"
 
-max_symbol() {
-    local prefix="$1"
-    while IFS= read -r -d '' elf; do
-        is_elf "${elf}" || continue
-        objdump -T "${elf}" 2>/dev/null || true
-    done < <(find "${BUNDLE}/bin" "${BUNDLE}/lib" -type f -print0) \
-        | grep -o "${prefix}_[0-9][0-9.]*" \
-        | sed "s/^${prefix}_//" \
-        | sort -Vu | tail -n1
+# Zero-install self-check: не требует readelf/binutils/ldd на целевой машине.
+cat > "${BUNDLE}/verify.sh" <<'EOF2'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+ROOT="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+LOADER="${ROOT}/lib/ld-linux-x86-64.so.2"
+LIBPATH="${ROOT}/lib:${ROOT}/lib/satdump/plugins"
+
+for file in libc.so.6 ld-linux-x86-64.so.2 libstdc++.so.6 libgcc_s.so.1; do
+    [[ -e "${ROOT}/lib/${file}" ]] || { printf 'missing %s\n' "${file}" >&2; exit 1; }
+done
+
+check_loader_list() {
+    local elf="$1" out
+    [[ -f "${elf}" ]] || return 0
+    out="$("${LOADER}" --library-path "${LIBPATH}" --list "${elf}" 2>&1 || true)"
+    if [[ -z "${out}" ]] || grep -Eqi 'not found|error while loading|cannot open shared object' <<<"${out}"; then
+        printf 'Bundled dependency check failed: %s\n%s\n' "${elf}" "${out}" >&2
+        return 1
+    fi
 }
 
-GLIBC_REQUIRED="$(max_symbol GLIBC || true)"
-GLIBCXX_REQUIRED="$(max_symbol GLIBCXX || true)"
+check_loader_list "${ROOT}/bin/satdump"
+[[ ! -x "${ROOT}/bin/satdump-ui" ]] || check_loader_list "${ROOT}/bin/satdump-ui"
+while IFS= read -r -d '' plugin; do
+    check_loader_list "${plugin}"
+done < <(find "${ROOT}/lib/satdump/plugins" -maxdepth 1 -type f -name '*.so*' -print0 2>/dev/null)
+
+HOME_DIR="$(mktemp -d "${TMPDIR:-/tmp}/satdump-verify.XXXXXX")"
+trap 'rm -rf "${HOME_DIR}"' EXIT
+mkdir -p "${HOME_DIR}/.config/satdump"
+printf '%s\n' '{"satdump_general":{"tle_update_interval":{"value":"Never"},"log_to_file":{"value":false}}}' \
+    > "${HOME_DIR}/.config/satdump/settings.json"
+HOME="${HOME_DIR}" "${ROOT}/satdump" version 2>&1 | grep -q 'SatDump v1.2.2'
+printf 'SatDump Astra 1.7 full bundle: OK\n'
+EOF2
+chmod +x "${BUNDLE}/verify.sh"
+
+cat > "${BUNDLE}/README-ASTRA17.txt" <<'EOF2'
+SatDump 1.2.2 — полный пакет для Astra Linux 1.7 x86_64
+
+Быстрый запуск без установки:
+  ./verify.sh
+  ./satdump version
+  ./satdump-ui
+
+Установка:
+  ./install.sh
+
+Пакет содержит runtime-библиотеки приложения, включая glibc/loader, C++ runtime,
+GUI, аудио и RTL-SDR зависимости. Устанавливать дополнительные APT-пакеты для
+SatDump не требуется. Системные kernel/device/graphics drivers предоставляет ОС.
+
+Полная русская документация: share/doc/satdump/ASTRA17_COMPLETE_GUIDE.md
+EOF2
+
+max_symbol() {
+    local prefix="$1"
+    {
+        while IFS= read -r -d '' elf; do
+            is_elf "${elf}" || continue
+            objdump -T "${elf}" 2>/dev/null || true
+        done < <(find "${BUNDLE}/bin" "${BUNDLE}/lib" -type f -print0)
+    } | grep -o "${prefix}_[0-9][0-9.]*" \
+      | sed "s/^${prefix}_//" \
+      | sort -Vu \
+      | tail -n1 || true
+}
+
+GLIBC_REQUIRED="$(max_symbol GLIBC)"
+GLIBCXX_REQUIRED="$(max_symbol GLIBCXX)"
 GLIBC_REQUIRED="${GLIBC_REQUIRED:-0}"
 GLIBCXX_REQUIRED="${GLIBCXX_REQUIRED:-0}"
 dpkg --compare-versions "${GLIBC_REQUIRED}" le "${GLIBC_MAX}" \
-    || fail "Бандл требует GLIBC_${GLIBC_REQUIRED}, максимум для Astra 1.7 — GLIBC_${GLIBC_MAX}"
+    || fail "Release требует GLIBC_${GLIBC_REQUIRED}, максимум Astra 1.7 — GLIBC_${GLIBC_MAX}"
 
+# На build-host проверяем полный closure и relocations через ldd -r.
 failed=0
 while IFS= read -r -d '' elf; do
     is_elf "${elf}" || continue
-    dyn="$(readelf -d "${elf}" 2>/dev/null || true)"
-    if grep -E '(RPATH|RUNPATH).*(/build|/home|/opt|/usr/local)' <<<"${dyn}" >/dev/null; then
-        printf 'Абсолютный RPATH/RUNPATH: %s\n%s\n' "${elf}" "${dyn}" >&2
+    out="$(LD_LIBRARY_PATH="${BUNDLE}/lib:${BUNDLE}/lib/satdump/plugins:${SEARCH_PATHS}" ldd -r "${elf}" 2>&1 || true)"
+    if grep -Eqi 'not found|undefined symbol' <<<"${out}"; then
+        printf 'Неразрешённый ELF: %s\n%s\n' "${elf}" "${out}" >&2
         failed=1
     fi
-    out="$(LD_LIBRARY_PATH="${BUNDLE}/lib:${BUNDLE}/lib/satdump/plugins" ldd "${elf}" 2>&1 || true)"
-    if grep -qi 'not found' <<<"${out}"; then
-        printf 'Не разрешены зависимости: %s\n%s\n' "${elf}" "${out}" >&2
-        failed=1
-    fi
+    while IFS= read -r resolved; do
+        [[ -n "${resolved}" ]] || continue
+        case "${resolved}" in
+            "${BUNDLE}/lib/"*) ;;
+            *) printf 'Внешняя runtime-библиотека: %s -> %s\n' "${elf}" "${resolved}" >&2; failed=1 ;;
+        esac
+    done < <(awk '/=> \/.*/ {print $3}' <<<"${out}")
 done < <(find "${BUNDLE}/bin" "${BUNDLE}/lib" -type f -print0)
-[[ "${failed}" == "0" ]] || fail "ELF validation failed"
+[[ "${failed}" == "0" ]] || fail "Runtime closure не является самодостаточным"
 
-PROBE="$(mktemp -d /tmp/satdump-astra17-probe.XXXXXX)"
+sort -u "${RUNTIME_RECORDS}" > "${BUNDLE}/RUNTIME-LIBRARIES.txt"
+rm -f "${RUNTIME_RECORDS}"
+LIBRARY_COUNT="$(find "${BUNDLE}/lib" -maxdepth 1 \( -type f -o -type l \) -name '*.so*' | wc -l | tr -d ' ')"
+PLUGIN_COUNT="$(find "${BUNDLE}/lib/satdump/plugins" -maxdepth 1 -type f -name '*.so*' | wc -l | tr -d ' ')"
+
+{
+    printf 'profile=astra17-native-full\n'
+    printf 'satdump_version=1.2.2\n'
+    printf 'release_revision=%s\n' "${REVISION}"
+    printf 'bundle_profile=%s\n' "${PROFILE}"
+    printf 'architecture=x86_64\n'
+    printf 'build_os=%s\n' "${ASTRA_VERSION}"
+    printf 'glibc_build=%s\n' "${GLIBC_BUILD}"
+    printf 'glibc_bundled=yes\n'
+    printf 'glibc_required=%s\n' "${GLIBC_REQUIRED}"
+    printf 'glibc_allowed_max=%s\n' "${GLIBC_MAX}"
+    printf 'glibcxx_required=%s\n' "${GLIBCXX_REQUIRED}"
+    printf 'runtime_closure=complete\n'
+    printf 'runtime_library_count=%s\n' "${LIBRARY_COUNT}"
+    printf 'plugin_count=%s\n' "${PLUGIN_COUNT}"
+    printf 'compiler=%s\n' "$(g++ --version | sed -n '1p')"
+    printf 'source_commit=%s\n' "$(git -C "${SOURCE_DIR}" rev-parse HEAD 2>/dev/null || echo unknown)"
+} > "${BUNDLE}/ASTRA17-MANIFEST.txt"
+
+PROBE="$(mktemp -d "${TMPDIR:-/tmp}/satdump-astra17-probe.XXXXXX")"
 trap 'rm -rf "${PROBE}"' EXIT
 mkdir -p "${PROBE}/home/.config/satdump" "${PROBE}/cwd"
-cat > "${PROBE}/home/.config/satdump/settings.json" <<'EOF2'
-{"satdump_general":{"tle_update_interval":{"value":"Never"},"log_to_file":{"value":false}}}
-EOF2
+printf '%s\n' '{"satdump_general":{"tle_update_interval":{"value":"Never"},"log_to_file":{"value":false}}}' \
+    > "${PROBE}/home/.config/satdump/settings.json"
 (
     cd "${PROBE}/cwd"
     HOME="${PROBE}/home" "${BUNDLE}/satdump" version
 ) > "${BUNDLE}/astra17-version.log" 2>&1
 grep -q 'SatDump v1.2.2' "${BUNDLE}/astra17-version.log" || {
     cat "${BUNDLE}/astra17-version.log" >&2
-    fail "CLI smoke-test не прошёл"
+    fail "CLI smoke-test с bundled loader не прошёл"
 }
 rm -rf "${PROBE}"
 trap - EXIT
-
-PLUGIN_COUNT="$(find "${BUNDLE}/lib/satdump/plugins" -maxdepth 1 -type f -name '*.so*' | wc -l | tr -d ' ')"
-{
-    printf 'profile=astra17-buster\n'
-    printf 'satdump_version=1.2.2\n'
-    printf 'bundle_profile=%s\n' "${PROFILE}"
-    printf 'architecture=x86_64\n'
-    printf 'glibc_build=%s\n' "$(ldd --version 2>&1 | head -n1 | grep -o '[0-9][0-9.]*$')"
-    printf 'glibc_required=%s\n' "${GLIBC_REQUIRED}"
-    printf 'glibc_allowed_max=%s\n' "${GLIBC_MAX}"
-    printf 'glibcxx_required=%s\n' "${GLIBCXX_REQUIRED}"
-    printf 'plugin_count=%s\n' "${PLUGIN_COUNT}"
-    printf 'compiler=%s\n' "$(g++ --version | head -n1)"
-    printf 'source_commit=%s\n' "$(git -C "${SOURCE_DIR}" rev-parse HEAD 2>/dev/null || echo unknown)"
-    printf '\n[libraries]\n'
-    find "${BUNDLE}/lib" -maxdepth 1 \( -type f -o -type l \) -name '*.so*' -printf '%f -> %l\n' | sort
-} > "${BUNDLE}/ASTRA17-MANIFEST.txt"
 
 (
     cd "${BUNDLE}"
@@ -278,8 +402,8 @@ tar --sort=name --mtime="@${EPOCH}" --owner=0 --group=0 --numeric-owner \
     -C "${OUTPUT_DIR}" -cf - "${BASENAME}" | gzip -n > "${ARCHIVE}"
 (
     cd "${OUTPUT_DIR}"
-    sha256sum "${BASENAME}.tar.gz" > "${BASENAME}.tar.gz.sha256"
-    sha256sum -c "${BASENAME}.tar.gz.sha256"
+    sha256sum "$(basename "${ARCHIVE}")" > "$(basename "${ARCHIVE}").sha256"
 )
-log "Готово: ${ARCHIVE}"
-log "GLIBC required=${GLIBC_REQUIRED}; GLIBCXX=${GLIBCXX_REQUIRED}; plugins=${PLUGIN_COUNT}"
+
+log "Готов полный Astra 1.7 release: ${ARCHIVE}"
+log "runtime libs=${LIBRARY_COUNT}; plugins=${PLUGIN_COUNT}; GLIBC=${GLIBC_REQUIRED}; GLIBCXX=${GLIBCXX_REQUIRED}"

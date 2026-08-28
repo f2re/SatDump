@@ -2,223 +2,211 @@
 
 ![SatDump](icon.png)
 
-Русскоязычный форк **SatDump 1.2.2** для полного цикла обработки спутниковых данных и выпуска готовых метеорологических изображений:
+Форк **SatDump 1.2.2** для обработки спутниковых данных и выпуска готовых
+метеорологических изображений с двумя вариантами оформления, физическими/RGB-
+легендами, north-up ориентацией и JSON-паспортом.
+
+Рабочая линия: **`release/1.2.2`**.
 
 ```text
-IQ / сырые кадры
-  → демодуляция и декодирование
-  → калибровка и композиты
-  → геометрическая коррекция
-  → географическая проекция и карта
-  → научный продукт без плашек
-  → две оформленные PNG-копии + JSON-паспорта
+IQ / кадры
+→ демодуляция и декодирование
+→ калибровка / композиты
+→ геометрическая коррекция
+→ проекция и карта
+→ исходный научный продукт
+→ minimal + editorial PNG
+→ JSON-паспорта
 ```
 
-Рабочая ветка: **`release/1.2.2`**. Она основана на официальном SatDump 1.2.2 и развивается отдельно от SatDump 2.x.
+Исходный геопривязанный продукт не заменяется оформленной копией и остаётся
+пригодным для ГИС и количественного анализа.
 
-> Геопривязанный PNG/TIFF не расширяется информационными полями. Оформление создаётся только как дополнительная копия, поэтому исходный научный растр остаётся пригодным для ГИС и количественного анализа.
+## Astra Linux 1.7: готовый release без установки зависимостей
 
-## ✨ Что добавлено
+Основной способ развёртывания — скачать последний GitHub Release, созданный из
+ветки `release/1.2.2`.
 
-- два настраиваемых вида оформления: **Minimal** и **Presentation**;
-- адаптивная компоновка для вертикальных и горизонтальных кадров;
-- автоматическая проверка ориентации «север сверху»;
-- учёт восходящего и нисходящего направления пролёта;
-- строгая верхняя панель со спутником, прибором, временем и параметрами приёма;
-- непрерывные легенды физических величин;
-- категориальные легенды типов облачности и других классов;
-- автоматическое объяснение компонентов `R`, `G`, `B`;
-- перечисление входов LUT, Lua и C++-композитов;
-- JSON-паспорт `satdump.presentation/2`;
-- UTF-8 и кириллица;
-- профили сборки для Astra Linux Special Edition 1.6 и 1.7;
-- smoke-тесты портретной/альбомной компоновки и ориентации.
-
-## 🖼️ Два вида плашек
-
-### Minimal
-
-Компактные поля сверху и снизу снимка. Подходит для оперативных каталогов, автоматической рассылки и большого потока изображений.
-
-### Presentation
-
-Расширенная визуальная иерархия: крупный заголовок, паспорт пролёта, показатели качества, подробная легенда и аккуратная типографика. Подходит для сводок, отчётов и публикаций.
-
-По умолчанию создаются оба варианта:
+Asset:
 
 ```text
-<product>.png / <product>.tif                    исходный продукт SatDump
-<product>_annotated_minimal.png                  компактное оформление
-<product>_annotated_minimal.json                 его паспорт
-<product>_annotated_presentation.png             презентационное оформление
-<product>_annotated_presentation.json            его паспорт
+satdump-1.2.2-astra17-desktop-full-x86_64.tar.gz
+satdump-1.2.2-astra17-desktop-full-x86_64.tar.gz.sha256
 ```
 
-Совместимый файл `<product>_annotated.png` можно включить отдельно.
+Проверка и запуск:
 
-Подробно: [два макета и ориентация](docs/ru/PRESENTATION_LAYOUTS.md).
+```bash
+sha256sum -c satdump-1.2.2-astra17-desktop-full-x86_64.tar.gz.sha256
 
-## 🧭 Север сверху
+tar -xzf satdump-1.2.2-astra17-desktop-full-x86_64.tar.gz
+cd satdump-1.2.2-astra17-desktop-full-x86_64
 
-Для презентационной копии ориентация определяется в следующем порядке:
+./satdump version
+./satdump-ui
+```
 
-1. географическая проекция фактического выходного растра;
-2. GCP, TLE и временные метки исходной полосы;
-3. направление пролёта;
-4. сохранение исходной ориентации с отметкой о недостатке геоданных.
+Постоянная установка:
 
-Для хронологически записанной полосы восходящий пролёт обычно отражается по вертикали, нисходящий сохраняется. Научный исходный файл при этом не меняется.
+```bash
+./install.sh
+```
 
-## 🚀 Быстрый старт в Astra Linux
+На целевой Astra Linux 1.7 для SatDump не выполняется `apt-get install`.
+Release содержит полный обнаруженный ELF runtime closure, включая:
 
-### 1. Получить ветку
+- Astra glibc и dynamic loader;
+- `libstdc++`, `libgcc_s`, OpenMP;
+- GUI/OpenGL/GLFW runtime;
+- PortAudio/ALSA runtime;
+- RTL-SDR/libusb/udev runtime;
+- curl/TLS, TIFF, PNG, FFTW, VOLK, jemalloc;
+- транзитивные `.so`;
+- NSS-модули glibc;
+- pipelines/resources/fonts/config;
+- документацию.
+
+Аппаратные kernel modules/firmware, USB permissions и конкретный graphics driver
+остаются частью самой Astra Linux и оборудования.
+
+Полное руководство: **[docs/ru/ASTRA17_COMPLETE_GUIDE.md](docs/ru/ASTRA17_COMPLETE_GUIDE.md)**.
+
+## Как формируется Astra 1.7 Release
+
+Release не компилируется в Debian/Buster compatibility chroot.
+
+GitHub Actions запускает сборку непосредственно внутри официального:
+
+```text
+registry.astralinux.ru/library/astra/ubi17:1.7.5
+```
+
+Контур:
+
+```text
+официальная Astra Linux 1.7
+→ build toolchain
+→ CMake build
+→ presentation smoke tests
+→ DESTDIR staging
+→ полный recursive DT_NEEDED closure
+→ glibc/loader/NSS в bundle
+→ SHA-256 + manifest
+→ новый чистый Astra Linux 1.7
+→ запуск скачанного artifact БЕЗ apt-get install
+→ GitHub Release
+```
+
+Сборочный скрипт запрещает `ASTRA_VERSION_OVERRIDE` и требует фактическую Astra
+Linux 1.7 с glibc 2.28.
+
+Versioned release tag:
+
+```text
+v1.2.2-astra17-r<GitHub Actions run number>
+```
+
+## Локальная release-сборка
+
+Только на фактической Astra Linux 1.7 x86_64:
 
 ```bash
 git clone --branch release/1.2.2 https://github.com/f2re/SatDump.git
 cd SatDump
-chmod +x scripts/astra/*.sh
-```
-
-### 2. Проверить среду
-
-```bash
-cat /etc/astra/build_version
-bash scripts/astra/check-system.sh --strict
-```
-
-### 3. Серверная сборка без GUI
-
-```bash
-bash scripts/astra/install-deps.sh \
-  --profile headless \
-  --bootstrap-missing
 
 bash scripts/astra/build.sh \
-  --profile headless \
-  --clean \
-  --install
-
-bash scripts/astra/run.sh -- version
-```
-
-### 4. Рабочая станция с GUI и RTL-SDR
-
-```bash
-bash scripts/astra/install-deps.sh \
+  --mode portable-astra17 \
   --profile desktop \
-  --bootstrap-missing
-
-bash scripts/astra/build.sh \
-  --profile desktop \
-  --sdr rtl \
-  --clean \
-  --install
-
-### 5. Сборка оффлайн установочного бандла
-
-Для формирования самодостаточного архива без интернет-зависимостей:
-
-```bash
-bash scripts/build-and-bundle.sh --profile headless
+  --prepare-build-env
 ```
 
-Результат сохранится в `dist/satdump-1.2.2-offline-x86_64.tar.gz`. На целевой машине без доступа в сеть установка выполняется одной командой:
+`--prepare-build-env` ставит зависимости только в **сборочную** Astra. Они не
+нужны системе, где запускается готовый release archive.
 
-```bash
-tar -xzf satdump-1.2.2-offline-x86_64.tar.gz
-cd satdump-1.2.2-offline-x86_64
-./install.sh
-```
-
-> Не запускайте весь `install-deps.sh` через `sudo`. Сценарий сам повышает права только для APT; локальные библиотеки (CMake, NNG, VOLK, FFTW, cURL, TIFF, jemalloc) должны принадлежать обычному пользователю.
-
-## 🛡️ Astra Linux 1.6
-
-Обычно требуются:
-
-- main/update-репозитории точного установленного обновления;
-- `repository-dev` и `repository-dev-update` того же обновления;
-- GCC/G++ 8 или совместимый компилятор C++17;
-- локальный CMake 3.18.6, если системный слишком старый.
-
-```bash
-bash scripts/astra/bootstrap-cmake.sh
-```
-
-CMake устанавливается в пользовательский каталог и не заменяет системный `/usr/bin/cmake`.
-
-## 🛡️ Astra Linux 1.7
-
-GCC 8 с C++17 обычно доступен штатно. Сценарии всё равно выполняют реальную пробную компиляцию C++17 и при необходимости используют локальные инструменты.
-
-Подробные инструкции:
-
-- [установка в Astra Linux](docs/ru/INSTALL_ASTRA.md);
-- [сборка](docs/ru/BUILD.md);
-- [уровни проверки Astra](docs/ru/ASTRA_VALIDATION.md).
-
-## 🧱 Профили сборки
-
-| Профиль | Назначение |
-|---|---|
-| `headless` | CLI, Meteor/NOAA/APT, серверная и пакетная обработка |
-| `desktop` | GUI, OpenGL, звук и выбранный SDR |
-| `full` | расширенный стенд разработки; требует больше библиотек |
-
-SDR-профили:
+Результат:
 
 ```text
-none | rtl | common | all
+dist/astra17/satdump-1.2.2-astra17-desktop-full-x86_64.tar.gz
 ```
 
-Пример:
+## Что добавлено в presentation renderer
 
-```bash
-bash scripts/astra/build.sh --profile desktop --sdr common
-```
+- два независимых оформления: **Minimal** и **Editorial/Presentation**;
+- адаптивный layout для portrait/landscape;
+- автоматическая ориентация «север сверху»;
+- анализ проекции, GCP, TLE, времени строк и направления пролёта;
+- ручные `keep`, `flip_vertical`, `flip_horizontal`, `rotate_180`;
+- верхняя информационная панель;
+- расширенный паспорт пролёта;
+- показатели качества, если они реально доступны;
+- continuous legends физических величин;
+- categorical legends;
+- автоматическое объяснение R/G/B;
+- анализ разностей каналов вроде `cch8-cch9`;
+- описание LUT, Lua и C++-композитов;
+- themes/branding;
+- UTF-8/кириллица;
+- JSON-паспорт `satdump.presentation/2`;
+- smoke tests для layout/legend/orientation.
 
-## ▶️ Офлайн-обработка
+## Два вида оформления
 
-Общая форма:
+### Minimal
+
+Компактные поля сверху и снизу. Для оперативных каталогов, большого потока
+снимков и автоматических сводок.
+
+### Editorial / Presentation
+
+Расширенная информационная иерархия: крупный заголовок, паспорт пролёта,
+качество, технические сведения, полноценная легенда и branding.
+
+Создаются:
 
 ```text
-satdump <pipeline_id> <input_level> <input_file> <output_directory> [параметры]
+<product>.png / <product>.tif
+<product>_annotated_minimal.png
+<product>_annotated_minimal.json
+<product>_annotated_presentation.png
+<product>_annotated_presentation.json
 ```
 
-Meteor-M LRPT:
+Опциональный legacy alias:
 
-```bash
-bash scripts/astra/run.sh -- \
-  meteor_m2x_lrpt \
-  baseband \
-  /data/input/meteor_pass.cs16 \
-  /data/output/meteor_pass \
-  --samplerate 240000 \
-  --baseband_format cs16
+```text
+<product>_annotated.png
+<product>_annotated.json
 ```
 
-Pipeline, частота дискретизации и формат должны соответствовать реальной записи.
+## Легенды
 
-## 📡 Live-обработка
+Поддерживаются:
 
-```bash
-bash scripts/astra/run.sh -- sdr_probe
+1. непрерывная шкала — яркостная температура, отражательная способность,
+   альбедо, радианс и другие количественные величины;
+2. категориальная — облачность, фаза, снег/лёд/вода, маски качества;
+3. RGB/composite — R/G/B, каналы, длины волн, формулы и калибровка;
+4. информационный footer без числовой шкалы, если физическая шкала недостоверна.
+
+Цветовая шкала физического продукта должна использовать ту же палитру, которой
+окрашен растр.
+
+## Ориентация
+
+Автоматический приоритет:
+
+```text
+projection
+→ GCP
+→ TLE + line timestamps
+→ pass direction
+→ keep
 ```
 
-```bash
-bash scripts/astra/run.sh -- \
-  live meteor_m2x_lrpt \
-  /data/output/live-meteor \
-  --source rtlsdr \
-  --samplerate 240000 \
-  --frequency 137900000 \
-  --gain 35 \
-  --timeout 900
-```
+Преобразование применяется только к presentation-копии. Исходный научный растр
+не переворачивается.
 
-## 🎛️ Настройка двух оформлений
-
-Настройка внутри пресета композита:
+## Настройка двух выходов
 
 ```json
 {
@@ -237,147 +225,103 @@ bash scripts/astra/run.sh -- \
 }
 ```
 
-Ручные режимы ориентации:
+У `minimal` и `editorial` могут быть собственные themes/branding.
+
+Подробные примеры находятся в:
+
+- [Presentation renderer](docs/ru/PRESENTATION.md)
+- [Minimal/editorial и ориентация](docs/ru/PRESENTATION_LAYOUTS.md)
+- [Полное руководство Astra 1.7](docs/ru/ASTRA17_COMPLETE_GUIDE.md)
+
+## CLI
+
+Офлайн-обработка:
 
 ```text
-auto | keep | flip_vertical | flip_horizontal | rotate_180
+satdump <pipeline_id> <input_level> <input_file> <output_directory> [options]
 ```
 
-У каждого варианта могут быть собственные branding и тема:
+Пример Meteor-M LRPT:
 
-```json
-{
-  "presentation": {
-    "minimal": {
-      "enabled": true,
-      "branding": "Оперативный метеоцентр",
-      "theme": {
-        "panel": "#101820",
-        "accent": "#55C7E8"
-      }
-    },
-    "editorial": {
-      "enabled": true,
-      "branding": "Спутниковая метеорология",
-      "theme": {
-        "panel": "#0E1624",
-        "panel_secondary": "#172235",
-        "text": "#F3F7FB",
-        "muted_text": "#AAB8C8",
-        "accent": "#4EC7E8"
-      }
-    }
-  }
-}
+```bash
+satdump meteor_m2x_lrpt \
+  baseband \
+  /data/input/meteor_pass.cs16 \
+  /data/output/meteor_pass \
+  --samplerate 240000 \
+  --baseband_format cs16
 ```
 
-## 🌡️ Непрерывная легенда
+## Live и запись IQ
 
-```json
-{
-  "presentation": {
-    "title": "Яркостная температура облачной поверхности",
-    "legend": {
-      "kind": "continuous",
-      "title": "Яркостная температура",
-      "unit": "K",
-      "min": 180,
-      "max": 320,
-      "ticks": [180, 200, 220, 240, 260, 280, 300, 320],
-      "colors": [
-        "#1B1844",
-        "#1E5E8B",
-        "#24A093",
-        "#96C959",
-        "#FCE725"
-      ]
-    }
-  }
-}
+Проверка SDR:
+
+```bash
+satdump sdr_probe
 ```
 
-Цветовая шкала должна быть получена из той же LUT, которая окрашивает продукт.
+Live RTL-SDR:
 
-## 🌈 Неоднозначные RGB-композиты
-
-Когда обычная числовая шкала неприменима, footer всё равно показывает:
-
-```text
-R — канал, физическая величина и формула
-G — канал, физическая величина и формула
-B — канал, физическая величина и формула
+```bash
+satdump live meteor_m2x_lrpt \
+  /data/output/live-meteor \
+  --source rtlsdr \
+  --samplerate 240000 \
+  --frequency 137900000 \
+  --gain 35
 ```
 
-Для LUT/Lua/C++ перечисляются обнаруженные входы и выводится предупреждение, что один результирующий цвет может зависеть от нескольких величин.
+Запись:
 
-## 🧪 Проверка renderer
-
-Сборка с тестами создаёт семь эталонов:
-
-```text
-continuous_editorial_landscape.png
-continuous_minimal_landscape.png
-categorical_editorial_landscape.png
-composite_editorial_landscape.png
-composite_minimal_landscape.png
-continuous_editorial_portrait.png
-continuous_minimal_portrait.png
+```bash
+satdump record /data/recordings/pass \
+  --source rtlsdr \
+  --samplerate 240000 \
+  --frequency 137900000 \
+  --baseband_format cs16
 ```
 
-Каталог:
+## Научная корректность подписей
 
-```text
-build/astra-<версия>-<профиль>/presentation-test-output/
-```
+- Калиброванный одноканальный ИК-продукт по умолчанию описывается как
+  **яркостная температура**.
+- `Температура верхней границы облаков` допустима только для отдельного retrieval.
+- `Тип облачности` — категориальный многоканальный алгоритм.
+- Радиочастота приёма и спектральный диапазон прибора показываются отдельно.
+- Неизвестные metadata не подставляются по одному названию спутника.
 
-Тестируются также точные отражения, поворот на 180°, восходящий/нисходящий пролёт и перевёрнутая пользовательская проекция.
+## Документация
 
-## 🔬 Научная корректность
-
-- Одноканальный ИК-продукт по умолчанию называется **яркостной температурой**.
-- «Температура верхней границы облаков» допустима только для отдельного физически обоснованного retrieval-алгоритма.
-- Тип облачности — самостоятельный категориальный многоканальный продукт.
-- Радиочастота приёма и спектральный диапазон прибора показываются раздельно.
-- Неизвестные параметры не подставляются по названию спутника.
-
-## 🔒 Защищённый контур
-
-- не смешивайте репозитории Astra и Ubuntu/Debian;
-- используйте frozen-репозитории своего обновления;
-- переносите архивы через утверждённый канал;
-- проверяйте контрольные суммы;
-- сохраняйте SHA коммита, `CMakeCache.txt` и журнал сборки;
-- тестируйте на точной версии Astra, где будет работать бинарник.
-
-## 📚 Документация
-
+- [Полное руководство Astra Linux 1.7](docs/ru/ASTRA17_COMPLETE_GUIDE.md)
+- [Техническое устройство full bundle](docs/ru/ASTRA17_BUNDLE.md)
 - [Индекс документации](docs/ru/README.md)
-- [Установка в Astra Linux](docs/ru/INSTALL_ASTRA.md)
-- [Сборка](docs/ru/BUILD.md)
-- [Проверка Astra Linux](docs/ru/ASTRA_VALIDATION.md)
-- [Запуск и обработка](docs/ru/RUN.md)
+- [Запуск](docs/ru/RUN.md)
 - [Настройка](docs/ru/CONFIGURATION.md)
-- [Плашки и легенды](docs/ru/PRESENTATION.md)
-- [Два макета и ориентация](docs/ru/PRESENTATION_LAYOUTS.md)
-- [Развёртывание](docs/ru/DEPLOYMENT.md)
+- [Presentation renderer](docs/ru/PRESENTATION.md)
+- [Layout и orientation](docs/ru/PRESENTATION_LAYOUTS.md)
+- [Level-1C / SATPROF](docs/ru/LEVEL1C_SATPROF.md)
 - [Диагностика](docs/ru/TROUBLESHOOTING.md)
 
-## 🤝 Разработка
+## Разработка
 
-Основная линия:
+Основная release-линия:
 
 ```text
 release/1.2.2
 ```
 
-Перед публикацией изменения renderer должны пройти:
+Изменение Astra release-контура должно пройти:
 
-```bash
-bash scripts/astra/build.sh --profile headless --clean
+```text
+shell/docs gate
+→ native Astra 1.7 build
+→ full dependency closure
+→ fresh Astra 1.7 zero-install runtime gate
+→ merge
+→ post-merge build
+→ GitHub Release
 ```
 
-Затем требуется визуальная проверка портретных и альбомных эталонов и хотя бы одного реального восходящего и нисходящего пролёта.
+## Лицензия
 
-## 📄 Лицензия
-
-Проект распространяется на условиях GNU GPL v3. См. [LICENSE](LICENSE).
+GNU GPL v3. См. [LICENSE](LICENSE).

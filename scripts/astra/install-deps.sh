@@ -218,13 +218,15 @@ if (( NEED_NNG == 1 || NEED_VOLK == 1 )); then
         die "Для локальной сборки VOLK требуется Python-модуль Mako. Подключите штатный repository-dev и установите python3-mako."
     fi
 
-    COMPONENT="all"
-    if (( NEED_NNG == 0 )); then
-        COMPONENT="volk"
-    elif (( NEED_VOLK == 0 )); then
-        COMPONENT="nng"
+    # Не используем component=all: он также пересобирает FFTW/cURL/TIFF/jemalloc,
+    # хотя эти библиотеки уже установлены из штатных Astra-пакетов. Bootstrap
+    # должен быть минимальным и воспроизводимым: только реально отсутствующие ABI.
+    if (( NEED_NNG == 1 )); then
+        bash "${ASTRA_SCRIPT_DIR}/bootstrap-thirdparty.sh" --component nng
     fi
-    bash "${ASTRA_SCRIPT_DIR}/bootstrap-thirdparty.sh" --component "${COMPONENT}"
+    if (( NEED_VOLK == 1 )); then
+        bash "${ASTRA_SCRIPT_DIR}/bootstrap-thirdparty.sh" --component volk
+    fi
 fi
 
 log_ok "Зависимости профиля ${PROFILE} обработаны."

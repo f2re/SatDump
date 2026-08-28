@@ -1,86 +1,118 @@
-# 📚 Документация SatDump 1.2.2 Presentation
+# 📚 Документация SatDump 1.2.2 Presentation / Astra Linux 1.7
 
 Эта документация относится к ветке **`release/1.2.2`** форка `f2re/SatDump`.
 Форк сохраняет возможности SatDump 1.2.2 и добавляет оформление готовых
-спутниковых изображений: два варианта плашек, легенды, нормализацию ориентации
-«север сверху» и JSON-паспорт.
+спутниковых изображений: два варианта плашек, физические/RGB-легенды,
+нормализацию ориентации «север сверху», JSON-паспорт и полноценный Astra Linux
+1.7 release-бандл.
 
-## С чего начать
+## Главный документ для Astra Linux 1.7
+
+Начинайте с:
+
+**[Полное руководство Astra Linux 1.7](ASTRA17_COMPLETE_GUIDE.md)**
+
+В нём собраны:
+
+- скачивание GitHub Release;
+- проверка SHA-256;
+- запуск без установки;
+- постоянная установка;
+- обновление и rollback;
+- GUI, CLI, live-приём и запись IQ;
+- конфигурация;
+- RTL-SDR;
+- полный перечень presentation-возможностей;
+- `minimal` и `editorial`;
+- подписи, метаданные, branding;
+- continuous/categorical/RGB-легенды;
+- автоматический разбор каналов и формул;
+- north-up и ручная ориентация;
+- JSON-паспорт;
+- проверка и диагностика.
+
+## Release-пакет Astra Linux 1.7
+
+Основной готовый пакет:
+
+```text
+satdump-1.2.2-astra17-desktop-full-x86_64.tar.gz
+```
+
+Он собирается **непосредственно внутри официальной Astra Linux 1.7**, а не в
+Debian/Buster compatibility-rootfs. В архив включается полный обнаруженный ELF
+runtime closure, включая Astra glibc/loader, C++ runtime, GUI/audio/RTL-SDR и
+транзитивные библиотеки.
+
+После сборки тот же скачанный artifact запускается в свежем Astra Linux UBI 1.7
+без `apt-get install`. Только после этой проверки workflow публикует GitHub
+Release из ветки `release/1.2.2`.
+
+## Остальные документы
 
 | Документ | Для чего |
 |---|---|
-| [Установка в Astra Linux](INSTALL_ASTRA.md) | Astra Linux SE 1.6/1.7, репозитории, зависимости, офлайн-контур |
-| [Сборка](BUILD.md) | Профили, параметры CMake, переносимость и тесты |
-| [Portable glibc 2.24](PORTABLE_ASTRA.md) | Переносимый CLI-бандл, повторяющий рабочую технологию ветки `astra` |
-| [Проверка Astra Linux](ASTRA_VALIDATION.md) | Уровни CI/UBI/нативной проверки, эталонные изображения и приёмка |
-| [Запуск и обработка](RUN.md) | CLI, GUI, офлайн- и live-обработка |
-| [Настройка](CONFIGURATION.md) | `satdump_cfg.json`, `settings.json`, каталоги, TLE и логирование |
-| [Плашки и легенды](PRESENTATION.md) | Схема `presentation`, RGB, температуры, категории, темы |
-| [Два макета и ориентация](PRESENTATION_LAYOUTS.md) | Minimal/Presentation, вертикальный и горизонтальный кадр, север сверху |
-| [Развёртывание](DEPLOYMENT.md) | Установка на рабочую станцию/сервер, обновления и откат |
-| [Диагностика](TROUBLESHOOTING.md) | Ошибки CMake, C++17, библиотек, GUI и обработки |
+| [Полное руководство Astra 1.7](ASTRA17_COMPLETE_GUIDE.md) | Установка, запуск, настройки, release bundle и все реализованные функции |
+| [Astra 1.7 bundle](ASTRA17_BUNDLE.md) | Техническое устройство native/full bundle и CI/CD |
+| [Установка в Astra Linux](INSTALL_ASTRA.md) | Нативная разработческая установка и зависимости сборочной машины |
+| [Сборка](BUILD.md) | Профили CMake и тесты |
+| [Проверка Astra Linux](ASTRA_VALIDATION.md) | CI, UBI, эталонные изображения и приёмка |
+| [Запуск и обработка](RUN.md) | CLI, GUI, offline/live/record |
+| [Настройка](CONFIGURATION.md) | `satdump_cfg.json`, `settings.json`, TLE, логирование |
+| [Плашки и легенды](PRESENTATION.md) | Presentation renderer, metadata, RGB и научные шкалы |
+| [Два макета и ориентация](PRESENTATION_LAYOUTS.md) | Minimal/editorial, portrait/landscape, north-up |
+| [Level-1C / SATPROF](LEVEL1C_SATPROF.md) | Контур Level-1C/SATPROF |
+| [Развёртывание](DEPLOYMENT.md) | Рабочие станции, сервер, обновление и откат |
+| [Диагностика](TROUBLESHOOTING.md) | Ошибки запуска, GUI, библиотек и обработки |
+| [Legacy portable glibc 2.24](PORTABLE_ASTRA.md) | Старый compatibility-профиль; не является текущим Astra 1.7 release |
 
-## Два режима сборки Astra
-
-### Нативный
-
-Для установки на ту же машину, где выполняется сборка:
-
-```bash
-bash scripts/astra/install-deps.sh --profile headless --bootstrap-missing
-bash scripts/astra/build.sh --mode native --profile headless --install
-bash scripts/astra/run.sh -- version
-```
-
-Параметр `--mode native` можно опустить: он используется по умолчанию.
-
-### Переносимый glibc 2.24
-
-Для сборки один раз и развёртывания на нескольких Astra Linux 1.6/1.7:
+## Быстрый старт из GitHub Release
 
 ```bash
-bash scripts/astra/build.sh \
-  --mode portable-glibc224 \
-  --profile reference
+sha256sum -c satdump-1.2.2-astra17-desktop-full-x86_64.tar.gz.sha256
+
+tar -xzf satdump-1.2.2-astra17-desktop-full-x86_64.tar.gz
+cd satdump-1.2.2-astra17-desktop-full-x86_64
+
+./satdump version
+./satdump-ui
 ```
 
-Этот режим создаёт изолированный Debian Stretch chroot, фиксирует toolchain,
-устанавливает результат в чистый staging и формирует самодостаточный tar.gz.
-Подробно: [Portable glibc 2.24](PORTABLE_ASTRA.md).
-
-## Графическая рабочая станция
+Постоянная установка:
 
 ```bash
-bash scripts/astra/install-deps.sh --profile desktop --bootstrap-missing
-bash scripts/astra/build.sh --mode native --profile desktop --sdr rtl --install
-bash scripts/astra/run.sh --ui
+./install.sh
 ```
 
-GUI и локальные SDR-драйверы относятся к native-профилю. Эталонный portable-бандл
-является CLI-only.
+Для SatDump не требуется дополнительно устанавливать runtime `.deb`/APT-пакеты.
+Аппаратные kernel drivers, доступ к USB и графическая сессия являются частью
+самой Astra Linux и конфигурации рабочего места.
 
-## Какие файлы создаются
+## Какие файлы создаёт presentation renderer
 
-Для оформленного продукта по умолчанию сохраняются связанные результаты:
+Для оформленного продукта сохраняются связанные результаты:
 
 ```text
-<имя>.png / <имя>.tif                    исходный продукт SatDump
-<имя>_annotated_minimal.png              компактное оперативное оформление
-<имя>_annotated_minimal.json             паспорт компактного оформления
-<имя>_annotated_presentation.png         расширенное презентационное оформление
-<имя>_annotated_presentation.json        паспорт презентационного оформления
+<имя>.png / <имя>.tif                    исходный научный продукт
+<имя>_annotated_minimal.png              простой оперативный дизайн
+<имя>_annotated_minimal.json             JSON-паспорт minimal
+<имя>_annotated_presentation.png         расширенный editorial-дизайн
+<имя>_annotated_presentation.json        JSON-паспорт editorial
 ```
 
-Совместимый файл `<имя>_annotated.png` можно включить отдельно параметром
-`presentation.outputs.legacy_alias`.
+При необходимости совместимости можно включить:
 
-Геопривязанный научный растр не расширяется плашками и остаётся пригодным для
-ГИС и количественного анализа. Ориентация исправляется только в презентационных
-копиях; исходный продукт остаётся нетронутым.
+```text
+<имя>_annotated.png
+<имя>_annotated.json
+```
+
+Исходный научный растр не расширяется плашками, не заменяется оформленной
+копией и остаётся пригодным для ГИС и количественного анализа.
 
 ## Правило достоверности
 
-Плашка показывает только сведения, которые действительно присутствуют в
-продукте или метаданных сеанса. Частота приёма, SNR, максимальная высота пролёта
-и другие параметры не подставляются по названию спутника. Если направление или
-географическую ориентацию подтвердить нельзя, это явно записывается в JSON-паспорт.
+Плашка показывает только фактически доступные сведения. Частота приёма, SNR,
+высота пролёта, направление и прочие параметры не подставляются по одному
+названию спутника. Если географическую ориентацию нельзя подтвердить, это
+фиксируется в JSON-паспорте.
