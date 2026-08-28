@@ -156,16 +156,17 @@ jobs:
               grep -q "SatDump v1.2.2" /tmp/version.log
 
               failed=0
-              while IFS= read -r -d "" elf; do
-                if ! file "${elf}" | grep -q ELF; then
-                  continue
-                fi
+              for elf in \
+                /opt/satdump-test/bin/satdump* \
+                /opt/satdump-test/lib/*.so* \
+                /opt/satdump-test/lib/satdump/plugins/*.so*; do
+                [[ -f "${elf}" ]] || continue
                 out="$(ldd -r "${elf}" 2>&1 || true)"
                 if grep -Eqi "not found|undefined symbol" <<<"${out}"; then
                   echo "ELF relocation failure: ${elf}" >&2
                   printf "%s\n" "${out}" >&2
                   failed=1
                 fi
-              done < <(find /opt/satdump-test/bin /opt/satdump-test/lib -type f -print0)
+              done
               test "${failed}" = 0
             '
