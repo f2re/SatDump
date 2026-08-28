@@ -145,7 +145,7 @@ EOF2
     fi
     [[ -r /etc/resolv.conf ]] && "${SUDO[@]}" cp -L /etc/resolv.conf "${ROOTFS}/etc/resolv.conf"
 
-    GLIBC="$(${SUDO[@]} chroot "${ROOTFS}" /usr/bin/ldd --version 2>&1 | head -n1 | grep -o '[0-9][0-9.]*$' || true)"
+    GLIBC="$("${SUDO[@]}" chroot "${ROOTFS}" /usr/bin/ldd --version 2>&1 | head -n1 | grep -o '[0-9][0-9.]*$' || true)"
     [[ "${GLIBC}" == "2.28" ]] || fail "Buster rootfs дал glibc ${GLIBC:-unknown}, ожидалась 2.28"
     cat <<EOF2 | "${SUDO[@]}" tee "${MARKER}" >/dev/null
 profile=astra17-buster
