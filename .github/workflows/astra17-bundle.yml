@@ -14,19 +14,9 @@ on:
   push:
     branches:
       - release/1.2.2
-    paths:
-      - "scripts/astra/astra17/**"
-      - "scripts/astra/build.sh"
-      - ".github/workflows/astra17-bundle.yml"
-      - "docs/ru/**"
   pull_request:
     branches:
       - release/1.2.2
-    paths:
-      - "scripts/astra/astra17/**"
-      - "scripts/astra/build.sh"
-      - ".github/workflows/astra17-bundle.yml"
-      - "docs/ru/**"
 
 permissions:
   contents: read
