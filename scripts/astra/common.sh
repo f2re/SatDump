@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 
-# Общие функции для сценариев сборки SatDump 1.2.2 в Astra Linux.
-# Файл предназначен для подключения через source.
+# Общие вспомогательные функции для Astra Linux build/deploy scripts.
+# Файл должен подключаться через source.
 
-set -Eeuo pipefail
+if [[ -n "${SATDUMP_ASTRA_COMMON_LOADED:-}" ]]; then
+    return 0
+fi
+readonly SATDUMP_ASTRA_COMMON_LOADED=1
 
 ASTRA_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SATDUMP_ROOT="$(cd "${ASTRA_SCRIPT_DIR}/../.." && pwd)"
-ASTRA_CACHE_DIR="${ASTRA_CACHE_DIR:-${HOME}/.cache/satdump-astra}"
-ASTRA_TOOLS_DIR="${ASTRA_TOOLS_DIR:-${HOME}/.local/opt/satdump-astra}"
-ASTRA_DEPS_PREFIX="${ASTRA_DEPS_PREFIX:-${ASTRA_TOOLS_DIR}/deps}"
+ASTRA_WORK_ROOT="${SATDUMP_ASTRA_WORK_ROOT:-${HOME}/.local/opt/satdump-astra}"
+ASTRA_DEPS_PREFIX="${ASTRA_DEPS_PREFIX:-${ASTRA_WORK_ROOT}/deps}"
+ASTRA_TOOLS_DIR="${ASTRA_TOOLS_DIR:-${ASTRA_WORK_ROOT}/tools}"
 
 if [[ -t 1 && "${NO_COLOR:-0}" != "1" ]]; then
     C_RESET=$'\033[0m'
@@ -18,11 +21,7 @@ if [[ -t 1 && "${NO_COLOR:-0}" != "1" ]]; then
     C_WARN=$'\033[1;33m'
     C_ERR=$'\033[1;31m'
 else
-    C_RESET=""
-    C_INFO=""
-    C_OK=""
-    C_WARN=""
-    C_ERR=""
+    C_RESET="" C_INFO="" C_OK="" C_WARN="" C_ERR=""
 fi
 
 log_info() { printf '%sℹ%s %s\n' "${C_INFO}" "${C_RESET}" "$*"; }
@@ -30,9 +29,11 @@ log_ok() { printf '%s✔%s %s\n' "${C_OK}" "${C_RESET}" "$*"; }
 log_warn() { printf '%s⚠%s %s\n' "${C_WARN}" "${C_RESET}" "$*" >&2; }
 log_error() { printf '%s✖%s %s\n' "${C_ERR}" "${C_RESET}" "$*" >&2; }
 die() { log_error "$*"; exit 1; }
+command_exists() { command -v "$1" >/dev/null 2>&1; }
 
-command_exists() {
-    command -v "$1" >/dev/null 2>&1
+version_ge() {
+    local left="$1" right="$2"
+    [[ "$(printf '%s\n%s\n' "${right}" "${left}" | sort -V | head -n1)" == "${right}" ]]
 }
 
 jobs_count() {
@@ -45,25 +46,12 @@ jobs_count() {
     fi
 }
 
-version_ge() {
-    local left="$1"
-    local right="$2"
-
-    if command_exists dpkg; then
-        dpkg --compare-versions "${left}" ge "${right}"
-        return
-    fi
-
-    [[ "$(printf '%s\n%s\n' "${right}" "${left}" | sort -V | tail -n1)" == "${left}" ]]
-}
-
 extract_astra_version() {
     local input="$1"
-    if [[ "${input}" =~ (1\.[67])([._-][0-9]+)* ]]; then
-        printf '%s\n' "${BASH_REMATCH[1]}"
-        return 0
-    fi
-    return 1
+    local match=""
+    match="$(grep -oE '(^|[^0-9])(1\.[678])([^0-9]|$)' <<<"${input}" | grep -oE '1\.[678]' | head -n1 || true)"
+    [[ -n "${match}" ]] || return 1
+    printf '%s\n' "${match}"
 }
 
 detect_astra_version() {
@@ -222,10 +210,20 @@ find_cmake() {
     return 1
 }
 
+# `apt-cache show` возвращает метаданные даже для пакетов без install candidate
+# (например, libvolk2-dev в Astra Linux 1.7.5). Для выбора пакета нужна именно
+# устанавливаемая версия из текущих подключённых репозиториев.
 apt_package_available() {
     local package="$1"
+    local candidate=""
     command_exists apt-cache || return 1
-    apt-cache show "${package}" >/dev/null 2>&1
+
+    candidate="$(
+        apt-cache policy "${package}" 2>/dev/null \
+            | awk '/^[[:space:]]*Candidate:/ { print $2; exit }'
+    )"
+
+    [[ -n "${candidate}" && "${candidate}" != "(none)" ]]
 }
 
 first_available_package() {
