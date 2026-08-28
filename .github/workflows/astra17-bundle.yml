@@ -151,7 +151,8 @@ jobs:
             registry.astralinux.ru/library/astra/ubi17:1.7.5 \
             /bin/bash -lc '
               set -Eeuo pipefail
-              ldd --version | head -n1 | grep -q "2.28"
+              ldd_version="$(ldd --version 2>&1 || true)"
+              grep -q "2.28" <<<"${ldd_version}"
               /opt/satdump-test/satdump version 2>&1 | tee /tmp/version.log
               grep -q "SatDump v1.2.2" /tmp/version.log
 
