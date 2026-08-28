@@ -92,8 +92,8 @@ ensure_link() {
     return 10
 }
 
-# Копируем РЕАЛЬНЫЙ файл и восстанавливаем как DT_NEEDED-имя, так и SONAME.
-# Ничего из glibc больше не исключается: release содержит libc, loader и NSS.
+# Копируем реальный файл и восстанавливаем DT_NEEDED/SONAME aliases.
+# glibc не исключается: полный release содержит libc, loader и NSS.
 copy_dependency() {
     local needed="$1" resolved="$2"
     [[ -n "${needed}" && -e "${resolved}" ]] || return 0
@@ -129,7 +129,7 @@ copy_dependency() {
     return 0
 }
 
-# return 1: closure расширился.
+# return 1: dependency closure расширился.
 collect_from_elf() {
     local elf="$1" changed=0 needed resolved rc
     while IFS=$'\t' read -r needed resolved; do
@@ -170,13 +170,23 @@ for nss in \
     /usr/lib/x86_64-linux-gnu/libnss_*.so.2 \
     /lib64/libnss_*.so.2; do
     [[ -e "${nss}" ]] || continue
-    if copy_dependency "$(basename "${nss}")" "${nss}"; then :; else rc=$?; [[ "${rc}" == "10" ]] || exit "${rc}"; fi
+    if copy_dependency "$(basename "${nss}")" "${nss}"; then
+        :
+    else
+        rc=$?
+        [[ "${rc}" == "10" ]] || exit "${rc}"
+    fi
 done
 
-# NSS мог добавить свои зависимости — один дополнительный closure-проход.
+# NSS мог добавить свои зависимости — дополнительный closure-проход.
 while IFS= read -r -d '' elf; do
     is_elf "${elf}" || continue
-    if collect_from_elf "${elf}"; then :; else rc=$?; [[ "${rc}" == "1" ]] || exit "${rc}"; fi
+    if collect_from_elf "${elf}"; then
+        :
+    else
+        rc=$?
+        [[ "${rc}" == "1" ]] || exit "${rc}"
+    fi
 done < <(find "${BUNDLE}/lib" -type f -print0)
 
 for required_runtime in libc.so.6 ld-linux-x86-64.so.2 libstdc++.so.6 libgcc_s.so.1; do
@@ -247,30 +257,41 @@ printf 'Дополнительные пакеты APT для SatDump не тре
 EOF2
 chmod +x "${BUNDLE}/install.sh"
 
+# Zero-install self-check: не требует readelf/binutils/ldd на целевой машине.
 cat > "${BUNDLE}/verify.sh" <<'EOF2'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 ROOT="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+LOADER="${ROOT}/lib/ld-linux-x86-64.so.2"
+LIBPATH="${ROOT}/lib:${ROOT}/lib/satdump/plugins"
+
 for file in libc.so.6 ld-linux-x86-64.so.2 libstdc++.so.6 libgcc_s.so.1; do
-    [[ -e "${ROOT}/lib/${file}" ]] || { echo "missing ${file}" >&2; exit 1; }
+    [[ -e "${ROOT}/lib/${file}" ]] || { printf 'missing %s\n' "${file}" >&2; exit 1; }
 done
+
+check_loader_list() {
+    local elf="$1" out
+    [[ -f "${elf}" ]] || return 0
+    out="$("${LOADER}" --library-path "${LIBPATH}" --list "${elf}" 2>&1 || true)"
+    if [[ -z "${out}" ]] || grep -Eqi 'not found|error while loading|cannot open shared object' <<<"${out}"; then
+        printf 'Bundled dependency check failed: %s\n%s\n' "${elf}" "${out}" >&2
+        return 1
+    fi
+}
+
+check_loader_list "${ROOT}/bin/satdump"
+[[ ! -x "${ROOT}/bin/satdump-ui" ]] || check_loader_list "${ROOT}/bin/satdump-ui"
+while IFS= read -r -d '' plugin; do
+    check_loader_list "${plugin}"
+done < <(find "${ROOT}/lib/satdump/plugins" -maxdepth 1 -type f -name '*.so*' -print0 2>/dev/null)
+
 HOME_DIR="$(mktemp -d "${TMPDIR:-/tmp}/satdump-verify.XXXXXX")"
 trap 'rm -rf "${HOME_DIR}"' EXIT
 mkdir -p "${HOME_DIR}/.config/satdump"
 printf '%s\n' '{"satdump_general":{"tle_update_interval":{"value":"Never"},"log_to_file":{"value":false}}}' \
     > "${HOME_DIR}/.config/satdump/settings.json"
 HOME="${HOME_DIR}" "${ROOT}/satdump" version 2>&1 | grep -q 'SatDump v1.2.2'
-failed=0
-while IFS= read -r -d '' elf; do
-    readelf -h "${elf}" >/dev/null 2>&1 || continue
-    out="$(LD_LIBRARY_PATH="${ROOT}/lib:${ROOT}/lib/satdump/plugins" ldd -r "${elf}" 2>&1 || true)"
-    if grep -Eqi 'not found|undefined symbol' <<<"${out}"; then
-        printf 'ELF runtime failure: %s\n%s\n' "${elf}" "${out}" >&2
-        failed=1
-    fi
-done < <(find "${ROOT}/bin" "${ROOT}/lib" -type f -print0)
-test "${failed}" = 0
-echo 'SatDump Astra 1.7 bundle: OK'
+printf 'SatDump Astra 1.7 full bundle: OK\n'
 EOF2
 chmod +x "${BUNDLE}/verify.sh"
 
@@ -312,8 +333,7 @@ GLIBCXX_REQUIRED="${GLIBCXX_REQUIRED:-0}"
 dpkg --compare-versions "${GLIBC_REQUIRED}" le "${GLIBC_MAX}" \
     || fail "Release требует GLIBC_${GLIBC_REQUIRED}, максимум Astra 1.7 — GLIBC_${GLIBC_MAX}"
 
-# Проверяем, что все DT_NEEDED, кроме виртуального vdso и PT_INTERP, закрываются
-# файлами внутри release-пакета.
+# На build-host проверяем полный closure и relocations через ldd -r.
 failed=0
 while IFS= read -r -d '' elf; do
     is_elf "${elf}" || continue
