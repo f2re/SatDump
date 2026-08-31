@@ -7,10 +7,12 @@
 #include "products/processor/presentation_outputs.h"
 #include "logger.h"
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace
@@ -119,21 +121,58 @@ namespace
         return spec;
     }
 
-    bool validate_result(const image::Image &source, const image::Image &result, const std::string &label)
+    image::presentation::PresentationSpec single_channel_color_spec()
+    {
+        image::presentation::PresentationSpec spec = base_spec();
+        spec.pass.product = "Псевдоцветное представление канала 5";
+        spec.legend.kind = image::presentation::LegendKind::Composite;
+        spec.legend.title = "Состав многоканального композита";
+        spec.legend.subtitle = "Старое неоднозначное описание";
+        spec.legend.components = {
+            {"IN", {0.30, 0.58, 1.00}, "", "", "", "ch5", "канал 5 · 10,8 мкм · яркостная температура"}};
+        spec.legend.notes = {
+            "Цвета синтезированы из перечисленных компонентов."};
+        return spec;
+    }
+
+    std::pair<int, int> normalized_raster_dimensions(const image::Image &source)
+    {
+        const double short_side = (double)std::min(source.width(), source.height());
+        const double long_side = (double)std::max(source.width(), source.height());
+
+        double scale = 1.0;
+        scale = std::max(scale, 720.0 / std::max(1.0, short_side));
+        scale = std::max(scale, 1280.0 / std::max(1.0, long_side));
+        scale = std::min(scale, 8.0);
+        if (long_side * scale > 8192.0)
+            scale = std::max(1.0, 8192.0 / long_side);
+
+        return {
+            std::max(1, (int)std::round((double)source.width() * scale)),
+            std::max(1, (int)std::round((double)source.height() * scale))};
+    }
+
+    bool validate_result(const image::Image &source,
+                         const image::Image &result,
+                         image::presentation::LayoutKind layout,
+                         const std::string &label)
     {
         if (result.size() == 0)
         {
             std::cerr << label << ": renderer returned an empty image\n";
             return false;
         }
-        if (result.width() != source.width())
+
+        const std::pair<int, int> raster = normalized_raster_dimensions(source);
+        if ((int)result.width() != raster.first)
         {
-            std::cerr << label << ": source width was changed\n";
+            std::cerr << label << ": unexpected normalized raster width; expected "
+                      << raster.first << ", got " << result.width() << "\n";
             return false;
         }
-        if (result.height() <= source.height())
+        if ((int)result.height() <= raster.second)
         {
-            std::cerr << label << ": header/footer were not added\n";
+            std::cerr << label << ": presentation chrome was not added\n";
             return false;
         }
         if (result.channels() != 3)
@@ -141,7 +180,18 @@ namespace
             std::cerr << label << ": presentation output must be RGB\n";
             return false;
         }
-        if (result.height() > source.height() + std::max(1800, (int)source.height() * 2))
+
+        const int chrome_height = (int)result.height() - raster.second;
+        if (layout == image::presentation::LayoutKind::Minimal)
+        {
+            if (chrome_height > 180)
+            {
+                std::cerr << label << ": minimal output is not a thin one-line strip; chrome="
+                          << chrome_height << " px\n";
+                return false;
+            }
+        }
+        else if (chrome_height > std::max(1800, raster.second * 2))
         {
             std::cerr << label << ": presentation chrome is unexpectedly large\n";
             return false;
@@ -212,7 +262,7 @@ namespace
         stage("render " + label);
         image::Image output = image::presentation::render_layout(source, drawer, spec, layout);
         stage("validate " + label);
-        if (!validate_result(source, output, label))
+        if (!validate_result(source, output, layout, label))
             return false;
         stage("save " + label);
         image::save_img(output, path.string());
@@ -259,6 +309,7 @@ int main(int argc, char **argv)
     stage("create synthetic rasters");
     const image::Image landscape = make_source_image(1280, 620);
     const image::Image portrait = make_source_image(720, 1320);
+    const image::Image small_receiver_frame = make_source_image(320, 180);
     if (image::presentation::classify_frame(landscape) != image::presentation::FrameKind::Landscape ||
         image::presentation::classify_frame(portrait) != image::presentation::FrameKind::Portrait)
     {
@@ -287,6 +338,15 @@ int main(int argc, char **argv)
     if (!render_and_save(portrait, text_drawer, continuous_spec(), image::presentation::LayoutKind::Minimal,
                          output_directory / "continuous_minimal_portrait.png", "continuous minimal portrait"))
         return 16;
+    if (!render_and_save(small_receiver_frame, text_drawer, continuous_spec(), image::presentation::LayoutKind::Minimal,
+                         output_directory / "small_receiver_minimal.png", "small receiver minimal"))
+        return 17;
+    if (!render_and_save(small_receiver_frame, text_drawer, continuous_spec(), image::presentation::LayoutKind::Editorial,
+                         output_directory / "small_receiver_editorial.png", "small receiver editorial"))
+        return 18;
+    if (!render_and_save(landscape, text_drawer, single_channel_color_spec(), image::presentation::LayoutKind::Editorial,
+                         output_directory / "single_channel_color_editorial.png", "single-channel color editorial"))
+        return 19;
 
     stage("all smoke tests passed");
     std::cout << "Presentation smoke tests passed; artifacts: " << output_directory << "\n";

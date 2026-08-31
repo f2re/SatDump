@@ -2,7 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
-#include <sstream>
+#include <vector>
 
 namespace image
 {
@@ -10,36 +10,20 @@ namespace image
     {
         namespace
         {
-            struct CompactStyle
+            struct MinimalStyle
             {
-                int title = 24;
-                int body = 16;
-                int small = 13;
-                int padding = 18;
-                int gap = 8;
-                int accent = 3;
-                int legend_bar = 18;
-                bool portrait = false;
-                bool landscape = false;
+                int font_size = 22;
+                int padding_x = 18;
+                int padding_y = 8;
+                int accent = 2;
+                int header_height = 42;
             };
 
-            double clamp_value(double value, double minimum, double maximum)
+            struct FittedLine
             {
-                return std::max(minimum, std::min(maximum, value));
-            }
-
-            int scaled(double value, double scale)
-            {
-                return std::max(1, (int)std::round(value * scale));
-            }
-
-            Color normalized_color(const Color &color, const Color &fallback)
-            {
-                Color output = fallback;
-                for (size_t i = 0; i < std::min<size_t>(3, color.size()); i++)
-                    output[i] = clamp_value(color[i], 0.0, 1.0);
-                return output;
-            }
+                std::string text;
+                int font_size = 16;
+            };
 
             TextSize measured(TextDrawer &drawer, int size, const std::string &text)
             {
@@ -51,6 +35,11 @@ namespace image
                 if (result.width <= 0 && !text.empty())
                     result.width = std::max(1, (int)std::round(text.size() * size * 0.55));
                 return result;
+            }
+
+            int line_height(TextDrawer &drawer, int font_size)
+            {
+                return measured(drawer, font_size, "Ag").line_height;
             }
 
             void fill_rect(Image &image, int x0, int y0, int x1, int y1, const Color &color)
@@ -93,45 +82,68 @@ namespace image
                 return rgb;
             }
 
-            std::vector<std::string> wrap_text(TextDrawer &drawer, const std::string &text, int font_size, int max_width)
+            Image normalize_presentation_raster(const Image &source)
             {
-                std::vector<std::string> output;
-                if (text.empty() || max_width <= 0)
-                    return output;
+                Image rgb = make_rgb(source);
+                if (rgb.size() == 0 || rgb.width() == 0 || rgb.height() == 0)
+                    return rgb;
 
-                std::stringstream paragraphs(text);
-                std::string paragraph;
-                while (std::getline(paragraphs, paragraph, '\n'))
+                const double short_side = (double)std::min(rgb.width(), rgb.height());
+                const double long_side = (double)std::max(rgb.width(), rgb.height());
+
+                // Small products from low-resolution receivers used to produce an
+                // unreadable card whose chrome was larger than the image itself.
+                // Upscale only; never discard source detail by downscaling here.
+                double scale = 1.0;
+                scale = std::max(scale, 720.0 / std::max(1.0, short_side));
+                scale = std::max(scale, 1280.0 / std::max(1.0, long_side));
+                scale = std::min(scale, 8.0);
+
+                // Guard against pathological, very narrow swaths consuming excessive
+                // memory after enlargement.
+                const double maximum_dimension = 8192.0;
+                if (long_side * scale > maximum_dimension)
+                    scale = std::max(1.0, maximum_dimension / long_side);
+
+                if (scale > 1.01)
                 {
-                    std::stringstream words(paragraph);
-                    std::string word;
-                    std::string line;
-                    while (words >> word)
-                    {
-                        const std::string candidate = line.empty() ? word : line + " " + word;
-                        if (!line.empty() && measured(drawer, font_size, candidate).width > max_width)
-                        {
-                            output.push_back(line);
-                            line = word;
-                        }
-                        else
-                        {
-                            line = candidate;
-                        }
-                    }
-                    if (!line.empty())
-                        output.push_back(line);
-                    else if (paragraph.empty())
-                        output.push_back("");
+                    const int width = std::max(1, (int)std::round((double)rgb.width() * scale));
+                    const int height = std::max(1, (int)std::round((double)rgb.height() * scale));
+                    rgb.resize_bilinear(width, height);
                 }
+                return rgb;
+            }
+
+            std::string collapse_spaces(const std::string &value)
+            {
+                std::string output;
+                bool previous_space = false;
+                for (char character : value)
+                {
+                    const bool is_space = character == ' ' || character == '\t' ||
+                                          character == '\r' || character == '\n';
+                    if (is_space)
+                    {
+                        if (!previous_space && !output.empty())
+                            output.push_back(' ');
+                    }
+                    else
+                    {
+                        output.push_back(character);
+                    }
+                    previous_space = is_space;
+                }
+                while (!output.empty() && output.back() == ' ')
+                    output.pop_back();
                 return output;
             }
 
             std::string join_nonempty(const std::vector<std::string> &values, const std::string &separator)
             {
                 std::string output;
-                for (const std::string &value : values)
+                for (const std::string &raw : values)
                 {
+                    const std::string value = collapse_spaces(raw);
                     if (value.empty())
                         continue;
                     if (!output.empty())
@@ -141,321 +153,220 @@ namespace image
                 return output;
             }
 
-            std::string join_fields(const std::vector<MetadataField> &fields)
+            std::string detail_value(const PresentationSpec &spec, const std::string &label)
             {
-                std::vector<std::string> parts;
-                for (const MetadataField &field : fields)
-                {
-                    if (field.value.empty())
-                        continue;
-                    parts.push_back(field.label.empty() ? field.value : field.label + ": " + field.value);
-                }
-                return join_nonempty(parts, "  ·  ");
+                for (const MetadataField &field : spec.pass.details)
+                    if (field.label == label && !field.value.empty())
+                        return collapse_spaces(field.value);
+                return "";
             }
 
-            std::string component_description(const CompositeComponent &component)
+            std::string remove_parenthetical_details(const std::string &value)
             {
-                if (!component.description.empty())
-                    return component.description;
-
-                std::string result = join_nonempty({component.channel, component.spectral_range, component.quantity}, " · ");
-                if (!component.formula.empty())
+                std::string output;
+                int depth = 0;
+                for (char character : value)
                 {
-                    if (!result.empty())
-                        result += " | ";
-                    result += component.formula;
-                }
-                return result;
-            }
-
-            Color component_color(const CompositeComponent &component, const Theme &theme)
-            {
-                if (component.component == "R" || component.component == "r")
-                    return theme.red_component;
-                if (component.component == "G" || component.component == "g")
-                    return theme.green_component;
-                if (component.component == "B" || component.component == "b")
-                    return theme.blue_component;
-                return normalized_color(component.marker_color, theme.accent);
-            }
-
-            Color sample_stops(const std::vector<ColorStop> &input, double position, const Theme &theme)
-            {
-                if (input.empty())
-                    return theme.accent;
-
-                std::vector<ColorStop> stops = input;
-                std::sort(stops.begin(), stops.end(), [](const ColorStop &left, const ColorStop &right)
-                          { return left.position < right.position; });
-                position = clamp_value(position, 0.0, 1.0);
-                if (position <= stops.front().position)
-                    return normalized_color(stops.front().color, theme.accent);
-                if (position >= stops.back().position)
-                    return normalized_color(stops.back().color, theme.accent);
-
-                for (size_t i = 1; i < stops.size(); i++)
-                {
-                    if (position <= stops[i].position)
+                    if (character == '(')
                     {
-                        const Color left = normalized_color(stops[i - 1].color, theme.accent);
-                        const Color right = normalized_color(stops[i].color, theme.accent);
-                        const double span = std::max(1e-12, stops[i].position - stops[i - 1].position);
-                        const double amount = clamp_value((position - stops[i - 1].position) / span, 0.0, 1.0);
-                        return {
-                            left[0] + (right[0] - left[0]) * amount,
-                            left[1] + (right[1] - left[1]) * amount,
-                            left[2] + (right[2] - left[2]) * amount};
+                        depth++;
+                        continue;
+                    }
+                    if (character == ')')
+                    {
+                        depth = std::max(0, depth - 1);
+                        continue;
+                    }
+                    if (depth == 0)
+                        output.push_back(character);
+                }
+                return collapse_spaces(output);
+            }
+
+            std::vector<size_t> utf8_boundaries(const std::string &value)
+            {
+                std::vector<size_t> boundaries;
+                boundaries.push_back(0);
+                size_t index = 0;
+                while (index < value.size())
+                {
+                    const unsigned char lead = (unsigned char)value[index];
+                    size_t length = 1;
+                    if ((lead & 0xE0) == 0xC0)
+                        length = 2;
+                    else if ((lead & 0xF0) == 0xE0)
+                        length = 3;
+                    else if ((lead & 0xF8) == 0xF0)
+                        length = 4;
+                    index = std::min(value.size(), index + length);
+                    boundaries.push_back(index);
+                }
+                return boundaries;
+            }
+
+            std::string ellipsize_end(TextDrawer &drawer,
+                                      const std::string &value,
+                                      int font_size,
+                                      int maximum_width)
+            {
+                if (value.empty() || measured(drawer, font_size, value).width <= maximum_width)
+                    return value;
+
+                const std::string ellipsis = "...";
+                if (measured(drawer, font_size, ellipsis).width > maximum_width)
+                    return "";
+
+                const std::vector<size_t> boundaries = utf8_boundaries(value);
+                size_t low = 0;
+                size_t high = boundaries.empty() ? 0 : boundaries.size() - 1;
+                while (low < high)
+                {
+                    const size_t middle = (low + high + 1) / 2;
+                    const std::string candidate = value.substr(0, boundaries[middle]) + ellipsis;
+                    if (measured(drawer, font_size, candidate).width <= maximum_width)
+                        low = middle;
+                    else
+                        high = middle - 1;
+                }
+                return value.substr(0, boundaries[low]) + ellipsis;
+            }
+
+            std::string labeled(const std::string &label, const std::string &value)
+            {
+                return value.empty() ? "" : label + value;
+            }
+
+            std::vector<std::string> minimal_line_candidates(const PresentationSpec &spec)
+            {
+                const std::string identity = join_nonempty(
+                    {spec.pass.satellite, spec.pass.instrument}, " / ");
+                const std::string channels = detail_value(spec, "Каналы");
+                const std::string compact_channels = remove_parenthetical_details(channels);
+                const std::string projection = detail_value(spec, "Проекция");
+                const std::string quality = join_nonempty(
+                    {spec.pass.quality, spec.pass.quality_detail}, " ");
+                const std::string time = collapse_spaces(spec.pass.acquisition_time);
+                const std::string product = collapse_spaces(spec.pass.product);
+
+                std::vector<std::string> candidates;
+                candidates.push_back(join_nonempty(
+                    {identity,
+                     product,
+                     time,
+                     labeled("Каналы: ", channels),
+                     labeled("Проекция: ", projection),
+                     labeled("Качество: ", quality)},
+                    "  ·  "));
+                candidates.push_back(join_nonempty(
+                    {identity,
+                     product,
+                     time,
+                     labeled("Каналы: ", compact_channels.empty() ? channels : compact_channels),
+                     labeled("Проекция: ", projection)},
+                    "  ·  "));
+                candidates.push_back(join_nonempty(
+                    {identity,
+                     time,
+                     labeled("Каналы: ", compact_channels.empty() ? channels : compact_channels),
+                     product},
+                    "  ·  "));
+                candidates.push_back(join_nonempty(
+                    {identity,
+                     time,
+                     labeled("Каналы: ", compact_channels.empty() ? channels : compact_channels)},
+                    "  ·  "));
+
+                std::vector<std::string> unique;
+                for (const std::string &candidate : candidates)
+                {
+                    if (candidate.empty())
+                        continue;
+                    if (std::find(unique.begin(), unique.end(), candidate) == unique.end())
+                        unique.push_back(candidate);
+                }
+                if (unique.empty())
+                    unique.push_back("Спутниковый снимок");
+                return unique;
+            }
+
+            FittedLine fit_minimal_line(TextDrawer &drawer,
+                                        const PresentationSpec &spec,
+                                        int width,
+                                        int horizontal_padding)
+            {
+                const int available = std::max(1, width - horizontal_padding * 2);
+                const int preferred = std::max(18, std::min(96, (int)std::round(width / 58.0)));
+                const int readable_floor = std::max(15, (int)std::round(preferred * 0.72));
+                const std::vector<std::string> candidates = minimal_line_candidates(spec);
+
+                for (const std::string &candidate : candidates)
+                {
+                    for (int font_size = preferred; font_size >= readable_floor; font_size--)
+                    {
+                        if (measured(drawer, font_size, candidate).width <= available)
+                            return {candidate, font_size};
                     }
                 }
-                return normalized_color(stops.back().color, theme.accent);
+
+                const std::string essential = candidates.back();
+                for (int font_size = readable_floor - 1; font_size >= 12; font_size--)
+                {
+                    if (measured(drawer, font_size, essential).width <= available)
+                        return {essential, font_size};
+                }
+                return {ellipsize_end(drawer, essential, 12, available), 12};
             }
 
-            CompactStyle build_style(size_t width, size_t height, const Theme &theme)
+            MinimalStyle build_minimal_style(TextDrawer &drawer,
+                                             const PresentationSpec &spec,
+                                             size_t width)
             {
-                const double aspect = height == 0 ? 1.0 : (double)width / (double)height;
-                double scale = (double)width / 1500.0;
-                if (aspect < 0.8)
-                    scale = (double)width / 980.0;
-                else if (aspect > 1.8)
-                    scale = (double)width / 1850.0;
-                scale = clamp_value(scale, theme.minimum_scale * 0.85, theme.maximum_scale * 0.90);
-
-                CompactStyle style;
-                style.title = scaled(25, scale);
-                style.body = scaled(16, scale);
-                style.small = scaled(13, scale);
-                style.padding = scaled(18, scale);
-                style.gap = scaled(8, scale);
-                style.accent = scaled(3, scale);
-                style.legend_bar = scaled(18, scale);
-                style.portrait = aspect < 0.8;
-                style.landscape = aspect > 1.35;
+                MinimalStyle style;
+                style.padding_x = std::max(12, std::min(64, (int)std::round(width / 70.0)));
+                const FittedLine fitted = fit_minimal_line(
+                    drawer, spec, (int)width, style.padding_x);
+                style.font_size = fitted.font_size;
+                style.padding_y = std::max(5, (int)std::round(style.font_size * 0.34));
+                style.accent = std::max(2, (int)std::round(style.font_size * 0.10));
+                style.header_height = line_height(drawer, style.font_size) +
+                                      style.padding_y * 2 + style.accent;
                 return style;
             }
 
-            int line_height(TextDrawer &drawer, int font_size)
+            void normalize_legend_for_actual_raster(PresentationSpec &spec,
+                                                    const Image &source)
             {
-                return measured(drawer, font_size, "Ag").line_height;
-            }
+                if (spec.legend.kind != LegendKind::Composite)
+                    return;
 
-            int compact_header_height(TextDrawer &drawer, size_t width, const PresentationSpec &spec, const CompactStyle &style)
-            {
-                const int available = std::max(1, (int)width - style.padding * 2);
-                const std::string identity = join_nonempty({spec.pass.satellite, spec.pass.instrument}, " / ");
-                const std::string quality_line = join_nonempty({spec.pass.quality, spec.pass.quality_detail}, " · ");
-                const std::string time_line = join_nonempty({spec.pass.acquisition_time, spec.pass.pass_summary, quality_line}, "  ·  ");
-                const std::string details = join_fields(spec.pass.details);
-
-                const int title_rows = std::max(1, (int)wrap_text(drawer, identity, style.title, available).size());
-                const int product_rows = spec.pass.product.empty() ? 0 : std::min(2, std::max(1, (int)wrap_text(drawer, spec.pass.product, style.body, available).size()));
-                const int time_rows = time_line.empty() ? 0 : std::min(2, std::max(1, (int)wrap_text(drawer, time_line, style.small, available).size()));
-                const int detail_rows = details.empty() ? 0 : std::min(2, std::max(1, (int)wrap_text(drawer, details, style.small, available).size()));
-                const int sections = 1 + (product_rows > 0 ? 1 : 0) + (time_rows > 0 ? 1 : 0) + (detail_rows > 0 ? 1 : 0);
-
-                return style.padding * 2 +
-                       title_rows * line_height(drawer, style.title) +
-                       product_rows * line_height(drawer, style.body) +
-                       (time_rows + detail_rows) * line_height(drawer, style.small) +
-                       style.gap * std::max(0, sections - 1) +
-                       style.accent;
-            }
-
-            int compact_footer_height(TextDrawer &drawer, size_t width, const PresentationSpec &spec, const CompactStyle &style)
-            {
-                const int available = std::max(1, (int)width - style.padding * 2);
-                int height = style.padding;
-                if (!spec.legend.title.empty())
-                    height += line_height(drawer, style.body) + style.gap / 2;
-                if (!spec.legend.subtitle.empty() && !style.portrait)
-                    height += std::min(1, (int)wrap_text(drawer, spec.legend.subtitle, style.small, available).size()) * line_height(drawer, style.small) + style.gap / 2;
-
-                if (spec.legend.kind == LegendKind::Continuous)
-                    height += style.legend_bar + style.gap + line_height(drawer, style.small);
-                else if (spec.legend.kind == LegendKind::Categorical)
+                if (spec.legend.components.size() == 1)
                 {
-                    const int columns = style.landscape && width >= 900 ? 2 : 1;
-                    const int rows = (int)std::ceil((double)spec.legend.categories.size() / (double)columns);
-                    height += rows * (line_height(drawer, style.small) + style.gap / 2);
+                    CompositeComponent &component = spec.legend.components.front();
+                    component.component = "Канал";
+                    component.marker_color = spec.theme.accent;
+                    spec.legend.title = source.channels() >= 3
+                                            ? "Цветовое представление одного исходного канала"
+                                            : "Одноканальный продукт";
+                    spec.legend.subtitle =
+                        "По конфигурации определён один физический входной канал; "
+                        "это не трёхканальная RGB-композиция.";
+                    spec.legend.notes.clear();
+                    spec.legend.notes.push_back(
+                        "Выход может быть RGB после LUT, Lua/C++-обработки или копирования "
+                        "яркости в цветовые компоненты.");
+                    spec.legend.notes.push_back(
+                        "Если preset фактически использует несколько источников, задайте их "
+                        "явно в presentation.legend.components.");
                 }
-                else if (spec.legend.kind == LegendKind::Composite)
+                else if (spec.legend.components.size() == 2)
                 {
-                    const int description_width = std::max(1, available - scaled(58, (double)style.body / 16.0));
-                    for (const CompositeComponent &component : spec.legend.components)
-                    {
-                        const int lines = std::max(1, (int)wrap_text(drawer, component_description(component), style.small, description_width).size());
-                        height += lines * line_height(drawer, style.small) + style.gap / 2;
-                    }
+                    spec.legend.title = "Двухканальный цветовой синтез";
                 }
-
-                if (!spec.legend.notes.empty())
-                    height += std::min(2, (int)wrap_text(drawer, spec.legend.notes.front(), style.small, available).size()) * line_height(drawer, style.small) + style.gap / 2;
-                if (spec.show_branding && !spec.branding.empty())
-                    height += line_height(drawer, style.small) + style.gap / 2;
-                height += style.padding;
-                return std::max(height, style.padding * 2);
-            }
-
-            void draw_wrapped(Image &output, TextDrawer &drawer, const std::string &text, int x, int &y, int width, int font_size, const Color &color, int max_lines = -1)
-            {
-                std::vector<std::string> lines = wrap_text(drawer, text, font_size, width);
-                if (max_lines >= 0 && (int)lines.size() > max_lines)
-                    lines.resize(max_lines);
-                for (const std::string &line : lines)
+                else if (!spec.legend.components.empty() &&
+                         spec.legend.components.size() != 3 &&
+                         spec.legend.components.size() != 4)
                 {
-                    if (!line.empty())
-                        drawer.draw_text(output, x, y, color, font_size, line);
-                    y += line_height(drawer, font_size);
-                }
-            }
-
-            void draw_compact_header(Image &output, TextDrawer &drawer, const PresentationSpec &spec, const CompactStyle &style, int header_height)
-            {
-                const Theme &theme = spec.theme;
-                fill_rect(output, 0, 0, output.width(), header_height, theme.panel);
-                fill_rect(output, 0, header_height - style.accent, output.width(), header_height, theme.accent);
-
-                const int available = std::max(1, (int)output.width() - style.padding * 2);
-                int y = style.padding;
-                const std::string identity = join_nonempty({spec.pass.satellite, spec.pass.instrument}, " / ");
-                draw_wrapped(output, drawer, identity, style.padding, y, available, style.title, theme.text, 2);
-
-                if (!spec.pass.product.empty())
-                {
-                    y += style.gap / 2;
-                    draw_wrapped(output, drawer, spec.pass.product, style.padding, y, available, style.body, theme.text, 2);
-                }
-
-                const std::string quality_line = join_nonempty({spec.pass.quality, spec.pass.quality_detail}, " · ");
-                const std::string time_line = join_nonempty({spec.pass.acquisition_time, spec.pass.pass_summary, quality_line}, "  ·  ");
-                if (!time_line.empty())
-                {
-                    y += style.gap / 2;
-                    draw_wrapped(output, drawer, time_line, style.padding, y, available, style.small, theme.muted_text, 2);
-                }
-
-                const std::string details = join_fields(spec.pass.details);
-                if (!details.empty())
-                {
-                    y += style.gap / 2;
-                    draw_wrapped(output, drawer, details, style.padding, y, available, style.small, theme.muted_text, 2);
-                }
-            }
-
-            void draw_compact_continuous(Image &output, TextDrawer &drawer, const PresentationSpec &spec, const CompactStyle &style, int &y)
-            {
-                const int x0 = style.padding;
-                const int x1 = (int)output.width() - style.padding;
-                const int width = std::max(1, x1 - x0);
-                for (int x = 0; x < width; x++)
-                {
-                    const double position = width <= 1 ? 0.0 : (double)x / (double)(width - 1);
-                    output.draw_line(x0 + x, y, x0 + x, y + style.legend_bar - 1, sample_stops(spec.legend.color_stops, position, spec.theme));
-                }
-                output.draw_line(x0, y, x1 - 1, y, spec.theme.border);
-                output.draw_line(x0, y + style.legend_bar - 1, x1 - 1, y + style.legend_bar - 1, spec.theme.border);
-                y += style.legend_bar + style.gap / 2;
-
-                const int max_labels = std::max(2, width / std::max(48, style.small * 4));
-                const int count = (int)spec.legend.ticks.size();
-                const int stride = count <= max_labels ? 1 : std::max(1, (count - 1) / (max_labels - 1));
-                for (int i = 0; i < count; i++)
-                {
-                    if (i != 0 && i != count - 1 && i % stride != 0)
-                        continue;
-                    const LegendTick &tick = spec.legend.ticks[i];
-                    const int x = x0 + (int)std::round(clamp_value(tick.position, 0.0, 1.0) * (width - 1));
-                    output.draw_line(x, y - style.gap / 2, x, y + std::max(2, style.gap / 3), spec.theme.muted_text);
-                    const TextSize size = measured(drawer, style.small, tick.label);
-                    int text_x = x - size.width / 2;
-                    text_x = std::max(x0, std::min(x1 - size.width, text_x));
-                    drawer.draw_text(output, text_x, y + std::max(2, style.gap / 3), spec.theme.text, style.small, tick.label);
-                }
-                y += line_height(drawer, style.small) + style.gap / 2;
-            }
-
-            void draw_compact_categories(Image &output, TextDrawer &drawer, const PresentationSpec &spec, const CompactStyle &style, int &y)
-            {
-                const int columns = style.landscape && output.width() >= 900 ? 2 : 1;
-                const int available = (int)output.width() - style.padding * 2;
-                const int cell_width = std::max(1, available / columns);
-                const int row_height = line_height(drawer, style.small) + style.gap / 2;
-                const int marker = std::max(7, style.small - 2);
-
-                for (size_t i = 0; i < spec.legend.categories.size(); i++)
-                {
-                    const int row = (int)i / columns;
-                    const int column = (int)i % columns;
-                    const int x = style.padding + column * cell_width;
-                    const int row_y = y + row * row_height;
-                    fill_rect(output, x, row_y + (row_height - marker) / 2, x + marker, row_y + (row_height - marker) / 2 + marker, normalized_color(spec.legend.categories[i].color, spec.theme.accent));
-                    drawer.draw_text(output, x + marker + style.gap, row_y, spec.theme.text, style.small, spec.legend.categories[i].label);
-                }
-                const int rows = (int)std::ceil((double)spec.legend.categories.size() / (double)columns);
-                y += rows * row_height;
-            }
-
-            void draw_compact_components(Image &output, TextDrawer &drawer, const PresentationSpec &spec, const CompactStyle &style, int &y)
-            {
-                const int marker = std::max(8, style.small - 1);
-                const int label_width = std::max(marker + style.gap + measured(drawer, style.body, "IN").width, scaled(52, (double)style.body / 16.0));
-                const int description_x = style.padding + label_width;
-                const int description_width = std::max(1, (int)output.width() - style.padding - description_x);
-
-                for (const CompositeComponent &component : spec.legend.components)
-                {
-                    std::vector<std::string> lines = wrap_text(drawer, component_description(component), style.small, description_width);
-                    if (lines.empty())
-                        lines.push_back("Канал не указан");
-                    const int row_height = std::max(line_height(drawer, style.body), (int)lines.size() * line_height(drawer, style.small));
-                    const Color color = component_color(component, spec.theme);
-                    fill_rect(output, style.padding, y + (line_height(drawer, style.body) - marker) / 2, style.padding + marker, y + (line_height(drawer, style.body) - marker) / 2 + marker, color);
-                    drawer.draw_text(output, style.padding + marker + style.gap / 2, y, color, style.body, component.component.empty() ? "IN" : component.component);
-                    for (size_t i = 0; i < lines.size(); i++)
-                        drawer.draw_text(output, description_x, y + (int)i * line_height(drawer, style.small), spec.theme.text, style.small, lines[i]);
-                    y += row_height + style.gap / 2;
-                }
-            }
-
-            void draw_compact_footer(Image &output, TextDrawer &drawer, const PresentationSpec &spec, const CompactStyle &style, int footer_y, int footer_height)
-            {
-                fill_rect(output, 0, footer_y, output.width(), footer_y + footer_height, spec.theme.panel);
-                fill_rect(output, 0, footer_y, output.width(), footer_y + 1, spec.theme.border);
-                int y = footer_y + style.padding;
-                const int available = std::max(1, (int)output.width() - style.padding * 2);
-
-                if (!spec.legend.title.empty())
-                {
-                    std::string title = spec.legend.title;
-                    if (!spec.legend.unit.empty())
-                        title += " [" + spec.legend.unit + "]";
-                    draw_wrapped(output, drawer, title, style.padding, y, available, style.body, spec.theme.text, 2);
-                    y += style.gap / 2;
-                }
-                if (!spec.legend.subtitle.empty() && !style.portrait)
-                {
-                    draw_wrapped(output, drawer, spec.legend.subtitle, style.padding, y, available, style.small, spec.theme.muted_text, 1);
-                    y += style.gap / 2;
-                }
-
-                if (spec.legend.kind == LegendKind::Continuous)
-                    draw_compact_continuous(output, drawer, spec, style, y);
-                else if (spec.legend.kind == LegendKind::Categorical)
-                    draw_compact_categories(output, drawer, spec, style, y);
-                else if (spec.legend.kind == LegendKind::Composite)
-                    draw_compact_components(output, drawer, spec, style, y);
-
-                if (!spec.legend.notes.empty())
-                {
-                    draw_wrapped(output, drawer, spec.legend.notes.front(), style.padding, y, available, style.small, spec.theme.muted_text, 2);
-                    y += style.gap / 2;
-                }
-
-                if (spec.show_branding && !spec.branding.empty())
-                {
-                    const TextSize size = measured(drawer, style.small, spec.branding);
-                    const int x = std::max(style.padding, (int)output.width() - style.padding - size.width);
-                    const int branding_y = footer_y + footer_height - style.padding - size.line_height;
-                    drawer.draw_text(output, x, branding_y, spec.theme.muted_text, style.small, spec.branding);
+                    spec.legend.title = "Входные каналы цветового синтеза";
                 }
             }
         }
@@ -506,51 +417,91 @@ namespace image
                     {
                         size_t source_x = x;
                         size_t source_y = y;
-                        if (transform == RasterTransform::FlipVertical || transform == RasterTransform::Rotate180)
+                        if (transform == RasterTransform::FlipVertical ||
+                            transform == RasterTransform::Rotate180)
                             source_y = source.height() - 1 - y;
-                        if (transform == RasterTransform::FlipHorizontal || transform == RasterTransform::Rotate180)
+                        if (transform == RasterTransform::FlipHorizontal ||
+                            transform == RasterTransform::Rotate180)
                             source_x = source.width() - 1 - x;
-                        output.set(channel, x, y, source.get(channel, source_x, source_y));
+                        output.set(channel, x, y,
+                                   source.get(channel, source_x, source_y));
                     }
                 }
             }
             return output;
         }
 
-        Image render_minimal(const Image &source, TextDrawer &text_drawer, const PresentationSpec &spec)
+        Image render_minimal(const Image &source,
+                             TextDrawer &text_drawer,
+                             const PresentationSpec &spec)
         {
-            Image rgb = make_rgb(source);
-            const CompactStyle style = build_style(rgb.width(), rgb.height(), spec.theme);
-            const int header_height = compact_header_height(text_drawer, rgb.width(), spec, style);
-            const int footer_height = compact_footer_height(text_drawer, rgb.width(), spec, style);
+            Image rgb = normalize_presentation_raster(source);
+            PresentationSpec tuned = spec;
+            normalize_legend_for_actual_raster(tuned, source);
 
-            Image output(rgb.depth(), rgb.width(), header_height + rgb.height() + footer_height, 3);
-            output.fill_color(spec.theme.panel);
-            output.draw_image(0, rgb, 0, header_height);
-            draw_compact_header(output, text_drawer, spec, style, header_height);
-            draw_compact_footer(output, text_drawer, spec, style, header_height + rgb.height(), footer_height);
+            const MinimalStyle style =
+                build_minimal_style(text_drawer, tuned, rgb.width());
+            const FittedLine line = fit_minimal_line(
+                text_drawer, tuned, (int)rgb.width(), style.padding_x);
+
+            Image output(rgb.depth(), rgb.width(),
+                         style.header_height + rgb.height(), 3);
+            output.fill_color(tuned.theme.panel);
+            output.draw_image(0, rgb, 0, style.header_height);
+
+            fill_rect(output, 0, 0, output.width(), style.header_height,
+                      tuned.theme.panel);
+            fill_rect(output, 0, style.header_height - style.accent,
+                      output.width(), style.header_height, tuned.theme.accent);
+
+            const int y = std::max(
+                0, (style.header_height - style.accent -
+                    line_height(text_drawer, line.font_size)) /
+                       2);
+            if (!line.text.empty())
+                text_drawer.draw_text(output, style.padding_x, y,
+                                      tuned.theme.text, line.font_size, line.text);
             return output;
         }
 
-        Image render_layout(const Image &source, TextDrawer &text_drawer, const PresentationSpec &spec, LayoutKind layout)
+        Image render_layout(const Image &source,
+                            TextDrawer &text_drawer,
+                            const PresentationSpec &spec,
+                            LayoutKind layout)
         {
             if (layout == LayoutKind::Minimal)
                 return render_minimal(source, text_drawer, spec);
 
+            Image normalized = normalize_presentation_raster(source);
             PresentationSpec tuned = spec;
-            const FrameKind frame = classify_frame(source);
+            normalize_legend_for_actual_raster(tuned, source);
+
+            const FrameKind frame = classify_frame(normalized);
             if (frame == FrameKind::Portrait)
             {
-                tuned.theme.reference_width = 1050;
-                tuned.theme.minimum_scale = std::min(tuned.theme.minimum_scale, 0.52);
-                tuned.theme.maximum_scale = std::min(tuned.theme.maximum_scale, 1.45);
+                tuned.theme.reference_width = 980;
+                tuned.theme.minimum_scale =
+                    std::max(tuned.theme.minimum_scale, 0.82);
             }
             else if (frame == FrameKind::Landscape)
             {
-                tuned.theme.reference_width = 1750;
-                tuned.theme.minimum_scale = std::max(tuned.theme.minimum_scale, 0.68);
+                tuned.theme.reference_width = 1450;
+                tuned.theme.minimum_scale =
+                    std::max(tuned.theme.minimum_scale, 0.88);
             }
-            return render(source, text_drawer, tuned);
+            else
+            {
+                tuned.theme.reference_width = 1280;
+                tuned.theme.minimum_scale =
+                    std::max(tuned.theme.minimum_scale, 0.86);
+            }
+
+            // Large scientific rasters are usually viewed fitted to a monitor.
+            // Let the typography grow with the raster so it remains readable after
+            // that fit-to-screen downscaling.
+            tuned.theme.maximum_scale =
+                std::max(tuned.theme.maximum_scale, 5.0);
+            return render(normalized, text_drawer, tuned);
         }
     }
 }
