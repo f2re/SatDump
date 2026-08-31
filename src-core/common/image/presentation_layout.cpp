@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <sstream>
 #include <vector>
 
 namespace image
@@ -25,16 +24,6 @@ namespace image
                 std::string text;
                 int font_size = 16;
             };
-
-            double clamp_value(double value, double minimum, double maximum)
-            {
-                return std::max(minimum, std::min(maximum, value));
-            }
-
-            int scaled(double value, double scale)
-            {
-                return std::max(1, (int)std::round(value * scale));
-            }
 
             TextSize measured(TextDrawer &drawer, int size, const std::string &text)
             {
@@ -353,21 +342,21 @@ namespace image
                 if (spec.legend.components.size() == 1)
                 {
                     CompositeComponent &component = spec.legend.components.front();
-                    component.component = source.channels() >= 3 ? "RGB" : "Канал";
+                    component.component = "Канал";
+                    component.marker_color = spec.theme.accent;
                     spec.legend.title = source.channels() >= 3
                                             ? "Цветовое представление одного исходного канала"
                                             : "Одноканальный продукт";
-                    if (spec.legend.subtitle.empty() ||
-                        spec.legend.subtitle.find("многоканаль") != std::string::npos)
-                    {
-                        spec.legend.subtitle =
-                            "Это не трёхканальная композиция: цвет или яркость построены "
-                            "из одного физического входного канала.";
-                    }
+                    spec.legend.subtitle =
+                        "По конфигурации определён один физический входной канал; "
+                        "это не трёхканальная RGB-композиция.";
                     spec.legend.notes.clear();
                     spec.legend.notes.push_back(
-                        "Один входной канал может быть показан в RGB после LUT, Lua/C++-"
-                        "обработки или копирования яркости в три цветовые компоненты.");
+                        "Выход может быть RGB после LUT, Lua/C++-обработки или копирования "
+                        "яркости в цветовые компоненты.");
+                    spec.legend.notes.push_back(
+                        "Если preset фактически использует несколько источников, задайте их "
+                        "явно в presentation.legend.components.");
                 }
                 else if (spec.legend.components.size() == 2)
                 {
