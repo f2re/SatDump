@@ -27,7 +27,7 @@ namespace satdump
     {
         int presentation_city_size(size_t image_width)
         {
-            return std::max(16, std::min(56, (int)std::round((double)image_width / 48.0)));
+            return std::max(16, std::min(96, (int)std::round((double)image_width / 64.0)));
         }
 
         void enable_presentation_geographic_context(OverlayHandler &handler,
@@ -372,11 +372,12 @@ namespace satdump
                         return true;
                     };
 
-                    // For non-projected presentation products, context is added here.
-                    // For projected products it is added after reprojection to avoid
-                    // drawing and resampling labels twice.
-                    base_context_applied =
-                        apply_base_context(presentation_settings.enabled && !has_project);
+                    // Non-projected presentation products receive context before
+                    // rendering. Projected products receive it after reprojection,
+                    // so city labels and boundaries are never resampled or drawn twice.
+                    if (!has_project)
+                        base_context_applied =
+                            apply_base_context(presentation_settings.enabled);
 
                     if (!has_project)
                     {
@@ -428,6 +429,13 @@ namespace satdump
                             retimg,
                             "географическая проекция · контуры, береговая линия и города",
                             product_path + "/rgb_" + name + "_projected");
+
+                        // Preserve the swath-view map product as well, but only after
+                        // projection has consumed the clean raster. This keeps labels
+                        // sharp in both variants and prevents double overlays.
+                        if (!base_context_applied)
+                            base_context_applied =
+                                apply_base_context(presentation_settings.enabled);
                     }
 
                     // A malformed projection must not suppress the annotated products.
