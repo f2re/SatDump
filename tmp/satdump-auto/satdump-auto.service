@@ -1,0 +1,15 @@
+[Unit]
+Description=SatDump auto-reprocess: watch /opt/Receiver/Raw and build georeferenced images
+After=multi-user.target
+
+[Service]
+Type=simple
+Environment=HOME=/root
+ExecStart=/opt/satdump-auto/watch.sh
+Restart=always
+RestartSec=10
+Nice=15
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=multi-user.target
