@@ -143,7 +143,7 @@ namespace
         double scale = 1.0;
         scale = std::max(scale, 720.0 / std::max(1.0, short_side));
         scale = std::max(scale, 1280.0 / std::max(1.0, long_side));
-        scale = std::min(scale, 8.0);
+        scale = std::min(scale, 32.0);
         if (long_side * scale > 8192.0)
             scale = std::max(1.0, 8192.0 / long_side);
 
@@ -216,6 +216,47 @@ namespace
         return vertical.get(0, 0, 0) == 40 && vertical.get(0, 2, 1) == 30 &&
                horizontal.get(0, 0, 0) == 30 && horizontal.get(0, 2, 1) == 40 &&
                rotated.get(0, 0, 0) == 60 && rotated.get(0, 2, 1) == 10;
+    }
+
+    bool validate_product_description()
+    {
+        satdump::ImageProducts products;
+        products.instrument_name = "amsu_a";
+        products.set_product_source("Metop-C");
+        products.set_product_timestamp(1788175292);
+        for (const std::string &name : {"1", "2", "3", "4", "5"})
+        {
+            satdump::ImageProducts::ImageHolder holder;
+            holder.channel_name = name;
+            products.images.push_back(holder);
+        }
+
+        satdump::ImageCompositeCfg scalar;
+        scalar.equation = "ch1";
+        image::presentation::PresentationSpec scalar_spec = satdump::product_presentation::build_spec(
+            products, scalar, nlohmann::json(), "MSA channel 1",
+            {1023239704.0, 1788175232.0, 1788175352.0, 4621259911.0}, nlohmann::json(), "композит");
+        if (scalar_spec.legend.kind != image::presentation::LegendKind::None ||
+            scalar_spec.legend.title != "Одноканальный тематический продукт" ||
+            scalar_spec.pass.acquisition_time.find("31.08.2026") == std::string::npos ||
+            scalar_spec.pass.acquisition_time.find("2002") != std::string::npos ||
+            scalar_spec.pass.acquisition_time.find("2116") != std::string::npos)
+            return false;
+
+        satdump::ImageCompositeCfg thematic;
+        thematic.equation = "(ch1+ch2+ch3+ch4+ch5)/5";
+        image::presentation::PresentationSpec thematic_spec = satdump::product_presentation::build_spec(
+            products, thematic, nlohmann::json(), "Sounder average", {}, nlohmann::json(), "композит");
+        if (thematic_spec.legend.kind != image::presentation::LegendKind::None ||
+            thematic_spec.legend.title != "Тематический продукт")
+            return false;
+
+        satdump::ImageCompositeCfg rgb;
+        rgb.equation = "ch3, ch2, ch1";
+        image::presentation::PresentationSpec rgb_spec = satdump::product_presentation::build_spec(
+            products, rgb, nlohmann::json(), "False color", {}, nlohmann::json(), "композит");
+        return rgb_spec.legend.kind == image::presentation::LegendKind::Composite &&
+               rgb_spec.legend.components.size() == 3;
     }
 
     bool validate_orientation_analysis()
@@ -306,10 +347,18 @@ int main(int argc, char **argv)
         return 5;
     }
 
+    stage("validate metadata classification and timestamp filtering");
+    if (!validate_product_description())
+    {
+        std::cerr << "Product presentation metadata tests failed\n";
+        return 7;
+    }
+
     stage("create synthetic rasters");
     const image::Image landscape = make_source_image(1280, 620);
     const image::Image portrait = make_source_image(720, 1320);
     const image::Image small_receiver_frame = make_source_image(320, 180);
+    const image::Image tiny_receiver_frame = make_source_image(30, 42);
     if (image::presentation::classify_frame(landscape) != image::presentation::FrameKind::Landscape ||
         image::presentation::classify_frame(portrait) != image::presentation::FrameKind::Portrait)
     {
@@ -347,6 +396,12 @@ int main(int argc, char **argv)
     if (!render_and_save(landscape, text_drawer, single_channel_color_spec(), image::presentation::LayoutKind::Editorial,
                          output_directory / "single_channel_color_editorial.png", "single-channel color editorial"))
         return 19;
+    if (!render_and_save(tiny_receiver_frame, text_drawer, composite_spec(), image::presentation::LayoutKind::Minimal,
+                         output_directory / "tiny_receiver_minimal.png", "tiny receiver minimal"))
+        return 20;
+    if (!render_and_save(tiny_receiver_frame, text_drawer, composite_spec(), image::presentation::LayoutKind::Editorial,
+                         output_directory / "tiny_receiver_editorial.png", "tiny receiver editorial"))
+        return 21;
 
     stage("all smoke tests passed");
     std::cout << "Presentation smoke tests passed; artifacts: " << output_directory << "\n";

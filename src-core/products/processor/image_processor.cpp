@@ -37,6 +37,8 @@ namespace satdump
             handler.draw_map_overlay = true;
             handler.draw_shores_overlay = true;
             handler.draw_cities_overlay = true;
+            handler.draw_latlon_overlay = true;
+            handler.draw_qth_overlay = true;
 
             // Regional capitals give useful orientation without filling the whole
             // image with labels. Explicit preset choices still take precedence.

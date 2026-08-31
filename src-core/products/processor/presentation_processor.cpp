@@ -431,12 +431,33 @@ namespace satdump
             LegendSpec automatic_composite_legend(ImageProducts &products, const ImageCompositeCfg &composite)
             {
                 LegendSpec legend;
-                legend.kind = LegendKind::Composite;
-
                 const std::vector<std::string> expressions = output_expressions(composite);
                 const bool explicit_rgb = expressions.size() == 3 || expressions.size() == 4;
-                legend.title = explicit_rgb ? "Состав RGB-композита" : "Состав многоканального композита";
-                legend.subtitle = "Спектральные каналы, физические величины и формулы, формирующие результирующий цвет";
+                const std::string source = !composite.channels.empty() ? composite.channels : composite.equation;
+                const std::vector<std::string> tokens = extract_channel_tokens(products, source);
+
+                if (!explicit_rgb)
+                {
+                    // A scalar equation or LUT may use one or many input channels,
+                    // but it still produces one thematic value.  Calling every
+                    // input an RGB component made IASI legends hundreds of lines
+                    // tall and mislabeled one-channel MSA products as composites.
+                    legend.kind = LegendKind::None;
+                    legend.title = tokens.size() == 1 ? "Одноканальный тематический продукт" : "Тематический продукт";
+                    std::vector<std::string> descriptions;
+                    const size_t shown = std::min<size_t>(tokens.size(), 4);
+                    for (size_t index = 0; index < shown; index++)
+                        descriptions.push_back(describe_token(products, composite, tokens[index]));
+                    legend.subtitle = join(descriptions, " · ");
+                    if (tokens.size() > shown)
+                        legend.subtitle += " · ещё " + std::to_string(tokens.size() - shown) + " каналов";
+                }
+                else
+                {
+                    legend.kind = LegendKind::Composite;
+                    legend.title = "Состав RGB-композита";
+                    legend.subtitle = "Спектральные каналы, физические величины и формулы, формирующие результирующий цвет";
+                }
 
                 if (explicit_rgb)
                 {
@@ -459,28 +480,8 @@ namespace satdump
                 }
                 else
                 {
-                    const std::string source = !composite.channels.empty() ? composite.channels : composite.equation;
-                    std::vector<std::string> tokens = extract_channel_tokens(products, source);
-                    if (!tokens.empty())
-                    {
-                        for (size_t index = 0; index < tokens.size(); index++)
-                        {
-                            CompositeComponent component;
-                            component.component = component_label(index, tokens.size());
-                            component.description = describe_token(products, composite, tokens[index]);
-                            legend.components.push_back(component);
-                        }
-                    }
-                    else
-                    {
-                        for (size_t index = 0; index < expressions.size(); index++)
-                        {
-                            CompositeComponent component;
-                            component.component = component_label(index, expressions.size());
-                            component.description = collapse_spaces(expressions[index]);
-                            legend.components.push_back(component);
-                        }
-                    }
+                    if (legend.subtitle.empty() && !expressions.empty())
+                        legend.subtitle = collapse_spaces(expressions.front());
                 }
 
                 if (!composite.lut.empty())
@@ -489,8 +490,10 @@ namespace satdump
                     legend.notes.push_back("Цвета формируются скриптом Lua: " + composite.lua + ". Интерпретировать их следует по назначению конкретного композита.");
                 else if (!composite.cpp.empty())
                     legend.notes.push_back("Цвета формируются алгоритмом C++: " + composite.cpp + ". Интерпретировать их следует по назначению конкретного композита.");
-                else
+                else if (explicit_rgb)
                     legend.notes.push_back("Цвета синтезированы из перечисленных компонентов и не являются самостоятельной физической величиной.");
+                else
+                    legend.notes.push_back("Цветовая шкала отображает один результирующий тематический показатель, а не отдельные компоненты RGB.");
 
                 std::vector<std::string> transformations;
                 if (composite.equalize)
@@ -700,18 +703,21 @@ namespace satdump
 
             std::pair<double, double> timestamp_range(const std::vector<double> &timestamps, ImageProducts &products)
             {
+                const double anchor = products.has_product_timestamp() ? (double)products.get_product_timestamp() : NAN;
+                constexpr double maximum_distance = 6.0 * 60.0 * 60.0;
                 double minimum = INFINITY;
                 double maximum = -INFINITY;
                 for (double timestamp : timestamps)
                 {
-                    if (std::isfinite(timestamp) && timestamp > 0.0)
+                    if (std::isfinite(timestamp) && timestamp > 0.0 &&
+                        (!std::isfinite(anchor) || std::fabs(timestamp - anchor) <= maximum_distance))
                     {
                         minimum = std::min(minimum, timestamp);
                         maximum = std::max(maximum, timestamp);
                     }
                 }
-                if (!std::isfinite(minimum) && products.has_product_timestamp())
-                    minimum = maximum = (double)products.get_product_timestamp();
+                if (!std::isfinite(minimum) && std::isfinite(anchor))
+                    minimum = maximum = anchor;
                 return {minimum, maximum};
             }
 

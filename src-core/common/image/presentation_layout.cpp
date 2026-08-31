@@ -97,7 +97,10 @@ namespace image
                 double scale = 1.0;
                 scale = std::max(scale, 720.0 / std::max(1.0, short_side));
                 scale = std::max(scale, 1280.0 / std::max(1.0, long_side));
-                scale = std::min(scale, 8.0);
+                // A 30-pixel AMSU swath needs roughly 30x enlargement before
+                // cities and a one-line caption become readable. The absolute
+                // dimension guard below still prevents excessive allocation.
+                scale = std::min(scale, 32.0);
 
                 // Guard against pathological, very narrow swaths consuming excessive
                 // memory after enlargement.

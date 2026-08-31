@@ -12,12 +12,12 @@ namespace image
         {
             struct TextStyle
             {
-                int title = 32;
-                int product = 22;
-                int body = 17;
-                int small = 14;
-                int padding = 24;
-                int gap = 10;
+                int title = 42;
+                int product = 30;
+                int body = 23;
+                int small = 19;
+                int padding = 34;
+                int gap = 14;
                 int accent = 3;
             };
 
@@ -231,12 +231,12 @@ namespace image
                 scale = clamp_value(scale, theme.minimum_scale, theme.maximum_scale);
 
                 TextStyle style;
-                style.title = scaled(34, scale);
-                style.product = scaled(23, scale);
-                style.body = scaled(17, scale);
-                style.small = scaled(14, scale);
-                style.padding = scaled(28, scale);
-                style.gap = scaled(10, scale);
+                style.title = scaled(42, scale);
+                style.product = scaled(30, scale);
+                style.body = scaled(23, scale);
+                style.small = scaled(19, scale);
+                style.padding = scaled(34, scale);
+                style.gap = scaled(14, scale);
                 style.accent = scaled(3, scale);
                 return style;
             }
