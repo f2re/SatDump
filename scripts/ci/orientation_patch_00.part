@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+from pathlib import Path
+import re
+import sys
+
+ROOT = Path(__file__).resolve().parent
+if not (ROOT / "src-core").exists():
+    ROOT = Path.cwd()
+
+
+def read(path: str) -> str:
+    return (ROOT / path).read_text(encoding="utf-8")
+
+
+def write(path: str, text: str) -> None:
+    (ROOT / path).write_text(text, encoding="utf-8")
+
+
+def replace_once(text: str, old: str, new: str, label: str) -> str:
+    count = text.count(old)
+    if count != 1:
+        raise RuntimeError(f"{label}: expected one exact match, found {count}")
+    return text.replace(old, new, 1)
+
+
+def regex_once(text: str, pattern: str, replacement: str, label: str) -> str:
+    updated, count = re.subn(pattern, replacement, text, count=1, flags=re.DOTALL)
+    if count != 1:
+        raise RuntimeError(f"{label}: expected one regex match, found {count}")
+    return updated
+
+
+def patch_presentation_layout_header() -> None:
+    path = "src-core/common/image/presentation_layout.h"
+    text = read(path)
+    text = replace_once(
+        text,
+        "#include <string>\n",
+        "#include <string>\n#include <utility>\n",
+        f"{path} include",
+    )
+    text = replace_once(
+        text,
+        "        std::string raster_transform_name(RasterTransform transform);\n\n        Image apply_transform",
+        "        std::string raster_transform_name(RasterTransform transform);\n"
+        "        std::pair<int, int> transform_raster_point(int x, int y, int width, int height, RasterTransform transform);\n\n"
+        "        Image apply_transform",
+        f"{path} declaration",
+    )
+    write(path, text)
+
+
+def patch_presentation_layout_cpp() -> None:
+    path = "src-core/common/image/presentation_layout.cpp"
+    text = read(path)
+    marker = """        Image apply_transform(const Image &source, RasterTransform transform)
+        {
+"""
+    insertion = """        std::pair<int, int> transform_raster_point(int x,
+                                                          int y,
+                                                          int width,
+                                                          int height,
+                                                          RasterTransform transform)
+        {
+            if (x < 0 || y < 0 || width <= 0 || height <= 0 || x >= width || y >= height)
+                return {-1, -1};
+            if (transform == RasterTransform::FlipVertical || transform == RasterTransform::Rotate180)
+                y = height - 1 - y;
+            if (transform == RasterTransform::FlipHorizontal || transform == RasterTransform::Rotate180)
+                x = width - 1 - x;
+            return {x, y};
+        }
+
+        Image apply_transform(const Image &source, RasterTransform transform)
+        {
+"""
+    text = replace_once(text, marker, insertion, f"{path} transform point")
+    write(path, text)
+
+
+def patch_presentation_outputs_header() -> None:
+    path = "src-core/products/processor/presentation_outputs.h"
+    text = read(path)
+    text = replace_once(
+        text,
+        "#include <string>\n",
+        "#include <functional>\n#include <string>\n",
+        f"{path} include",
+    )
+    text = replace_once(
+        text,
+        "    namespace product_presentation\n    {\n        struct OutputSettings",
+        "    namespace product_presentation\n    {\n"
+        "        using OrientedRasterDecorator = std::function<void(\n"
+        "            image::Image &,\n"
+        "            const image::presentation::OrientationInfo &)>;\n\n"
+        "        struct OutputSettings",
+        f"{path} decorator alias",
