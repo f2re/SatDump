@@ -1,0 +1,100 @@
+    old_return = """        return vertical.get(0, 0, 0) == 40 && vertical.get(0, 2, 1) == 30 &&
+               horizontal.get(0, 0, 0) == 30 && horizontal.get(0, 2, 1) == 40 &&
+               rotated.get(0, 0, 0) == 60 && rotated.get(0, 2, 1) == 10;
+    }
+
+    bool validate_product_description()
+"""
+    new_return = """        const std::pair<int, int> vertical_point =
+            image::presentation::transform_raster_point(
+                1, 0, 3, 2, image::presentation::RasterTransform::FlipVertical);
+        const std::pair<int, int> horizontal_point =
+            image::presentation::transform_raster_point(
+                0, 1, 3, 2, image::presentation::RasterTransform::FlipHorizontal);
+        const std::pair<int, int> rotated_point =
+            image::presentation::transform_raster_point(
+                0, 0, 3, 2, image::presentation::RasterTransform::Rotate180);
+
+        return vertical.get(0, 0, 0) == 40 && vertical.get(0, 2, 1) == 30 &&
+               horizontal.get(0, 0, 0) == 30 && horizontal.get(0, 2, 1) == 40 &&
+               rotated.get(0, 0, 0) == 60 && rotated.get(0, 2, 1) == 10 &&
+               vertical_point == std::make_pair(1, 1) &&
+               horizontal_point == std::make_pair(2, 1) &&
+               rotated_point == std::make_pair(2, 1);
+    }
+
+    bool validate_post_orientation_decoration()
+    {
+        image::Image source(8, 3, 2, 1);
+        source.set(0, 0, 0, 10);
+        source.set(0, 1, 0, 20);
+        source.set(0, 2, 0, 30);
+        source.set(0, 0, 1, 40);
+        source.set(0, 1, 1, 50);
+        source.set(0, 2, 1, 60);
+
+        image::presentation::OrientationInfo orientation;
+        orientation.transform = image::presentation::RasterTransform::FlipVertical;
+        bool decorator_saw_oriented_raster = false;
+        image::Image decorated = satdump::product_presentation::prepare_oriented_raster(
+            source,
+            orientation,
+            [&](image::Image &oriented,
+                const image::presentation::OrientationInfo &received)
+            {
+                decorator_saw_oriented_raster =
+                    received.transform == image::presentation::RasterTransform::FlipVertical &&
+                    oriented.get(0, 0, 0) == 40 &&
+                    oriented.get(0, 2, 1) == 30;
+                // Simulate a map label rendered at the final top edge. If decoration
+                // happened before the flip, this marker would end up at the bottom.
+                oriented.set(0, 1, 0, 255);
+            });
+
+        return decorator_saw_oriented_raster &&
+               decorated.get(0, 1, 0) == 255 &&
+               decorated.get(0, 1, 1) == 20;
+    }
+
+    bool validate_product_description()
+"""
+    text = replace_once(text, old_return, new_return, f"{path} transform regression")
+
+    text = replace_once(
+        text,
+        """    stage("validate north-up analysis");
+""",
+        """    stage("validate post-orientation decoration");
+    if (!validate_post_orientation_decoration())
+    {
+        std::cerr << "Post-orientation decoration tests failed\n";
+        return 8;
+    }
+
+    stage("validate north-up analysis");
+""",
+        f"{path} invoke regression",
+    )
+    write(path, text)
+
+
+def patch_docs() -> None:
+    path = "docs/ru/PRESENTATION_LAYOUTS.md"
+    text = read(path)
+    text = replace_once(
+        text,
+        """Решение применяется только к презентационной копии. Исходный научный продукт остаётся нетронутым.
+
+JSON-паспорт содержит:
+""",
+        """Решение применяется только к презентационной копии. Исходный научный продукт остаётся нетронутым.
+
+Порядок обработки принципиален: сначала чистый спутниковый растр приводится к
+ориентации «север сверху», затем границы, береговая линия, координатная сетка,
+города и пункт приёма заново проецируются в уже преобразованные координаты.
+Поэтому географические объекты перемещаются вместе со снимком, но буквы,
+маркеры и остальные аннотации остаются нормально читаемыми и не отражаются.
+
+JSON-паспорт содержит:
+""",
+        f"{path} processing order",
