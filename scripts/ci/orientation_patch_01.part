@@ -1,0 +1,100 @@
+    )
+    text = replace_once(
+        text,
+        "        OutputResult save_outputs(\n",
+        "        image::Image prepare_oriented_raster(\n"
+        "            const image::Image &source,\n"
+        "            const image::presentation::OrientationInfo &orientation,\n"
+        "            OrientedRasterDecorator decorator = {});\n\n"
+        "        OutputResult save_outputs(\n",
+        f"{path} prepare declaration",
+    )
+    text = replace_once(
+        text,
+        "            const std::string &source_variant,\n            const std::string &base_path);",
+        "            const std::string &source_variant,\n"
+        "            const std::string &base_path,\n"
+        "            OrientedRasterDecorator decorate_oriented_raster = {});",
+        f"{path} save signature",
+    )
+    write(path, text)
+
+
+def patch_presentation_outputs_cpp() -> None:
+    path = "src-core/products/processor/presentation_outputs.cpp"
+    text = read(path)
+    text = replace_once(
+        text,
+        "        OutputResult save_outputs(const image::Image &source,\n",
+        "        image::Image prepare_oriented_raster(\n"
+        "            const image::Image &source,\n"
+        "            const OrientationInfo &orientation,\n"
+        "            OrientedRasterDecorator decorator)\n"
+        "        {\n"
+        "            image::Image oriented = image::presentation::apply_transform(source, orientation.transform);\n"
+        "            if (decorator)\n"
+        "                decorator(oriented, orientation);\n"
+        "            return oriented;\n"
+        "        }\n\n"
+        "        OutputResult save_outputs(const image::Image &source,\n",
+        f"{path} prepare implementation",
+    )
+    text = replace_once(
+        text,
+        "                                  const std::string &source_variant,\n                                  const std::string &base_path)\n",
+        "                                  const std::string &source_variant,\n"
+        "                                  const std::string &base_path,\n"
+        "                                  OrientedRasterDecorator decorate_oriented_raster)\n",
+        f"{path} save signature",
+    )
+    text = replace_once(
+        text,
+        "            result.orientation = analyze_orientation(source, products, timestamps, product_metadata, source_variant, settings);\n"
+        "            image::Image oriented = image::presentation::apply_transform(source, result.orientation.transform);\n",
+        "            result.orientation = analyze_orientation(source, products, timestamps, product_metadata, source_variant, settings);\n"
+        "            image::Image oriented;\n"
+        "            try\n"
+        "            {\n"
+        "                oriented = prepare_oriented_raster(source, result.orientation, decorate_oriented_raster);\n"
+        "            }\n"
+        "            catch (const std::exception &error)\n"
+        "            {\n"
+        "                logger->error(\"Could not prepare north-up presentation raster %s: %s\",\n"
+        "                              base_path.c_str(), error.what());\n"
+        "                return result;\n"
+        "            }\n",
+        f"{path} decorator order",
+    )
+    write(path, text)
+
+
+def patch_image_processor() -> None:
+    path = "src-core/products/processor/image_processor.cpp"
+    text = read(path)
+
+    text = replace_once(
+        text,
+        """        }
+    }
+
+    image::Image projectImg""",
+        """        }
+
+        using ProjectionFunction =
+            std::function<std::pair<int, int>(double, double, int, int)>;
+
+        ProjectionFunction transform_projection_for_orientation(
+            const ProjectionFunction &projection,
+            image::presentation::RasterTransform transform)
+        {
+            if (!projection)
+                return {};
+
+            return [projection, transform](double latitude,
+                                           double longitude,
+                                           int map_height,
+                                           int map_width) -> std::pair<int, int>
+            {
+                const std::pair<int, int> point =
+                    projection(latitude, longitude, map_height, map_width);
+                return image::presentation::transform_raster_point(
