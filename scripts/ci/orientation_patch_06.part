@@ -1,0 +1,100 @@
+                            retimg,
+                            "географическая проекция · контуры, береговая линия и города",
+                            product_path + "/rgb_" + name + "_projected");
+
+                        // Preserve the swath-view map product as well, but only after
+                        // projection has consumed the clean raster. This keeps labels
+                        // sharp in both variants and prevents double overlays.
+                        if (!base_context_applied)
+                            base_context_applied =
+                                apply_base_context(presentation_settings.enabled);
+                    }
+
+                    // A malformed projection must not suppress the annotated products.
+                    if (!presentation_saved)
+                    {
+                        if (!base_context_applied)
+                            base_context_applied = apply_base_context(true);
+
+                        const std::string variant =
+                            base_context_applied
+                                ? "композит · контуры, береговая линия и города"
+                                : "композит · геопривязка недоступна";
+                        const std::string suffix =
+                            base_context_applied ? "_map" : "";
+                        save_presentation(
+                            rgb_image,
+                            variant,
+                            product_path + "/" + name + suffix);
+                    }
+
+"""
+    new_flow = """                    // Presentation orientation is applied to a clean raster. Map
+                    // geometry is then projected into the transformed pixel space,
+                    // so city names and QTH remain upright while the swath is flipped.
+                    if (!has_project && presentation_settings.enabled)
+                    {
+                        const bool corrected = geo_correct;
+                        product_presentation::OrientedRasterDecorator context =
+                            make_base_presentation_context(corrected);
+                        const bool has_context = (bool)context;
+                        const std::string suffix = corrected
+                            ? (has_context ? "_corrected_map" : "_corrected")
+                            : (has_context ? "_map" : "");
+                        const std::string variant = corrected
+                            ? (has_context
+                                   ? "геокоррекция · контуры, береговая линия и города"
+                                   : "геокоррекция · геопривязка недоступна")
+                            : (has_context
+                                   ? "композит · контуры, береговая линия и города"
+                                   : "композит · геопривязка недоступна");
+                        save_presentation(
+                            corrected ? rgb_image_corr : rgb_image,
+                            variant,
+                            product_path + "/" + name + suffix,
+                            context);
+                    }
+
+                    if (has_project)
+                    {
+                        logger->debug("Reprojecting composite %s", name.c_str());
+                        image::Image clean_projected;
+                        ProjectionFunction projected_projection;
+                        image::Image retimg = projectImg(
+                            composite_preset["project"],
+                            final_metadata,
+                            rgb_image,
+                            final_timestamps,
+                            *img_products,
+                            presentation_settings.enabled,
+                            &clean_projected,
+                            &projected_projection);
+                        std::string fmt = "";
+                        if (composite_preset["project"].contains("img_format"))
+                            fmt += composite_preset["project"]["img_format"].get<std::string>();
+                        image::save_img(
+                            retimg,
+                            product_path + "/rgb_" + name + "_projected" + fmt);
+
+                        product_presentation::OrientedRasterDecorator context =
+                            make_geographic_context_decorator(
+                                composite_preset["project"],
+                                projected_projection,
+                                true);
+                        save_presentation(
+                            clean_projected,
+                            context
+                                ? "географическая проекция · контуры, береговая линия и города"
+                                : "географическая проекция · геопривязка недоступна",
+                            product_path + "/rgb_" + name + "_projected",
+                            context);
+                    }
+
+                    // A malformed projection must not suppress the annotated products.
+                    // The fallback also uses the clean swath and redraws context after
+                    // orientation instead of flipping already-rendered text.
+                    if (presentation_settings.enabled && !presentation_saved)
+                    {
+                        product_presentation::OrientedRasterDecorator context =
+                            make_base_presentation_context(false);
+                        const bool has_context = (bool)context;
