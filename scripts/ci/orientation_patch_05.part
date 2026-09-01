@@ -1,0 +1,100 @@
+                            last_proj_cfg = proj_cfg;
+                        }
+
+                        if (geo_correct &&
+                            (last_corr_width != rgb_image_corr.width() ||
+                             last_corr_height != rgb_image_corr.height()))
+                        {
+                            corrected_overlay_handler.clear_cache();
+                            corr_proj_func =
+                                [&proj_func, corrected_stuff](double lat,
+                                                             double lon,
+                                                             int map_height,
+                                                             int map_width) mutable
+                                -> std::pair<int, int>
+                            {
+                                std::pair<int, int> ret =
+                                    proj_func(lat, lon, map_height, map_width);
+                                if (ret.first != -1 && ret.second != -1 &&
+                                    ret.first < (int)corrected_stuff.size() &&
+                                    ret.first >= 0)
+                                {
+                                    ret.first = corrected_stuff[ret.first];
+                                }
+                                else
+                                {
+                                    ret.second = ret.first = -1;
+                                }
+                                return ret;
+                            };
+
+                            last_corr_width = rgb_image_corr.width();
+                            last_corr_height = rgb_image_corr.height();
+                        }
+
+""")
+    text = regex_once(
+        text,
+        duplicate_setup_pattern,
+        """                        ensure_rgb_preserving_projection(rgb_image);
+                        if (geo_correct)
+                            ensure_rgb_preserving_projection(rgb_image_corr);
+
+""",
+        f"{path} remove duplicate projection setup",
+    )
+
+    old_flow = """                    // Non-projected presentation products receive context before
+                    // rendering. Projected products receive it after reprojection,
+                    // so city labels and boundaries are never resampled or drawn twice.
+                    if (!has_project)
+                        base_context_applied =
+                            apply_base_context(presentation_settings.enabled);
+
+                    if (!has_project)
+                    {
+                        if (geo_correct)
+                        {
+                            const std::string suffix =
+                                base_context_applied ? "_corrected_map" : "_corrected";
+                            const std::string variant =
+                                base_context_applied
+                                    ? "геокоррекция · контуры, береговая линия и города"
+                                    : "геокоррекция · геопривязка недоступна";
+                            save_presentation(
+                                rgb_image_corr,
+                                variant,
+                                product_path + "/" + name + suffix);
+                        }
+                        else
+                        {
+                            const std::string suffix =
+                                base_context_applied ? "_map" : "";
+                            const std::string variant =
+                                base_context_applied
+                                    ? "композит · контуры, береговая линия и города"
+                                    : "композит · геопривязка недоступна";
+                            save_presentation(
+                                rgb_image,
+                                variant,
+                                product_path + "/" + name + suffix);
+                        }
+                    }
+
+                    if (has_project)
+                    {
+                        logger->debug("Reprojecting composite %s", name.c_str());
+                        image::Image retimg = projectImg(
+                            composite_preset["project"],
+                            final_metadata,
+                            rgb_image,
+                            final_timestamps,
+                            *img_products,
+                            presentation_settings.enabled);
+                        std::string fmt = "";
+                        if (composite_preset["project"].contains("img_format"))
+                            fmt += composite_preset["project"]["img_format"].get<std::string>();
+                        image::save_img(
+                            retimg,
+                            product_path + "/rgb_" + name + "_projected" + fmt);
+                        save_presentation(
