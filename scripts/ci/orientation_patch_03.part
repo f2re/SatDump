@@ -1,0 +1,100 @@
+
+        if (overlay_handler.enabled() && target_projection)
+        {
+            ensure_rgb_preserving_projection(retimg);
+            overlay_handler.apply(retimg, target_projection);
+        }
+
+        // Image::to_rgba() reallocates the pixel buffer in SatDump 1.2.2 and does
+        // not preserve metadata. Keep the target projection so north-up checks and
+        // downstream presentation sidecars remain reliable.
+"""
+    text = replace_once(text, old_projection_block, new_projection_block, f"{path} clean projected raster")
+
+    text = replace_once(
+        text,
+        """        std::function<std::pair<int, int>(double, double, double, double)> proj_func;
+        std::function<std::pair<int, int>(double, double, double, double)> corr_proj_func;
+""",
+        """        ProjectionFunction proj_func;
+        ProjectionFunction corr_proj_func;
+""",
+        f"{path} projection aliases",
+    )
+
+    old_save_lambda = """                    auto save_presentation = [&](const image::Image &source,
+                                                 const std::string &variant,
+                                                 const std::string &base_path)
+                    {
+                        if (!presentation_settings.enabled || presentation_saved || source.size() == 0)
+                            return;
+                        if (!ensure_presentation_font())
+                            return;
+
+                        product_presentation::OutputResult output =
+                            product_presentation::save_outputs(
+                                source,
+                                presentation_text,
+                                *img_products,
+                                cfg,
+                                composite_preset,
+                                compo.key(),
+                                final_timestamps,
+                                final_metadata,
+                                variant,
+                                base_path);
+                        presentation_saved = output.any();
+                    };
+"""
+    new_save_lambda = """                    auto save_presentation = [&] (
+                                                 const image::Image &source,
+                                                 const std::string &variant,
+                                                 const std::string &base_path,
+                                                 product_presentation::OrientedRasterDecorator decorator)
+                    {
+                        if (!presentation_settings.enabled || presentation_saved || source.size() == 0)
+                            return;
+                        if (!ensure_presentation_font())
+                            return;
+
+                        product_presentation::OutputResult output =
+                            product_presentation::save_outputs(
+                                source,
+                                presentation_text,
+                                *img_products,
+                                cfg,
+                                composite_preset,
+                                compo.key(),
+                                final_timestamps,
+                                final_metadata,
+                                variant,
+                                base_path,
+                                decorator);
+                        presentation_saved = output.any();
+                    };
+"""
+    text = replace_once(text, old_save_lambda, new_save_lambda, f"{path} presentation callback")
+
+    old_context_prefix = """                    bool base_context_applied = false;
+                    auto apply_base_context = [&](bool force_context) -> bool
+                    {
+                        if (!img_products->has_proj_cfg())
+                        {
+                            if (force_context)
+                                logger->warn(
+                                    "Presentation geographic context was requested for %s, "
+                                    "but this product has no projection/geolocation configuration",
+                                    name.c_str());
+                            return false;
+                        }
+
+                        if (force_context)
+                        {
+"""
+    new_context_prefix = """                    bool base_context_applied = false;
+                    auto prepare_base_projection = [&]() -> bool
+                    {
+                        if (!img_products->has_proj_cfg())
+                            return false;
+
+                        nlohmann::json proj_cfg = img_products->get_proj_cfg();
