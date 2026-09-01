@@ -1,0 +1,100 @@
+                    point.first, point.second, map_width, map_height, transform);
+            };
+        }
+
+        product_presentation::OrientedRasterDecorator make_geographic_context_decorator(
+            const nlohmann::json &settings,
+            const ProjectionFunction &projection,
+            bool force_context)
+        {
+            if (!projection)
+                return {};
+
+            return [settings, projection, force_context](
+                       image::Image &oriented,
+                       const image::presentation::OrientationInfo &orientation)
+            {
+                OverlayHandler handler;
+                handler.set_config(settings);
+                if (force_context)
+                    enable_presentation_geographic_context(
+                        handler, settings, oriented.width());
+                if (!handler.enabled())
+                    return;
+
+                ensure_rgb_preserving_projection(oriented);
+                handler.apply(
+                    oriented,
+                    transform_projection_for_orientation(
+                        projection, orientation.transform));
+            };
+        }
+    }
+
+    image::Image projectImg""",
+        f"{path} orientation helpers",
+    )
+
+    text = replace_once(
+        text,
+        """                            ImageProducts &img_products,
+                            bool force_presentation_context)
+""",
+        """                            ImageProducts &img_products,
+                            bool force_presentation_context,
+                            image::Image *clean_presentation_source = nullptr,
+                            ProjectionFunction *presentation_projection = nullptr)
+""",
+        f"{path} project signature",
+    )
+
+    old_projection_block = """        image::Image retimg = reprojection::reproject(op);
+
+        OverlayHandler overlay_handler;
+        overlay_handler.set_config(proj_settings);
+        if (force_presentation_context)
+            enable_presentation_geographic_context(overlay_handler, proj_settings, retimg.width());
+
+        if (overlay_handler.enabled() && image::has_metadata_proj_cfg(retimg))
+        {
+            ensure_rgb_preserving_projection(retimg);
+            auto proj_func = satdump::reprojection::setupProjectionFunction(
+                retimg.width(), retimg.height(), image::get_metadata_proj_cfg(retimg));
+            overlay_handler.apply(retimg, proj_func);
+        }
+
+        // Image::to_rgba() reallocates the pixel buffer in SatDump 1.2.2 and does
+        // not preserve metadata. Keep the target projection so north-up checks and
+        // downstream presentation sidecars remain reliable.
+        nlohmann::json target_proj_cfg;
+        const bool has_target_proj_cfg = image::has_metadata_proj_cfg(retimg);
+        if (has_target_proj_cfg)
+            target_proj_cfg = image::get_metadata_proj_cfg(retimg);
+"""
+    new_projection_block = """        image::Image retimg = reprojection::reproject(op);
+
+        // Presentation output must orient the clean raster first and draw text
+        // afterwards. Keep an undecorated copy and the original geographic
+        // projection before the regular map product is rendered.
+        nlohmann::json target_proj_cfg;
+        const bool has_target_proj_cfg = image::has_metadata_proj_cfg(retimg);
+        ProjectionFunction target_projection;
+        if (has_target_proj_cfg)
+        {
+            target_proj_cfg = image::get_metadata_proj_cfg(retimg);
+            target_projection = satdump::reprojection::setupProjectionFunction(
+                retimg.width(), retimg.height(), target_proj_cfg);
+        }
+        if (clean_presentation_source != nullptr)
+        {
+            *clean_presentation_source = retimg;
+            if (has_target_proj_cfg)
+                image::set_metadata_proj_cfg(*clean_presentation_source, target_proj_cfg);
+        }
+        if (presentation_projection != nullptr)
+            *presentation_projection = target_projection;
+
+        OverlayHandler overlay_handler;
+        overlay_handler.set_config(proj_settings);
+        if (force_presentation_context)
+            enable_presentation_geographic_context(overlay_handler, proj_settings, retimg.width());
