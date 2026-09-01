@@ -871,6 +871,19 @@ namespace satdump
         {
             PresentationSpec spec;
             spec.branding = "SatDump 1.2.2 · Presentation";
+            try
+            {
+                if (config::main_cfg.contains("satdump_general") &&
+                    config::main_cfg["satdump_general"].contains("presentation_show_branding"))
+                {
+                    spec.show_branding = bool_value(
+                        config::main_cfg["satdump_general"]["presentation_show_branding"], false);
+                }
+            }
+            catch (const std::exception &)
+            {
+                spec.show_branding = false;
+            }
             spec.pass.satellite = satellite_name(products);
             spec.pass.instrument = products.instrument_name;
             spec.pass.product = product_name;

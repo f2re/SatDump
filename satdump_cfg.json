@@ -173,27 +173,33 @@
         },
         "qth_lat": {
             "type": "float",
-            "value": 0.0,
+            "value": 59.9386,
             "name": "QTH Latitude",
             "description": "Latitude of your station's QTH (North is positive; South is negative)"
         },
         "qth_lon": {
             "type": "float",
-            "value": 0.0,
+            "value": 30.3141,
             "name": "QTH Longitude",
             "description": "Longitude of your station's QTH (East is positive; West is negative)"
         },
         "qth_alt": {
             "type": "float",
-            "value": 0.0,
+            "value": 3.0,
             "name": "QTH Altitude",
             "description": "Altitude (meters above sea level) of your station's QTH"
         },
         "default_qth_label": {
             "type": "string",
-            "value": "QTH",
+            "value": "Санкт-Петербург",
             "name": "Default QTH Label",
             "description": "Default map label for QTH marker"
+        },
+        "presentation_show_branding": {
+            "type": "bool",
+            "value": false,
+            "name": "Show Presentation Branding",
+            "description": "Show the SatDump branding text on Presentation and Minimal images"
         },
         "default_borders_color": {
             "type": "color",
