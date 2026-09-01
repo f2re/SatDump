@@ -1,0 +1,101 @@
+                        proj_cfg["metadata"] = final_metadata;
+                        proj_cfg["metadata"]["tle"] = img_products->get_tle();
+                        proj_cfg["metadata"]["timestamps"] = final_timestamps;
+
+                        if (last_width != rgb_image.width() ||
+                            last_height != rgb_image.height() ||
+                            last_proj_cfg != proj_cfg)
+                        {
+                            overlay_handler.clear_cache();
+                            proj_func = satdump::reprojection::setupProjectionFunction(
+                                rgb_image.width(), rgb_image.height(), proj_cfg);
+                            last_width = rgb_image.width();
+                            last_height = rgb_image.height();
+                            last_proj_cfg = proj_cfg;
+                        }
+
+                        if (geo_correct &&
+                            (last_corr_width != rgb_image_corr.width() ||
+                             last_corr_height != rgb_image_corr.height() ||
+                             !corr_proj_func))
+                        {
+                            corrected_overlay_handler.clear_cache();
+                            const ProjectionFunction base_projection = proj_func;
+                            corr_proj_func =
+                                [base_projection, corrected_stuff](double lat,
+                                                                   double lon,
+                                                                   int map_height,
+                                                                   int map_width) mutable
+                                -> std::pair<int, int>
+                            {
+                                std::pair<int, int> ret =
+                                    base_projection(lat, lon, map_height, map_width);
+                                if (ret.first != -1 && ret.second != -1 &&
+                                    ret.first < (int)corrected_stuff.size() &&
+                                    ret.first >= 0)
+                                {
+                                    ret.first = corrected_stuff[ret.first];
+                                }
+                                else
+                                {
+                                    ret.second = ret.first = -1;
+                                }
+                                return ret;
+                            };
+                            last_corr_width = rgb_image_corr.width();
+                            last_corr_height = rgb_image_corr.height();
+                        }
+
+                        return (bool)proj_func && (!geo_correct || (bool)corr_proj_func);
+                    };
+
+                    auto make_base_presentation_context = [&](bool corrected)
+                        -> product_presentation::OrientedRasterDecorator
+                    {
+                        if (!prepare_base_projection())
+                            return {};
+                        return make_geographic_context_decorator(
+                            composite_preset,
+                            corrected ? corr_proj_func : proj_func,
+                            true);
+                    };
+
+                    auto apply_base_context = [&](bool force_context) -> bool
+                    {
+                        if (!prepare_base_projection())
+                        {
+                            if (force_context)
+                                logger->warn(
+                                    "Presentation geographic context was requested for %s, "
+                                    "but this product has no projection/geolocation configuration",
+                                    name.c_str());
+                            return false;
+                        }
+
+                        if (force_context)
+                        {
+"""
+    text = replace_once(text, old_context_prefix, new_context_prefix, f"{path} projection preparation")
+
+    # Remove the now-duplicated projection setup from apply_base_context.
+    duplicate_setup_pattern = re.escape("""                        ensure_rgb_preserving_projection(rgb_image);
+                        if (geo_correct)
+                            ensure_rgb_preserving_projection(rgb_image_corr);
+
+                        nlohmann::json proj_cfg = img_products->get_proj_cfg();
+                        proj_cfg["metadata"] = final_metadata;
+                        proj_cfg["metadata"]["tle"] = img_products->get_tle();
+                        proj_cfg["metadata"]["timestamps"] = final_timestamps;
+
+                        if (last_width != rgb_image.width() ||
+                            last_height != rgb_image.height() ||
+                            last_proj_cfg != proj_cfg)
+                        {
+                            overlay_handler.clear_cache();
+
+                            proj_func = satdump::reprojection::setupProjectionFunction(
+                                rgb_image.width(), rgb_image.height(), proj_cfg);
+
+                            last_width = rgb_image.width();
+                            last_height = rgb_image.height();
+                            last_proj_cfg = proj_cfg;
