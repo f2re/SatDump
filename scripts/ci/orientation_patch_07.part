@@ -1,0 +1,100 @@
+                        save_presentation(
+                            rgb_image,
+                            has_context
+                                ? "композит · контуры, береговая линия и города"
+                                : "композит · геопривязка недоступна",
+                            product_path + "/" + name + (has_context ? "_map" : ""),
+                            context);
+                    }
+
+                    // Keep the ordinary map product unchanged. It is rendered only
+                    // after every presentation attempt, so it cannot contaminate the
+                    // source raster used for north-up normalization.
+                    base_context_applied =
+                        apply_base_context(presentation_settings.enabled);
+
+"""
+    text = replace_once(text, old_flow, new_flow, f"{path} presentation flow")
+
+    old_channel = """                    image::Image retimg = projectImg(
+                        channel_preset,
+                        channel_metadata,
+                        img.image,
+                        channel_timestamps,
+                        *img_products,
+                        output_settings.enabled);
+"""
+    new_channel = """                    image::Image clean_projected;
+                    ProjectionFunction projected_projection;
+                    image::Image retimg = projectImg(
+                        channel_preset,
+                        channel_metadata,
+                        img.image,
+                        channel_timestamps,
+                        *img_products,
+                        output_settings.enabled,
+                        &clean_projected,
+                        &projected_projection);
+"""
+    text = replace_once(text, old_channel, new_channel, f"{path} channel clean raster")
+
+    old_channel_save = """                        product_presentation::save_outputs(
+                            retimg,
+                            presentation_text,
+                            *img_products,
+                            channel_cfg,
+                            channel_preset,
+                            "Канал " + img.channel_name,
+                            channel_timestamps,
+                            channel_metadata,
+                            "географическая проекция · одиночный канал · "
+                            "контуры, береговая линия и города",
+                            product_path + "/channel_" + img.channel_name +
+                                "_projected");
+"""
+    new_channel_save = """                        product_presentation::OrientedRasterDecorator context =
+                            make_geographic_context_decorator(
+                                channel_preset,
+                                projected_projection,
+                                true);
+                        product_presentation::save_outputs(
+                            clean_projected,
+                            presentation_text,
+                            *img_products,
+                            channel_cfg,
+                            channel_preset,
+                            "Канал " + img.channel_name,
+                            channel_timestamps,
+                            channel_metadata,
+                            context
+                                ? "географическая проекция · одиночный канал · "
+                                  "контуры, береговая линия и города"
+                                : "географическая проекция · одиночный канал · "
+                                  "геопривязка недоступна",
+                            product_path + "/channel_" + img.channel_name +
+                                "_projected",
+                            context);
+"""
+    text = replace_once(text, old_channel_save, new_channel_save, f"{path} channel decorator")
+
+    # The value is deliberately retained for logging/debugging and to document
+    # whether the ordinary swath map was written. Silence compilers that diagnose
+    # a set-but-unused variable in configurations where the following cache block
+    # is optimized aggressively.
+    text = replace_once(
+        text,
+        """                    // Free corrected image memory after all presentation fallbacks.
+""",
+        """                    (void)base_context_applied;
+
+                    // Free corrected image memory after all presentation fallbacks.
+""",
+        f"{path} base context use",
+    )
+
+    write(path, text)
+
+
+def patch_presentation_test() -> None:
+    path = "src-testing/presentation_test.cpp"
+    text = read(path)
