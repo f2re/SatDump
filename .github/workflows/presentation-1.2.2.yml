@@ -169,14 +169,18 @@ jobs:
             --install \
             2>&1 | tee "${build_dir}/native-build.log"
 
-      - name: Validate semantic profile engine
+      - name: Validate semantic profile engine and render references
         shell: bash
         run: |
           build_dir="${GITHUB_WORKSPACE}/build/astra-${{ matrix.astra }}-ci"
+          output="${build_dir}/presentation-test-output"
+          mkdir -p "${output}"
           test -x "${build_dir}/satdump-presentation-semantics-test"
           LD_LIBRARY_PATH="${build_dir}:${build_dir}/plugins:${LD_LIBRARY_PATH:-}" \
             "${build_dir}/satdump-presentation-semantics-test" \
-            "${GITHUB_WORKSPACE}/resources/presentation/composite_profiles_ru.json"
+            "${GITHUB_WORKSPACE}/resources/presentation/composite_profiles_ru.json" \
+            "${GITHUB_WORKSPACE}/resources/fonts/Roboto-Medium.ttf" \
+            "${output}"
 
       - name: Validate installed native tree and launcher
         env:
@@ -205,6 +209,9 @@ jobs:
           test -s "${output}/composite_minimal_landscape.png"
           test -s "${output}/continuous_editorial_portrait.png"
           test -s "${output}/continuous_minimal_portrait.png"
+          test -s "${output}/semantic_night_microphysics_presentation.png"
+          test -s "${output}/semantic_natural_color_presentation.png"
+          test -s "${output}/semantic_sst_presentation.png"
 
       - name: Collect reproducibility manifest
         if: always()
@@ -272,7 +279,9 @@ jobs:
                 --install
               LD_LIBRARY_PATH=/workspace/build/astra-ubi17-ci:/workspace/build/astra-ubi17-ci/plugins:${LD_LIBRARY_PATH:-} \
                 /workspace/build/astra-ubi17-ci/satdump-presentation-semantics-test \
-                /workspace/resources/presentation/composite_profiles_ru.json
+                /workspace/resources/presentation/composite_profiles_ru.json \
+                /workspace/resources/fonts/Roboto-Medium.ttf \
+                /workspace/build/astra-ubi17-ci/presentation-test-output
               bash scripts/astra/run.sh \
                 --prefix /workspace/build/satdump-install-astra-ubi17-ci \
                 -- version
@@ -282,6 +291,9 @@ jobs:
         run: |
           test -s build/astra-ubi17-ci/presentation-test-output/continuous_editorial_landscape.png
           test -s build/astra-ubi17-ci/presentation-test-output/continuous_minimal_portrait.png
+          test -s build/astra-ubi17-ci/presentation-test-output/semantic_night_microphysics_presentation.png
+          test -s build/astra-ubi17-ci/presentation-test-output/semantic_natural_color_presentation.png
+          test -s build/astra-ubi17-ci/presentation-test-output/semantic_sst_presentation.png
           test -x build/satdump-install-astra-ubi17-ci/bin/satdump
           test -f build/satdump-install-astra-ubi17-ci/share/satdump/resources/presentation/composite_profiles_ru.json
           test -f build/satdump-install-astra-ubi17-ci/.satdump-install-root
