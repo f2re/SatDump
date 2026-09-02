@@ -15,3 +15,7 @@ target_link_libraries(satdump-presentation-test PUBLIC satdump_core)
 add_executable(satdump-map-label-test map_label_test.cpp)
 target_include_directories(satdump-map-label-test PUBLIC src-testing src-core)
 target_link_libraries(satdump-map-label-test PUBLIC satdump_core)
+
+add_executable(satdump-presentation-semantics-test presentation_semantics_test.cpp)
+target_include_directories(satdump-presentation-semantics-test PUBLIC src-testing src-core)
+target_link_libraries(satdump-presentation-semantics-test PUBLIC satdump_core)
