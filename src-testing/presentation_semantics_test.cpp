@@ -31,9 +31,8 @@ namespace
         return false;
     }
 
-    satdump::ImageProducts products(const std::string &instrument = "msu_mr")
+    void populate_products(satdump::ImageProducts &result, const std::string &instrument = "msu_mr")
     {
-        satdump::ImageProducts result;
         result.instrument_name = instrument;
         result.set_product_source("METEOR-M2-4");
         result.set_product_timestamp(1788259404);
@@ -43,7 +42,6 @@ namespace
             holder.channel_name = channel;
             result.images.push_back(holder);
         }
-        return result;
     }
 
     PresentationSpec make_spec(satdump::ImageProducts &source,
@@ -63,7 +61,8 @@ namespace
 
     bool validate_night_microphysics()
     {
-        satdump::ImageProducts source = products();
+        satdump::ImageProducts source;
+        populate_products(source);
         satdump::ImageCompositeCfg composite;
         composite.equation = "1-(3/200-cch6+cch5)*(200/10.5), 1-(7/200-cch5+cch4)*(200/9.9), ((cch5*200+200-243.7)/(293.2-243.7))";
         composite.description_markdown = "descriptions/NightMicro.md";
@@ -85,7 +84,8 @@ namespace
 
     bool validate_natural_color()
     {
-        satdump::ImageProducts source = products();
+        satdump::ImageProducts source;
+        populate_products(source);
         satdump::ImageCompositeCfg composite;
         composite.equation = "ch4, ch2, ch1";
         PresentationSpec spec = make_spec(source, composite, nlohmann::json::object(), "Natural Color");
@@ -97,7 +97,8 @@ namespace
 
     bool validate_physical_sst_scale()
     {
-        satdump::ImageProducts source = products();
+        satdump::ImageProducts source;
+        populate_products(source);
         satdump::ImageCompositeCfg composite;
         composite.channels = "cch5";
         composite.lua = "scripted_compos/sst_landmask.lua";
@@ -115,7 +116,8 @@ namespace
 
     bool validate_explicit_legend_wins()
     {
-        satdump::ImageProducts source = products();
+        satdump::ImageProducts source;
+        populate_products(source);
         satdump::ImageCompositeCfg composite;
         composite.equation = "ch4, ch2, ch1";
         nlohmann::json preset = {
@@ -140,7 +142,8 @@ namespace
 
     bool validate_generic_cpp_fallback()
     {
-        satdump::ImageProducts source = products("mtvza");
+        satdump::ImageProducts source;
+        populate_products(source, "mtvza");
         satdump::ImageCompositeCfg composite;
         composite.channels = "ch1,ch2";
         composite.cpp = "custom_classifier";
