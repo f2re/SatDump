@@ -224,8 +224,18 @@ find_cmake() {
 
 apt_package_available() {
     local package="$1"
+    local candidate_metadata=""
+
     command_exists apt-cache || return 1
-    apt-cache show "${package}" >/dev/null 2>&1
+
+    # `apt-cache show` without this option also prints versions which are known
+    # to the cache but have no installable Candidate.  Astra repositories can
+    # leave such records behind for packages which were removed or replaced
+    # (for example libvolk2-dev), after which `apt-get install` still fails.
+    # Asking only for the candidate is locale-independent and produces no
+    # output when Candidate is `(none)`.
+    candidate_metadata="$(apt-cache --no-all-versions show "${package}" 2>/dev/null)" || return 1
+    [[ -n "${candidate_metadata}" ]]
 }
 
 first_available_package() {

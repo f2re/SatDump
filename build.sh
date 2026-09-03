@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 
-# Simple one-command native build for Astra Linux.
+# One-command native or portable build for Astra Linux.
 
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROFILE="desktop"
+BUILD_MODE="native"
+PROFILE=""
+PROFILE_SET=0
 INSTALL_DEPS=1
 APT_UPDATE=1
 DO_INSTALL=1
@@ -16,19 +18,24 @@ usage() {
 Использование: ./build.sh [параметры]
 
 Без параметров сценарий сам устанавливает недостающие зависимости, собирает
-desktop-версию с GUI и RTL-SDR и устанавливает её в ~/.local/opt/satdump-1.2.2.
+native desktop-версию и устанавливает её в ~/.local/opt/satdump-1.2.2.
 
 Параметры:
-  --profile PROFILE  Профиль: headless, desktop или full (по умолчанию: desktop)
+  --mode MODE        native (по умолчанию) или portable-glibc224
+                     Алиас astra16-offline также включает portable-glibc224.
+  --profile PROFILE  native: headless, desktop, full (по умолчанию desktop)
+                     portable: reference, meteor (по умолчанию reference)
   --skip-deps        Не устанавливать системные зависимости
   --no-apt-update    Не обновлять индекс пакетов перед установкой зависимостей
   --no-install       Только собрать, не устанавливать
   -h, --help         Показать эту справку
 
-Остальные параметры передаются штатному native-сценарию сборки. Например:
+Остальные параметры передаются в выбранный сценарий сборки. Например:
   ./build.sh --profile headless --clean
   ./build.sh --skip-deps --jobs 4
   ./build.sh --profile desktop --sdr rtl --clean
+  ./build.sh --mode portable-glibc224 --profile reference
+  ./build.sh --mode astra16-offline
 EOF
 }
 
@@ -39,9 +46,19 @@ die() {
 
 while (( $# > 0 )); do
     case "$1" in
+        --mode)
+            (( $# >= 2 )) || die "после --mode требуется значение"
+            BUILD_MODE="$2"
+            shift 2
+            ;;
+        --mode=*)
+            BUILD_MODE="${1#*=}"
+            shift
+            ;;
         --profile)
             (( $# >= 2 )) || die "после --profile требуется значение"
             PROFILE="$2"
+            PROFILE_SET=1
             shift 2
             ;;
         --skip-deps)
@@ -60,9 +77,6 @@ while (( $# > 0 )); do
             usage
             exit 0
             ;;
-        --mode|--mode=*)
-            die "режим выбирается расширенным сценарием scripts/astra/build.sh"
-            ;;
         *)
             BUILD_ARGS+=("$1")
             shift
@@ -70,10 +84,32 @@ while (( $# > 0 )); do
     esac
 done
 
-case "${PROFILE}" in
-    headless|desktop|full) ;;
-    *) die "неизвестный профиль: ${PROFILE}" ;;
+case "${BUILD_MODE}" in
+    native)
+        [[ "${PROFILE_SET}" == "1" ]] || PROFILE="desktop"
+        case "${PROFILE}" in
+            headless|desktop|full) ;;
+            *) die "для native допустимы профили headless, desktop, full: ${PROFILE}" ;;
+        esac
+        ;;
+    portable|portable-glibc224|astra-reference|astra16-offline)
+        BUILD_MODE="portable-glibc224"
+        [[ "${PROFILE_SET}" == "1" ]] || PROFILE="reference"
+        case "${PROFILE}" in
+            reference|meteor) ;;
+            *) die "для portable-glibc224 допустимы профили reference, meteor: ${PROFILE}" ;;
+        esac
+        ;;
+    *) die "неизвестный режим: ${BUILD_MODE}" ;;
 esac
+
+if [[ "${BUILD_MODE}" == "portable-glibc224" ]]; then
+    printf '\n==> Переносимый CLI-бандл Astra Linux 1.6 (glibc 2.24, %s)\n' "${PROFILE}"
+    exec bash "${ROOT_DIR}/scripts/astra/build.sh" \
+        --mode portable-glibc224 \
+        --profile "${PROFILE}" \
+        "${BUILD_ARGS[@]}"
+fi
 
 if (( INSTALL_DEPS == 1 )); then
     DEP_ARGS=(--profile "${PROFILE}" --bootstrap-missing)

@@ -10,6 +10,7 @@ OFFLINE_DIR="${SATDUMP_OFFLINE:-}"
 JOBS="${SATDUMP_JOBS:-2}"
 PLUGIN_PROFILE="${SATDUMP_PORTABLE_PLUGIN_PROFILE:-reference}"
 CLEAN_WORK="${SATDUMP_CLEAN_WORK:-1}"
+ROOTLESS="${SATDUMP_PORTABLE_ROOTLESS:-0}"
 
 PORTABLE_DIR="${SOURCE_DIR}/scripts/astra/portable"
 # shellcheck source=lock.env
@@ -50,8 +51,14 @@ export LC_ALL=C
 export LANG=C
 
 log "Установка зависимостей внутри изолированного Debian Stretch chroot"
-apt-get update
-apt-get install -y --no-install-recommends \
+APT_ARGS=()
+if [[ "${ROOTLESS}" == "1" ]]; then
+    # A single-ID user namespace cannot switch to Stretch's _apt UID.  The
+    # chroot is isolated and fakeroot handles package ownership metadata.
+    APT_ARGS+=(-o APT::Sandbox::User=root)
+fi
+apt-get "${APT_ARGS[@]}" update
+apt-get "${APT_ARGS[@]}" install -y --no-install-recommends \
     build-essential flex bison git curl ca-certificates pkg-config \
     xz-utils tar gzip bzip2 patch file rsync binutils \
     libgmp-dev libmpfr-dev libmpc-dev libisl-dev \
@@ -107,7 +114,7 @@ install_cmake() {
 
     rm -rf "${prefix}"
     mkdir -p "${prefix}"
-    tar -xzf "${archive}" --strip-components=1 -C "${prefix}"
+    tar --no-same-owner -xzf "${archive}" --strip-components=1 -C "${prefix}"
     [[ -x "${prefix}/bin/cmake" ]] || fail "CMake не установлен в ${prefix}"
     actual="$("${prefix}/bin/cmake" --version | awk 'NR == 1 { print $3 }')"
     [[ "${actual}" == "${SATDUMP_PORTABLE_CMAKE_VERSION}" ]] \
@@ -134,7 +141,7 @@ build_gcc() {
     build="${WORK_DIR}/toolchain/gcc-build"
     rm -rf "${source}" "${build}" "${prefix}"
     mkdir -p "${WORK_DIR}/toolchain" "${build}"
-    tar -xJf "${archive}" -C "${WORK_DIR}/toolchain"
+    tar --no-same-owner -xJf "${archive}" -C "${WORK_DIR}/toolchain"
 
     log "Сборка GCC ${SATDUMP_PORTABLE_GCC_VERSION} по проверенной конфигурации astra"
     (

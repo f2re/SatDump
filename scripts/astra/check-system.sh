@@ -78,6 +78,11 @@ else
 fi
 
 printf '\n📦 Библиотеки\n'
+# The native builder always searches the user-local bootstrap prefix.  Keep
+# diagnostics consistent with it, otherwise an installed local VOLK/FFTW/cURL
+# is incorrectly reported as missing.
+export PKG_CONFIG_PATH="${ASTRA_DEPS_PREFIX}/lib/pkgconfig:${ASTRA_DEPS_PREFIX}/lib64/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}"
+
 check_pkg_config() {
     local display="$1"
     shift

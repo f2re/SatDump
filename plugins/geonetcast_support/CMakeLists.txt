@@ -6,12 +6,16 @@ add_library(geonetcast_support SHARED ${geonetcast_support_CPPS})
 target_link_libraries(geonetcast_support PUBLIC satdump_core)
 target_include_directories(geonetcast_support PUBLIC src .)
 
-find_library(LIBHDF5_LIBRARY hdf5)
-find_library(LIBHDF5HL_LIBRARY hdf5_hl)
+# Debian/Astra multi-implementation packages expose the serial build under
+# hdf5_serial names, while other distributions use the generic hdf5 names.
+find_library(LIBHDF5_LIBRARY NAMES hdf5 hdf5_serial)
+find_library(LIBHDF5HL_LIBRARY NAMES hdf5_hl hdf5_serial_hl)
+find_path(LIBHDF5_INCLUDE_DIR NAMES hdf5.h PATH_SUFFIXES hdf5/serial)
 
-if(LIBHDF5_LIBRARY AND LIBHDF5HL_LIBRARY)
+if(LIBHDF5_LIBRARY AND LIBHDF5HL_LIBRARY AND LIBHDF5_INCLUDE_DIR)
   target_compile_definitions(geonetcast_support PUBLIC ENABLE_HDF5_PARSING=1)
-  target_link_libraries(geonetcast_support PUBLIC hdf5 hdf5_hl)
+  target_include_directories(geonetcast_support PUBLIC ${LIBHDF5_INCLUDE_DIR})
+  target_link_libraries(geonetcast_support PUBLIC ${LIBHDF5_LIBRARY} ${LIBHDF5HL_LIBRARY})
   message("Found HDF5 libraries. Geonetcast HDF5 processing enabled!")
 else()
   message("Could not find HDF5 libraries. Geonetcast HDF5 processing disabled!")

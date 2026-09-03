@@ -2,13 +2,18 @@
 
 set -Eeuo pipefail
 
+# Astra user sessions may omit the administrative directories from PATH even
+# though debootstrap and chroot are installed there.
+export PATH="/usr/local/sbin:/usr/sbin:/sbin:${PATH}"
+
 PORTABLE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=../common.sh
 source "${PORTABLE_DIR}/../common.sh"
 # shellcheck source=lock.env
 source "${PORTABLE_DIR}/lock.env"
 
-ROOTFS="/var/lib/satdump-build/stretch-amd64"
+ORIGINAL_ARGS=("$@")
+ROOTFS="${SATDUMP_PORTABLE_ROOTFS:-/tmp/satdump-portable-rootfs/stretch-amd64}"
 WORK_DIR="${SATDUMP_ROOT}/build/portable-glibc224"
 OUTPUT_DIR="${SATDUMP_ROOT}/dist/astra-portable"
 CACHE_DIR="${HOME}/.cache/satdump-portable"
@@ -76,12 +81,25 @@ if (( EUID == 0 )); then
     SUDO=()
     OWNER_UID="${SUDO_UID:-0}"
     OWNER_GID="${SUDO_GID:-0}"
+elif command_exists unshare && unshare --user --map-root-user true >/dev/null 2>&1; then
+    command_exists fakeroot \
+        || die "Для rootless portable-сборки требуется пакет fakeroot."
+    log_info "Перезапуск в rootless user/mount namespace; sudo не требуется"
+    exec unshare --user --map-root-user --mount \
+        env SATDUMP_PORTABLE_USERNS=1 \
+        bash "${PORTABLE_DIR}/build.sh" "${ORIGINAL_ARGS[@]}"
 elif command_exists sudo; then
     SUDO=(sudo)
     OWNER_UID="$(id -u)"
     OWNER_GID="$(id -g)"
 else
     die "Portable-сборка требует root для chroot/mount. Установите sudo или запустите от root."
+fi
+
+if [[ "${SATDUMP_PORTABLE_USERNS:-0}" == "1" ]]; then
+    # Do not propagate mount operations from the private build namespace back
+    # to the host mount tree.
+    mount --make-rprivate /
 fi
 
 for command in debootstrap chroot mount umount findmnt rsync tar gzip sha256sum readlink; do
@@ -223,9 +241,15 @@ unmount_rootfs_children
 
 mount_rbind /dev "${ROOTFS}/dev"
 mount_rbind /sys "${ROOTFS}/sys"
-"${SUDO[@]}" mkdir -p "${ROOTFS}/proc"
-"${SUDO[@]}" mount -t proc proc "${ROOTFS}/proc"
-MOUNTED+=("${ROOTFS}/proc")
+if [[ "${SATDUMP_PORTABLE_USERNS:-0}" == "1" ]]; then
+    # Astra's user namespace permits binding the existing procfs but rejects a
+    # fresh proc mount.  The private mount namespace prevents propagation.
+    mount_rbind /proc "${ROOTFS}/proc"
+else
+    "${SUDO[@]}" mkdir -p "${ROOTFS}/proc"
+    "${SUDO[@]}" mount -t proc proc "${ROOTFS}/proc"
+    MOUNTED+=("${ROOTFS}/proc")
+fi
 
 mount_bind "${SOURCE_REAL}" "${ROOTFS}/build/source" 1
 mount_bind "${WORK_REAL}" "${ROOTFS}/build/work"
@@ -253,11 +277,16 @@ CHROOT_ENV=(
     SATDUMP_PORTABLE_PLUGIN_PROFILE="${PLUGIN_PROFILE}"
     SATDUMP_CLEAN_WORK="${CLEAN_WORK}"
 )
+CHROOT_PREFIX=("${SUDO[@]}")
+if [[ "${SATDUMP_PORTABLE_USERNS:-0}" == "1" ]]; then
+    CHROOT_ENV+=(SATDUMP_PORTABLE_ROOTLESS=1)
+    CHROOT_PREFIX=(env FAKEROOTDONTTRYCHOWN=1 fakeroot)
+fi
 if [[ -n "${OFFLINE_DIR}" ]]; then
     CHROOT_ENV+=(SATDUMP_OFFLINE=/build/offline)
 fi
 
-"${SUDO[@]}" chroot "${ROOTFS}" /usr/bin/env -i "${CHROOT_ENV[@]}" \
+"${CHROOT_PREFIX[@]}" chroot "${ROOTFS}" /usr/bin/env -i "${CHROOT_ENV[@]}" \
     /bin/bash /build/source/scripts/astra/portable/inside-chroot.sh
 
 cleanup_host_state

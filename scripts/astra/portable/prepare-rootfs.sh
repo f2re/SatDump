@@ -2,13 +2,16 @@
 
 set -Eeuo pipefail
 
+# Keep direct invocation working in Astra sessions whose PATH has no sbin.
+export PATH="/usr/local/sbin:/usr/sbin:/sbin:${PATH}"
+
 PORTABLE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=../common.sh
 source "${PORTABLE_DIR}/../common.sh"
 # shellcheck source=lock.env
 source "${PORTABLE_DIR}/lock.env"
 
-ROOTFS="/var/lib/satdump-build/stretch-amd64"
+ROOTFS="${SATDUMP_PORTABLE_ROOTFS:-/tmp/satdump-portable-rootfs/stretch-amd64}"
 MIRROR="${SATDUMP_PORTABLE_DEBIAN_MIRROR}"
 ALLOW_UNSIGNED=0
 FORCE=0
@@ -86,10 +89,54 @@ else
 fi
 
 log_info "Создание Debian ${SATDUMP_PORTABLE_DEBIAN_SUITE} rootfs в ${ROOTFS}"
-debootstrap "${DEBOOTSTRAP_ARGS[@]}" \
-    "${SATDUMP_PORTABLE_DEBIAN_SUITE}" \
-    "${ROOTFS}" \
-    "${MIRROR}"
+if [[ "${SATDUMP_PORTABLE_USERNS:-0}" == "1" ]]; then
+    # User namespaces on Astra cannot create device nodes on the host mount.
+    # Give debootstrap a private /dev and bind only the usable host devices into
+    # it.  Binding the whole host /dev makes debootstrap's fd/stdin symlink
+    # setup fail and its fallback leaves package scripts without a writable
+    # /dev/null.
+    mkdir -p "${ROOTFS}/dev"
+    mount -t tmpfs -o mode=755,nosuid tmpfs "${ROOTFS}/dev"
+    mkdir -p "${ROOTFS}/dev/pts" "${ROOTFS}/dev/shm"
+
+    BOOTSTRAP_DEVICES=(null zero full random urandom tty ptmx)
+    for device in "${BOOTSTRAP_DEVICES[@]}"; do
+        [[ -e "/dev/${device}" ]] || continue
+        : > "${ROOTFS}/dev/${device}"
+        mount --bind "/dev/${device}" "${ROOTFS}/dev/${device}"
+    done
+
+    # console is not present in every container.  An ordinary placeholder is
+    # sufficient during bootstrap; the real /dev is mounted for the build.
+    if [[ ! -e "${ROOTFS}/dev/console" ]]; then
+        : > "${ROOTFS}/dev/console"
+        chmod 0666 "${ROOTFS}/dev/console"
+    fi
+    cleanup_bootstrap_dev() { umount -R -l -- "${ROOTFS}/dev" >/dev/null 2>&1 || true; }
+    trap cleanup_bootstrap_dev EXIT
+
+    # debootstrap enters the new root during its second stage.  Preserve the
+    # fakeroot preload library at the same absolute search path so chown/mknod
+    # emulation remains active after chroot.
+    FAKEROOT_LIBRARY="$(dpkg-query -L libfakeroot 2>/dev/null | awk '/\/libfakeroot-sysv\.so$/ { print; exit }')"
+    [[ -n "${FAKEROOT_LIBRARY}" && -r "${FAKEROOT_LIBRARY}" ]] \
+        || die "Не найдена preload-библиотека libfakeroot."
+    FAKEROOT_LIBRARY_DIR="$(dirname "${FAKEROOT_LIBRARY}")"
+    mkdir -p "${ROOTFS}${FAKEROOT_LIBRARY_DIR}"
+    cp -L "${FAKEROOT_LIBRARY_DIR}"/libfakeroot*.so "${ROOTFS}${FAKEROOT_LIBRARY_DIR}/"
+
+    FAKEROOTDONTTRYCHOWN=1 container=mmdebstrap-unshare fakeroot debootstrap "${DEBOOTSTRAP_ARGS[@]}" \
+        "${SATDUMP_PORTABLE_DEBIAN_SUITE}" \
+        "${ROOTFS}" \
+        "${MIRROR}"
+    cleanup_bootstrap_dev
+    trap - EXIT
+else
+    debootstrap "${DEBOOTSTRAP_ARGS[@]}" \
+        "${SATDUMP_PORTABLE_DEBIAN_SUITE}" \
+        "${ROOTFS}" \
+        "${MIRROR}"
+fi
 
 TRUST_OPTION="check-valid-until=no"
 if [[ "${ALLOW_UNSIGNED}" == "1" ]]; then
