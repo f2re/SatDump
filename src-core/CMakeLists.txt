@@ -28,6 +28,14 @@ find_package(PkgConfig)
 add_library(satdump_core SHARED ${SatDump_core_CPPS})
 target_include_directories(satdump_core PUBLIC .)
 
+# Compile the historical presentation metadata builder under an internal name.
+# presentation_semantics.cpp exposes the public build_spec symbol and enriches
+# the raw result with product-specific Russian interpretation and legends.
+set_source_files_properties(
+    products/processor/presentation_processor.cpp
+    PROPERTIES COMPILE_DEFINITIONS SATDUMP_PRESENTATION_PROCESSOR_IMPL=1
+)
+
 # Set the resources path
 if(MSVC OR BUILD_MSVC)
     target_compile_definitions(satdump_core PUBLIC RESOURCES_PATH="./")
