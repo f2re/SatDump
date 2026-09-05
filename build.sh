@@ -4,8 +4,12 @@
 
 set -Eeuo pipefail
 
+# Astra user sessions commonly omit administrative directories even when the
+# portable-build utilities are installed there.
+export PATH="/usr/local/sbin:/usr/sbin:/sbin:${PATH}"
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUILD_MODE="native"
+BUILD_MODE="astra16-offline"
 PROFILE=""
 PROFILE_SET=0
 INSTALL_DEPS=1
@@ -17,12 +21,12 @@ usage() {
     cat <<'EOF'
 Использование: ./build.sh [параметры]
 
-Без параметров сценарий сам устанавливает недостающие зависимости, собирает
-native desktop-версию и устанавливает её в ~/.local/opt/satdump-1.2.2.
+Без параметров сценарий сам устанавливает недостающие хостовые зависимости и
+собирает полный переносимый CLI-бандл для Astra Linux 1.6. GUI не собирается.
 
 Параметры:
-  --mode MODE        native (по умолчанию) или portable-glibc224
-                     Алиас astra16-offline также включает portable-glibc224.
+  --mode MODE        astra16-offline (по умолчанию), portable-glibc224 или native
+                     astra16-offline — полный CLI-бандл для Astra Linux 1.6.
   --profile PROFILE  native: headless, desktop, full (по умолчанию desktop)
                      portable: reference, meteor (по умолчанию reference)
   --skip-deps        Не устанавливать системные зависимости
@@ -31,11 +35,11 @@ native desktop-версию и устанавливает её в ~/.local/opt/s
   -h, --help         Показать эту справку
 
 Остальные параметры передаются в выбранный сценарий сборки. Например:
-  ./build.sh --profile headless --clean
+  ./build.sh
   ./build.sh --skip-deps --jobs 4
-  ./build.sh --profile desktop --sdr rtl --clean
-  ./build.sh --mode portable-glibc224 --profile reference
-  ./build.sh --mode astra16-offline
+  ./build.sh --profile meteor
+  ./build.sh --mode native --profile headless --clean
+  ./build.sh --mode native --profile desktop --sdr rtl --clean
 EOF
 }
 
@@ -103,7 +107,45 @@ case "${BUILD_MODE}" in
     *) die "неизвестный режим: ${BUILD_MODE}" ;;
 esac
 
+install_portable_host_deps() {
+    local -a missing=()
+    local command
+    for command in debootstrap fakeroot chroot mount umount findmnt rsync tar gzip sha256sum readlink dpkg-deb; do
+        command -v "${command}" >/dev/null 2>&1 || missing+=("${command}")
+    done
+
+    if (( ${#missing[@]} == 0 )); then
+        return 0
+    fi
+    if (( INSTALL_DEPS == 0 )); then
+        die "не найдены зависимости portable-сборки: ${missing[*]} (уберите --skip-deps для автоматической установки)"
+    fi
+    command -v apt-get >/dev/null 2>&1 \
+        || die "не найдены зависимости portable-сборки: ${missing[*]}; apt-get недоступен"
+
+    local -a elevate=()
+    if (( EUID != 0 )); then
+        command -v sudo >/dev/null 2>&1 || die "для установки зависимостей требуется root или sudo"
+        elevate=(sudo)
+    fi
+    if (( APT_UPDATE == 1 )); then
+        printf '\n==> Обновление индекса пакетов для portable-сборки\n'
+        "${elevate[@]}" apt-get update
+    fi
+    printf '\n==> Установка зависимостей portable-сборки\n'
+    "${elevate[@]}" apt-get install -y --no-install-recommends \
+        debootstrap fakeroot rsync xz-utils binutils curl ca-certificates
+
+    missing=()
+    for command in debootstrap fakeroot chroot mount umount findmnt rsync tar gzip sha256sum readlink dpkg-deb; do
+        command -v "${command}" >/dev/null 2>&1 || missing+=("${command}")
+    done
+    (( ${#missing[@]} == 0 )) \
+        || die "после установки всё ещё не найдены зависимости: ${missing[*]}"
+}
+
 if [[ "${BUILD_MODE}" == "portable-glibc224" ]]; then
+    install_portable_host_deps
     printf '\n==> Переносимый CLI-бандл Astra Linux 1.6 (glibc 2.24, %s)\n' "${PROFILE}"
     exec bash "${ROOT_DIR}/scripts/astra/build.sh" \
         --mode portable-glibc224 \

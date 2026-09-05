@@ -106,6 +106,51 @@ for command in debootstrap chroot mount umount findmnt rsync tar gzip sha256sum 
     command_exists "${command}" || die "Не найдена команда ${command}. Установите debootstrap, debian-archive-keyring, util-linux, rsync и build tools."
 done
 
+download_file() {
+    local url="$1"
+    local destination="$2"
+    if command_exists curl; then
+        curl --fail --location --retry 4 --retry-delay 2 --output "${destination}.part" "${url}"
+    elif command_exists wget; then
+        wget --tries=4 --output-document="${destination}.part" "${url}"
+    else
+        die "Для загрузки Debian keyring требуется curl или wget."
+    fi
+    mv "${destination}.part" "${destination}"
+}
+
+prepare_archive_keyring() {
+    local system_keyring="/usr/share/keyrings/debian-archive-keyring.gpg"
+    if [[ -r "${system_keyring}" ]]; then
+        ARCHIVE_KEYRING="${system_keyring}"
+        return 0
+    fi
+
+    command_exists dpkg-deb || die "Не найдена команда dpkg-deb для подготовки Debian keyring."
+    local archive="${CACHE_DIR}/${SATDUMP_PORTABLE_KEYRING_ARCHIVE}"
+    local extracted="${CACHE_DIR}/debian-archive-keyring-${SATDUMP_PORTABLE_KEYRING_VERSION}"
+    local keyring="${extracted}/usr/share/keyrings/debian-archive-keyring.gpg"
+
+    if [[ -n "${OFFLINE_DIR}" && -r "${OFFLINE_DIR}/${SATDUMP_PORTABLE_KEYRING_ARCHIVE}" ]]; then
+        cp "${OFFLINE_DIR}/${SATDUMP_PORTABLE_KEYRING_ARCHIVE}" "${archive}"
+    elif [[ ! -r "${archive}" ]]; then
+        log_info "Загрузка проверенного Debian archive keyring"
+        download_file "${SATDUMP_PORTABLE_KEYRING_URL}" "${archive}"
+    fi
+
+    local actual
+    actual="$(sha256sum "${archive}" | awk '{ print $1 }')"
+    [[ "${actual}" == "${SATDUMP_PORTABLE_KEYRING_SHA256}" ]] \
+        || die "SHA-256 Debian keyring не совпадает: ${archive}"
+    if [[ ! -r "${keyring}" ]]; then
+        rm -rf "${extracted}"
+        mkdir -p "${extracted}"
+        dpkg-deb -x "${archive}" "${extracted}"
+    fi
+    [[ -r "${keyring}" ]] || die "В архиве не найден Debian archive keyring."
+    ARCHIVE_KEYRING="${keyring}"
+}
+
 absolute_path() {
     readlink -m "$1"
 }
@@ -139,6 +184,12 @@ if [[ -n "${OFFLINE_DIR}" ]]; then
     if paths_overlap "${ROOTFS}" "${OFFLINE_DIR}"; then
         die "offline-dir не должен находиться внутри rootfs и наоборот."
     fi
+fi
+
+ARCHIVE_KEYRING=""
+ROOTFS_MARKER="${ROOTFS}/etc/satdump-portable-rootfs"
+if [[ "${ALLOW_UNSIGNED}" == "0" && ( "${CLEAN_ROOTFS}" == "1" || ! -f "${ROOTFS_MARKER}" ) ]]; then
+    prepare_archive_keyring
 fi
 
 unmount_rootfs_children() {
@@ -176,6 +227,7 @@ PREPARE_ARGS=(
     --rootfs "${ROOTFS}"
     --mirror "${MIRROR}"
 )
+[[ -n "${ARCHIVE_KEYRING}" ]] && PREPARE_ARGS+=(--keyring "${ARCHIVE_KEYRING}")
 [[ "${CLEAN_ROOTFS}" == "1" ]] && PREPARE_ARGS+=(--force)
 [[ "${ALLOW_UNSIGNED}" == "1" ]] && PREPARE_ARGS+=(--allow-unsigned-archive)
 

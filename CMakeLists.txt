@@ -220,10 +220,11 @@ if((NOT ANDROID) AND ENABLE_INSTALL)
     install(DIRECTORY ${CMAKE_SOURCE_DIR}/resources DESTINATION share/satdump)
     install(FILES ${CMAKE_SOURCE_DIR}/satdump_cfg.json DESTINATION share/satdump)
     install(FILES ${CMAKE_SOURCE_DIR}/icon.png DESTINATION share/satdump)
-    configure_file(${CMAKE_SOURCE_DIR}/satdump.desktop ${CMAKE_CURRENT_BINARY_DIR}/satdump.desktop @ONLY)
-
-    if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
-        install(FILES ${CMAKE_CURRENT_BINARY_DIR}/satdump.desktop DESTINATION share/applications)
+    if(BUILD_GUI)
+        configure_file(${CMAKE_SOURCE_DIR}/satdump.desktop ${CMAKE_CURRENT_BINARY_DIR}/satdump.desktop @ONLY)
+        if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+            install(FILES ${CMAKE_CURRENT_BINARY_DIR}/satdump.desktop DESTINATION share/applications)
+        endif()
     endif()
 
     # Create uninstall target

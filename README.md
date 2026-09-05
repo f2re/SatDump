@@ -206,20 +206,21 @@ cd SatDump
 ./build.sh
 ```
 
-Он установит необходимые зависимости, при необходимости подготовит локальные
-CMake/NNG/VOLK, соберёт desktop-версию с GUI и RTL-SDR и установит её в
-`~/.local/opt/satdump-1.2.2`.
+Он установит необходимые хостовые зависимости, подготовит изолированное
+окружение Debian Stretch/glibc 2.24 и соберёт полный переносимый CLI-бандл
+`reference` для Astra Linux 1.6. GUI в этот профиль не входит.
 
-После сборки GUI запускается так:
+Архив будет создан в `dist/astra-portable/`. Native GUI по-прежнему доступен
+явно:
 
 ```bash
-bash scripts/astra/run.sh --ui
+./build.sh --mode native --profile desktop
 ```
 
-Для серверной версии без GUI:
+Для уменьшенного Meteor/NOAA/APT-бандла:
 
 ```bash
-./build.sh --profile headless
+./build.sh --profile meteor
 ```
 
 Повторная сборка без установки пакетов:
@@ -228,8 +229,8 @@ bash scripts/astra/run.sh --ui
 ./build.sh --skip-deps
 ```
 
-Все дополнительные параметры (`--clean`, `--jobs N`, `--sdr PROFILE` и другие)
-передаются штатному native-сценарию. Полный список доступен по `./build.sh --help`.
+Дополнительные параметры portable-профиля (`--clean-rootfs`, `--jobs N` и другие)
+передаются штатному сценарию. Для native-параметров укажите `--mode native`.
 
 > [!WARNING]
 > Не запускайте `build.sh` через `sudo`: сценарий сам повышает права только для

@@ -15,6 +15,7 @@ ROOTFS="${SATDUMP_PORTABLE_ROOTFS:-/tmp/satdump-portable-rootfs/stretch-amd64}"
 MIRROR="${SATDUMP_PORTABLE_DEBIAN_MIRROR}"
 ALLOW_UNSIGNED=0
 FORCE=0
+KEYRING="${SATDUMP_PORTABLE_KEYRING:-/usr/share/keyrings/debian-archive-keyring.gpg}"
 
 usage() {
     cat <<EOF
@@ -23,6 +24,7 @@ usage() {
 Параметры:
   --rootfs PATH              Каталог chroot (по умолчанию: ${ROOTFS})
   --mirror URL               Зеркало Debian Stretch
+  --keyring PATH             Проверенный Debian archive keyring
   --allow-unsigned-archive   Разрешить legacy-режим без проверки подписи Release
   --force                    Полностью пересоздать ранее подготовленный rootfs
   -h, --help                 Показать справку
@@ -37,6 +39,7 @@ while (( $# > 0 )); do
     case "$1" in
         --rootfs) ROOTFS="$2"; shift 2 ;;
         --mirror) MIRROR="$2"; shift 2 ;;
+        --keyring) KEYRING="$2"; shift 2 ;;
         --allow-unsigned-archive) ALLOW_UNSIGNED=1; shift ;;
         --force) FORCE=1; shift ;;
         -h|--help) usage; exit 0 ;;
@@ -78,14 +81,13 @@ DEBOOTSTRAP_ARGS=(
     --variant=minbase
 )
 
-KEYRING="/usr/share/keyrings/debian-archive-keyring.gpg"
 if [[ "${ALLOW_UNSIGNED}" == "1" ]]; then
     DEBOOTSTRAP_ARGS+=(--no-check-gpg)
     log_warn "Включён legacy-режим без проверки подписи архива. Используйте только изолированную среду или доверенное зеркало."
 elif [[ -r "${KEYRING}" ]]; then
     DEBOOTSTRAP_ARGS+=(--keyring="${KEYRING}")
 else
-    die "Не найден ${KEYRING}. Установите debian-archive-keyring либо явно используйте --allow-unsigned-archive."
+    die "Не найден keyring ${KEYRING}. Повторите сборку через корневой ./build.sh либо явно используйте --allow-unsigned-archive."
 fi
 
 log_info "Создание Debian ${SATDUMP_PORTABLE_DEBIAN_SUITE} rootfs в ${ROOTFS}"

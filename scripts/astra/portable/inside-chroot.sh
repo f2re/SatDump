@@ -298,6 +298,9 @@ cmake -S "${SOURCE_DIR}" -B "${BUILD_DIR}" \
     -DENABLE_INSTALL=ON \
     "${CMAKE_PROFILE_ARGS[@]}"
 
+grep -qx 'BUILD_GUI:BOOL=OFF' "${BUILD_DIR}/CMakeCache.txt" \
+    || fail "Нарушен CLI-only профиль: BUILD_GUI должен быть OFF."
+
 log "Сборка SatDump (${JOBS} потоков)"
 cmake --build "${BUILD_DIR}" --parallel "${JOBS}"
 
@@ -316,6 +319,8 @@ mkdir -p "${STAGE_ROOT}"
 DESTDIR="${STAGE_ROOT}" cmake --install "${BUILD_DIR}"
 STAGED_PREFIX="${STAGE_ROOT}${SATDUMP_PORTABLE_INSTALL_PREFIX}"
 [[ -x "${STAGED_PREFIX}/bin/satdump" ]] || fail "В staging не установлен satdump."
+[[ ! -e "${STAGED_PREFIX}/bin/satdump-ui" ]] \
+    || fail "Нарушен CLI-only профиль: в staging обнаружен satdump-ui."
 
 SOURCE_DATE_EPOCH="$(git -C "${SOURCE_DIR}" show -s --format=%ct HEAD 2>/dev/null || date +%s)"
 export SOURCE_DATE_EPOCH
