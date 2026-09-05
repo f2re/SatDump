@@ -37,6 +37,7 @@ namespace
     {"type":"Feature","properties":{"featurecla":"Admin-1 capital","nameascii":"Murmansk","scalerank":4,"pop_max":270000},"geometry":{"type":"Point","coordinates":[33.08,68.97]}},
     {"type":"Feature","properties":{"featurecla":"Admin-0 capital","nameascii":"Paris","scalerank":0,"pop_max":11000000},"geometry":{"type":"Point","coordinates":[2.35,48.86]}},
     {"type":"Feature","properties":{"featurecla":"Admin-0 capital","nameascii":"London","scalerank":0,"pop_max":9000000},"geometry":{"type":"Point","coordinates":[-0.13,51.51]}},
+    {"type":"Feature","properties":{"featurecla":"Admin-0 capital","name":"ChiÈ™inÄƒu","nameascii":"Chisinau","scalerank":0,"pop_max":700000},"geometry":{"type":"Point","coordinates":[80.0,30.0]}},
     {"type":"Feature","properties":{"featurecla":"Populated place","name_ru":"Тестовый город","nameascii":"Test City","scalerank":5,"pop_max":100000},"geometry":{"type":"Point","coordinates":[40.0,56.0]}},
     {"type":"Feature","properties":{"featurecla":"Populated place","nameascii":"Nearby City","scalerank":5,"pop_max":90000},"geometry":{"type":"Point","coordinates":[40.1,56.0]}}
   ]
@@ -80,7 +81,7 @@ int main(int argc, char **argv)
     local.cities_type = 2;
     local.scale_rank = 10;
     local.detail_mode = "local";
-    local.max_labels = 5;
+    local.max_labels = 8;
     local.locale = "ru";
     local.avoid_overlap = true;
     local.collision_padding = 6;
@@ -89,7 +90,9 @@ int main(int argc, char **argv)
 
     if (local_stats.drawn <= 0 || local_stats.drawn > local.max_labels)
         return 4;
-    if (!contains(local_stats.drawn_labels, "Москва") || !contains(local_stats.drawn_labels, "Париж"))
+    if (!contains(local_stats.drawn_labels, "Москва") ||
+        !contains(local_stats.drawn_labels, "Париж") ||
+        !contains(local_stats.drawn_labels, "Кишинёв"))
         return 5;
     if (nonzero_pixels(fill) == 0 || nonzero_pixels(outline) == 0)
         return 6;
@@ -102,7 +105,7 @@ int main(int argc, char **argv)
     world.avoid_overlap = false;
     const map::CityLabelStats world_stats = map::drawProjectedCitiesGeoJsonStyled(
         {fixture.string()}, world_fill, world_outline, drawer, projection, world);
-    if (world_stats.resolved_mode != "world" || world_stats.drawn != 3)
+    if (world_stats.resolved_mode != "world" || world_stats.drawn != 4)
         return 7;
     if (contains(world_stats.drawn_labels, "Санкт-Петербург") || contains(world_stats.drawn_labels, "Мурманск"))
         return 8;

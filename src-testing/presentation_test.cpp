@@ -243,6 +243,16 @@ namespace
             scalar_spec.pass.acquisition_time.find("2116") != std::string::npos)
             return false;
 
+        satdump::ImageProducts unanchored;
+        unanchored.instrument_name = "amsu_a";
+        unanchored.set_product_source("Metop-C");
+        image::presentation::PresentationSpec unanchored_spec = satdump::product_presentation::build_spec(
+            unanchored, scalar, nlohmann::json(), "MSA channel 1",
+            {1788175232.0, 1788175352.0, 4621259911.0}, nlohmann::json(), "композит");
+        if (unanchored_spec.pass.acquisition_time.find("31.08.2026") == std::string::npos ||
+            unanchored_spec.pass.acquisition_time.find("2116") != std::string::npos)
+            return false;
+
         satdump::ImageCompositeCfg thematic;
         thematic.equation = "(ch1+ch2+ch3+ch4+ch5)/5";
         image::presentation::PresentationSpec thematic_spec = satdump::product_presentation::build_spec(
@@ -289,8 +299,21 @@ namespace
         products.contents.erase("pass_direction");
         image::presentation::OrientationInfo upside_down_projection = satdump::product_presentation::analyze_orientation(
             projected, products, {}, nlohmann::json(), "географическая проекция", settings);
-        return upside_down_projection.transform == image::presentation::RasterTransform::FlipVertical &&
-               upside_down_projection.north_up_verified && upside_down_projection.inferred_from_projection;
+        if (upside_down_projection.transform != image::presentation::RasterTransform::FlipVertical ||
+            !upside_down_projection.north_up_verified || !upside_down_projection.inferred_from_projection)
+            return false;
+
+        image::Image mirrored(8, 64, 128, 3);
+        image::set_metadata_proj_cfg(mirrored, {
+            {"type", "equirec"},
+            {"offset_x", 10.0},
+            {"offset_y", -40.0},
+            {"scalar_x", -0.25},
+            {"scalar_y", -0.25}});
+        image::presentation::OrientationInfo mirrored_projection = satdump::product_presentation::analyze_orientation(
+            mirrored, products, {}, nlohmann::json(), "географическая проекция", settings);
+        return mirrored_projection.transform == image::presentation::RasterTransform::FlipHorizontal &&
+               mirrored_projection.longitudes_valid;
     }
 
     bool render_and_save(const image::Image &source,

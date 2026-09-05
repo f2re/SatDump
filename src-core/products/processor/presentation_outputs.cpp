@@ -286,6 +286,23 @@ namespace satdump
                 return values[middle];
             }
 
+            double longitude_delta(double left, double right)
+            {
+                double delta = std::fmod(right - left + 540.0, 360.0) - 180.0;
+                return delta == -180.0 ? 180.0 : delta;
+            }
+
+            RasterTransform combined_transform(bool flip_vertical, bool flip_horizontal)
+            {
+                if (flip_vertical && flip_horizontal)
+                    return RasterTransform::Rotate180;
+                if (flip_vertical)
+                    return RasterTransform::FlipVertical;
+                if (flip_horizontal)
+                    return RasterTransform::FlipHorizontal;
+                return RasterTransform::None;
+            }
+
             bool infer_standard_projection(const image::Image &source, OrientationInfo &info)
             {
                 if (!image::has_metadata_proj_cfg(const_cast<image::Image &>(source)) || source.width() < 2 || source.height() < 2)
@@ -304,6 +321,8 @@ namespace satdump
 
                     std::vector<double> top_latitudes;
                     std::vector<double> bottom_latitudes;
+                    std::vector<double> left_longitudes;
+                    std::vector<double> right_longitudes;
                     const double top_y = std::max(0.0, (double)(source.height() - 1) * 0.05);
                     const double bottom_y = std::max(0.0, (double)(source.height() - 1) * 0.95);
                     for (double fraction : {0.20, 0.50, 0.80})
@@ -316,6 +335,18 @@ namespace satdump
                         if (!proj::projection_perform_inv(&projection, x, bottom_y, &lon, &lat) && std::isfinite(lat))
                             bottom_latitudes.push_back(lat);
                     }
+                    const double left_x = std::max(0.0, (double)(source.width() - 1) * 0.05);
+                    const double right_x = std::max(0.0, (double)(source.width() - 1) * 0.95);
+                    for (double fraction : {0.20, 0.50, 0.80})
+                    {
+                        const double y = (double)(source.height() - 1) * fraction;
+                        double lon = 0.0;
+                        double lat = 0.0;
+                        if (!proj::projection_perform_inv(&projection, left_x, y, &lon, &lat) && std::isfinite(lon))
+                            left_longitudes.push_back(lon);
+                        if (!proj::projection_perform_inv(&projection, right_x, y, &lon, &lat) && std::isfinite(lon))
+                            right_longitudes.push_back(lon);
+                    }
                     proj::projection_free(&projection);
 
                     if (top_latitudes.empty() || bottom_latitudes.empty())
@@ -323,6 +354,12 @@ namespace satdump
                     info.top_latitude = median(top_latitudes);
                     info.bottom_latitude = median(bottom_latitudes);
                     info.latitudes_valid = std::fabs(info.top_latitude - info.bottom_latitude) > 0.01;
+                    if (!left_longitudes.empty() && !right_longitudes.empty())
+                    {
+                        info.left_longitude = median(left_longitudes);
+                        info.right_longitude = median(right_longitudes);
+                        info.longitudes_valid = std::fabs(longitude_delta(info.left_longitude, info.right_longitude)) > 0.01;
+                    }
                     info.inferred_from_projection = info.latitudes_valid;
                     return info.latitudes_valid;
                 }
@@ -356,10 +393,14 @@ namespace satdump
 
                     double minimum_y = gcps.front().y;
                     double maximum_y = gcps.front().y;
+                    double minimum_x = gcps.front().x;
+                    double maximum_x = gcps.front().x;
                     for (const satdump::projection::GCP &gcp : gcps)
                     {
                         minimum_y = std::min(minimum_y, gcp.y);
                         maximum_y = std::max(maximum_y, gcp.y);
+                        minimum_x = std::min(minimum_x, gcp.x);
+                        maximum_x = std::max(maximum_x, gcp.x);
                     }
                     const double span = maximum_y - minimum_y;
                     if (!std::isfinite(span) || span <= 0.0)
@@ -367,8 +408,13 @@ namespace satdump
 
                     std::vector<double> top_latitudes;
                     std::vector<double> bottom_latitudes;
+                    std::vector<double> left_longitudes;
+                    std::vector<double> right_longitudes;
                     const double top_limit = minimum_y + span * 0.22;
                     const double bottom_limit = maximum_y - span * 0.22;
+                    const double x_span = maximum_x - minimum_x;
+                    const double left_limit = minimum_x + x_span * 0.22;
+                    const double right_limit = maximum_x - x_span * 0.22;
                     for (const satdump::projection::GCP &gcp : gcps)
                     {
                         if (!std::isfinite(gcp.lat))
@@ -377,6 +423,10 @@ namespace satdump
                             top_latitudes.push_back(gcp.lat);
                         if (gcp.y >= bottom_limit)
                             bottom_latitudes.push_back(gcp.lat);
+                        if (std::isfinite(gcp.lon) && gcp.x <= left_limit)
+                            left_longitudes.push_back(gcp.lon);
+                        if (std::isfinite(gcp.lon) && gcp.x >= right_limit)
+                            right_longitudes.push_back(gcp.lon);
                     }
                     if (top_latitudes.empty() || bottom_latitudes.empty())
                         return false;
@@ -384,6 +434,12 @@ namespace satdump
                     info.top_latitude = median(top_latitudes);
                     info.bottom_latitude = median(bottom_latitudes);
                     info.latitudes_valid = std::fabs(info.top_latitude - info.bottom_latitude) > 0.05;
+                    if (!left_longitudes.empty() && !right_longitudes.empty())
+                    {
+                        info.left_longitude = median(left_longitudes);
+                        info.right_longitude = median(right_longitudes);
+                        info.longitudes_valid = std::fabs(longitude_delta(info.left_longitude, info.right_longitude)) > 0.05;
+                    }
                     info.inferred_from_gcps = info.latitudes_valid;
                     return info.latitudes_valid;
                 }
@@ -489,20 +545,26 @@ namespace satdump
 
                 if (inferred)
                 {
-                    if (info.top_latitude < info.bottom_latitude)
+                    const bool flip_vertical = info.top_latitude < info.bottom_latitude;
+                    const bool flip_horizontal = info.longitudes_valid &&
+                                                 longitude_delta(info.left_longitude, info.right_longitude) < 0.0;
+                    info.transform = combined_transform(flip_vertical, flip_horizontal);
+                    if (flip_vertical && flip_horizontal)
                     {
-                        info.transform = RasterTransform::FlipVertical;
-                        info.description = "север сверху · выполнено вертикальное отражение";
+                        info.description = "север сверху, восток справа · выполнен поворот на 180°";
                         if (info.pass_direction.empty())
                             info.pass_direction = "ascending";
                     }
-                    else
+                    else if (flip_vertical)
                     {
-                        info.transform = RasterTransform::None;
-                        info.description = "север сверху · исходная ориентация корректна";
-                        if (info.pass_direction.empty())
-                            info.pass_direction = "descending";
+                        info.description = "север сверху · выполнено вертикальное отражение";
                     }
+                    else if (flip_horizontal)
+                        info.description = "восток справа · выполнено горизонтальное отражение";
+                    else
+                        info.description = "север сверху, восток справа · исходная ориентация корректна";
+                    if (info.pass_direction.empty())
+                        info.pass_direction = flip_vertical ? "ascending" : "descending";
                     info.north_up_verified = true;
                     return info;
                 }
@@ -582,6 +644,11 @@ namespace satdump
                 {
                     sidecar["orientation"]["top_latitude"] = orientation.top_latitude;
                     sidecar["orientation"]["bottom_latitude"] = orientation.bottom_latitude;
+                }
+                if (orientation.longitudes_valid)
+                {
+                    sidecar["orientation"]["left_longitude"] = orientation.left_longitude;
+                    sidecar["orientation"]["right_longitude"] = orientation.right_longitude;
                 }
 
                 sidecar["pass"] = {
@@ -729,7 +796,8 @@ namespace satdump
                                   const std::vector<double> &timestamps,
                                   const nlohmann::json &product_metadata,
                                   const std::string &source_variant,
-                                  const std::string &base_path)
+                                  const std::string &base_path,
+                                  const std::function<void(image::Image &, RasterTransform)> &decorate_oriented)
         {
             OutputResult result;
             const OutputSettings settings = resolve_output_settings(composite_preset);
@@ -738,6 +806,8 @@ namespace satdump
 
             result.orientation = analyze_orientation(source, products, timestamps, product_metadata, source_variant, settings);
             image::Image oriented = image::presentation::apply_transform(source, result.orientation.transform);
+            if (decorate_oriented)
+                decorate_oriented(oriented, result.orientation.transform);
 
             image::presentation::PresentationSpec base_spec = build_spec(
                 products,

@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <regex>
 
 namespace satdump
@@ -66,6 +67,47 @@ namespace satdump
             if (has_projection)
                 image::set_metadata_proj_cfg(img, projection);
         }
+
+        using ProjectionFunction =
+            std::function<std::pair<int, int>(double, double, int, int)>;
+
+        ProjectionFunction orient_projection(const ProjectionFunction &projection,
+                                              image::presentation::RasterTransform transform,
+                                              size_t width,
+                                              size_t height)
+        {
+            return [projection, transform, width, height](double lat, double lon,
+                                                          int map_height, int map_width)
+            {
+                std::pair<int, int> point = projection(lat, lon, map_height, map_width);
+                if (point.first < 0 || point.second < 0)
+                    return point;
+                if (transform == image::presentation::RasterTransform::FlipHorizontal ||
+                    transform == image::presentation::RasterTransform::Rotate180)
+                    point.first = (int)width - 1 - point.first;
+                if (transform == image::presentation::RasterTransform::FlipVertical ||
+                    transform == image::presentation::RasterTransform::Rotate180)
+                    point.second = (int)height - 1 - point.second;
+                return point;
+            };
+        }
+
+        std::function<void(image::Image &, image::presentation::RasterTransform)>
+        presentation_context_decorator(const nlohmann::json &settings,
+                                       const ProjectionFunction &projection,
+                                       size_t width,
+                                       size_t height)
+        {
+            return [settings, projection, width, height](
+                       image::Image &img, image::presentation::RasterTransform transform)
+            {
+                ensure_rgb_preserving_projection(img);
+                OverlayHandler handler;
+                handler.set_config(settings);
+                enable_presentation_geographic_context(handler, settings, img.width());
+                handler.apply(img, orient_projection(projection, transform, width, height));
+            };
+        }
     }
 
     image::Image projectImg(nlohmann::json proj_settings,
@@ -73,7 +115,8 @@ namespace satdump
                             image::Image &img,
                             std::vector<double> timestamps,
                             ImageProducts &img_products,
-                            bool force_presentation_context)
+                            bool force_presentation_context,
+                            image::Image *clean_result = nullptr)
     {
         reprojection::ReprojectionOperation op;
         nlohmann::json proj_cfg;
@@ -120,6 +163,9 @@ namespace satdump
                 image::equalize(*op.img);
 
         image::Image retimg = reprojection::reproject(op);
+
+        if (clean_result != nullptr)
+            *clean_result = retimg;
 
         OverlayHandler overlay_handler;
         overlay_handler.set_config(proj_settings);
@@ -172,10 +218,11 @@ namespace satdump
         // Overlay stuff
         OverlayHandler overlay_handler;
         OverlayHandler corrected_overlay_handler;
-        std::function<std::pair<int, int>(double, double, double, double)> proj_func;
-        std::function<std::pair<int, int>(double, double, double, double)> corr_proj_func;
+        ProjectionFunction proj_func;
+        ProjectionFunction corr_proj_func;
         size_t last_width = 0, last_height = 0, last_corr_width = 0, last_corr_height = 0;
         nlohmann::json last_proj_cfg;
+        std::vector<float> last_corrected_stuff;
 
         // Get instrument settings
         nlohmann::ordered_json instrument_viewer_settings;
@@ -233,7 +280,8 @@ namespace satdump
                     bool presentation_saved = false;
                     auto save_presentation = [&](const image::Image &source,
                                                  const std::string &variant,
-                                                 const std::string &base_path)
+                                                 const std::string &base_path,
+                                                 const std::function<void(image::Image &, image::presentation::RasterTransform)> &decorator = {})
                     {
                         if (!presentation_settings.enabled || presentation_saved || source.size() == 0)
                             return;
@@ -251,7 +299,8 @@ namespace satdump
                                 final_timestamps,
                                 final_metadata,
                                 variant,
-                                base_path);
+                                base_path,
+                                decorator);
                         presentation_saved = output.any();
                     };
 
@@ -277,6 +326,9 @@ namespace satdump
                     }
 
                     image::save_img(rgb_image, product_path + "/" + name);
+                    image::Image clean_presentation_source;
+                    if (presentation_settings.enabled)
+                        clean_presentation_source = geo_correct ? rgb_image_corr : rgb_image;
                     overlay_handler.set_config(composite_preset);
                     corrected_overlay_handler.set_config(composite_preset);
 
@@ -315,9 +367,11 @@ namespace satdump
                         proj_cfg["metadata"]["tle"] = img_products->get_tle();
                         proj_cfg["metadata"]["timestamps"] = final_timestamps;
 
-                        if (last_width != rgb_image.width() ||
+                        const bool projection_changed =
+                            last_width != rgb_image.width() ||
                             last_height != rgb_image.height() ||
-                            last_proj_cfg != proj_cfg)
+                            last_proj_cfg != proj_cfg;
+                        if (projection_changed)
                         {
                             overlay_handler.clear_cache();
 
@@ -331,7 +385,9 @@ namespace satdump
 
                         if (geo_correct &&
                             (last_corr_width != rgb_image_corr.width() ||
-                             last_corr_height != rgb_image_corr.height()))
+                             last_corr_height != rgb_image_corr.height() ||
+                             projection_changed ||
+                             last_corrected_stuff != corrected_stuff))
                         {
                             corrected_overlay_handler.clear_cache();
                             corr_proj_func =
@@ -358,6 +414,7 @@ namespace satdump
 
                             last_corr_width = rgb_image_corr.width();
                             last_corr_height = rgb_image_corr.height();
+                            last_corrected_stuff = corrected_stuff;
                         }
 
                         overlay_handler.apply(rgb_image, proj_func);
@@ -374,12 +431,10 @@ namespace satdump
                         return true;
                     };
 
-                    // Non-projected presentation products receive context before
-                    // rendering. Projected products receive it after reprojection,
-                    // so city labels and boundaries are never resampled or drawn twice.
+                    // Keep a clean raster for presentation. Its geographic context is
+                    // drawn after orientation so labels remain readable.
                     if (!has_project)
-                        base_context_applied =
-                            apply_base_context(presentation_settings.enabled);
+                        base_context_applied = apply_base_context(presentation_settings.enabled);
 
                     if (!has_project)
                     {
@@ -392,9 +447,15 @@ namespace satdump
                                     ? "геокоррекция · контуры, береговая линия и города"
                                     : "геокоррекция · геопривязка недоступна";
                             save_presentation(
-                                rgb_image_corr,
+                                clean_presentation_source,
                                 variant,
-                                product_path + "/" + name + suffix);
+                                product_path + "/" + name + suffix,
+                                base_context_applied
+                                    ? presentation_context_decorator(
+                                          composite_preset, corr_proj_func,
+                                          clean_presentation_source.width(),
+                                          clean_presentation_source.height())
+                                    : std::function<void(image::Image &, image::presentation::RasterTransform)>());
                         }
                         else
                         {
@@ -405,32 +466,50 @@ namespace satdump
                                     ? "композит · контуры, береговая линия и города"
                                     : "композит · геопривязка недоступна";
                             save_presentation(
-                                rgb_image,
+                                clean_presentation_source,
                                 variant,
-                                product_path + "/" + name + suffix);
+                                product_path + "/" + name + suffix,
+                                base_context_applied
+                                    ? presentation_context_decorator(
+                                          composite_preset, proj_func,
+                                          clean_presentation_source.width(),
+                                          clean_presentation_source.height())
+                                    : std::function<void(image::Image &, image::presentation::RasterTransform)>());
                         }
                     }
 
                     if (has_project)
                     {
                         logger->debug("Reprojecting composite %s", name.c_str());
+                        image::Image clean_projected;
                         image::Image retimg = projectImg(
                             composite_preset["project"],
                             final_metadata,
                             rgb_image,
                             final_timestamps,
                             *img_products,
-                            presentation_settings.enabled);
+                            presentation_settings.enabled,
+                            presentation_settings.enabled ? &clean_projected : nullptr);
                         std::string fmt = "";
                         if (composite_preset["project"].contains("img_format"))
                             fmt += composite_preset["project"]["img_format"].get<std::string>();
                         image::save_img(
                             retimg,
                             product_path + "/rgb_" + name + "_projected" + fmt);
+                        ProjectionFunction projected_func;
+                        if (clean_projected.size() > 0 && image::has_metadata_proj_cfg(clean_projected))
+                            projected_func = satdump::reprojection::setupProjectionFunction(
+                                clean_projected.width(), clean_projected.height(),
+                                image::get_metadata_proj_cfg(clean_projected));
                         save_presentation(
-                            retimg,
+                            projected_func ? clean_projected : retimg,
                             "географическая проекция · контуры, береговая линия и города",
-                            product_path + "/rgb_" + name + "_projected");
+                            product_path + "/rgb_" + name + "_projected",
+                            projected_func
+                                ? presentation_context_decorator(
+                                      composite_preset["project"], projected_func,
+                                      clean_projected.width(), clean_projected.height())
+                                : std::function<void(image::Image &, image::presentation::RasterTransform)>());
 
                         // Preserve the swath-view map product as well, but only after
                         // projection has consumed the clean raster. This keeps labels
@@ -453,9 +532,16 @@ namespace satdump
                         const std::string suffix =
                             base_context_applied ? "_map" : "";
                         save_presentation(
-                            rgb_image,
+                            clean_presentation_source,
                             variant,
-                            product_path + "/" + name + suffix);
+                            product_path + "/" + name + suffix,
+                            base_context_applied
+                                ? presentation_context_decorator(
+                                      composite_preset,
+                                      geo_correct ? corr_proj_func : proj_func,
+                                      clean_presentation_source.width(),
+                                      clean_presentation_source.height())
+                                : std::function<void(image::Image &, image::presentation::RasterTransform)>());
                     }
 
                     // Free corrected image memory after all presentation fallbacks.
@@ -518,13 +604,15 @@ namespace satdump
                     const product_presentation::OutputSettings output_settings =
                         product_presentation::resolve_output_settings(channel_preset);
 
+                    image::Image clean_projected;
                     image::Image retimg = projectImg(
                         channel_preset,
                         channel_metadata,
                         img.image,
                         channel_timestamps,
                         *img_products,
-                        output_settings.enabled);
+                        output_settings.enabled,
+                        output_settings.enabled ? &clean_projected : nullptr);
                     std::string fmt = "";
                     if (channel_preset.contains("img_format"))
                         fmt += channel_preset["img_format"].get<std::string>();
@@ -535,10 +623,15 @@ namespace satdump
 
                     if (output_settings.enabled && ensure_presentation_font())
                     {
+                        ProjectionFunction projected_func;
+                        if (clean_projected.size() > 0 && image::has_metadata_proj_cfg(clean_projected))
+                            projected_func = satdump::reprojection::setupProjectionFunction(
+                                clean_projected.width(), clean_projected.height(),
+                                image::get_metadata_proj_cfg(clean_projected));
                         ImageCompositeCfg channel_cfg;
                         channel_cfg.channels = "ch" + img.channel_name;
                         product_presentation::save_outputs(
-                            retimg,
+                            projected_func ? clean_projected : retimg,
                             presentation_text,
                             *img_products,
                             channel_cfg,
@@ -549,7 +642,12 @@ namespace satdump
                             "географическая проекция · одиночный канал · "
                             "контуры, береговая линия и города",
                             product_path + "/channel_" + img.channel_name +
-                                "_projected");
+                                "_projected",
+                            projected_func
+                                ? presentation_context_decorator(
+                                      channel_preset, projected_func,
+                                      clean_projected.width(), clean_projected.height())
+                                : std::function<void(image::Image &, image::presentation::RasterTransform)>());
                     }
                 }
                 catch (std::exception &e)

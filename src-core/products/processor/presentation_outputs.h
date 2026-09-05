@@ -4,6 +4,7 @@
 #include "common/image/presentation_layout.h"
 
 #include <string>
+#include <functional>
 
 namespace satdump
 {
@@ -49,6 +50,7 @@ namespace satdump
             const std::vector<double> &timestamps,
             const nlohmann::json &product_metadata,
             const std::string &source_variant,
-            const std::string &base_path);
+            const std::string &base_path,
+            const std::function<void(image::Image &, image::presentation::RasterTransform)> &decorate_oriented = {});
     }
 }

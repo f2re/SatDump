@@ -705,16 +705,42 @@ namespace satdump
             {
                 const double anchor = products.has_product_timestamp() ? (double)products.get_product_timestamp() : NAN;
                 constexpr double maximum_distance = 6.0 * 60.0 * 60.0;
-                double minimum = INFINITY;
-                double maximum = -INFINITY;
+                std::vector<double> valid;
+                valid.reserve(timestamps.size());
                 for (double timestamp : timestamps)
-                {
                     if (std::isfinite(timestamp) && timestamp > 0.0 &&
                         (!std::isfinite(anchor) || std::fabs(timestamp - anchor) <= maximum_distance))
+                        valid.push_back(timestamp);
+
+                // Without a product timestamp, retain the densest pass-sized time
+                // cluster. A single corrupted counter must not stretch a pass across
+                // years or centuries in the presentation header.
+                if (!std::isfinite(anchor) && !valid.empty())
+                {
+                    std::sort(valid.begin(), valid.end());
+                    size_t best_begin = 0;
+                    size_t best_end = 0;
+                    size_t begin = 0;
+                    for (size_t end = 0; end < valid.size(); end++)
                     {
-                        minimum = std::min(minimum, timestamp);
-                        maximum = std::max(maximum, timestamp);
+                        while (valid[end] - valid[begin] > maximum_distance)
+                            begin++;
+                        if (end - begin > best_end - best_begin)
+                        {
+                            best_begin = begin;
+                            best_end = end;
+                        }
                     }
+                    valid = std::vector<double>(valid.begin() + best_begin,
+                                                valid.begin() + best_end + 1);
+                }
+
+                double minimum = INFINITY;
+                double maximum = -INFINITY;
+                for (double timestamp : valid)
+                {
+                    minimum = std::min(minimum, timestamp);
+                    maximum = std::max(maximum, timestamp);
                 }
                 if (!std::isfinite(minimum) && std::isfinite(anchor))
                     minimum = maximum = anchor;

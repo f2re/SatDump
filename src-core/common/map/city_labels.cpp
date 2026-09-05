@@ -164,6 +164,15 @@ namespace map
             return false;
         }
 
+        bool looks_like_mojibake(const std::string &value)
+        {
+            return value.find(u8"Ã") != std::string::npos ||
+                   value.find(u8"Ä") != std::string::npos ||
+                   value.find(u8"Å") != std::string::npos ||
+                   value.find(u8"È") != std::string::npos ||
+                   value.find(u8"�") != std::string::npos;
+        }
+
         const std::unordered_map<std::string, std::string> &russian_names()
         {
             static const std::unordered_map<std::string, std::string> names = {
@@ -222,7 +231,10 @@ namespace map
                 {"ottawa", "Оттава"}, {"mexico city", "Мехико"},
                 {"havana", "Гавана"}, {"brasilia", "Бразилиа"},
                 {"buenos aires", "Буэнос-Айрес"}, {"santiago", "Сантьяго"},
-                {"lima", "Лима"}, {"beijing", "Пекин"}, {"tokyo", "Токио"},
+                {"lima", "Лима"}, {"chisinau", "Кишинёв"},
+                {"kishinev", "Кишинёв"}, {"balti", "Бельцы"},
+                {"dubasari", "Дубоссары"}, {"tiraspol", "Тирасполь"},
+                {"beijing", "Пекин"}, {"tokyo", "Токио"},
                 {"seoul", "Сеул"}, {"pyongyang", "Пхеньян"},
                 {"ulaanbaatar", "Улан-Батор"}, {"new delhi", "Нью-Дели"},
                 {"delhi", "Дели"}, {"tehran", "Тегеран"},
@@ -330,8 +342,9 @@ namespace map
                 if (!visited.insert(key).second)
                     continue;
                 source = property_string(properties, field);
-                if (!source.empty())
+                if (!source.empty() && !looks_like_mojibake(source))
                     break;
+                source.clear();
             }
             if (source.empty())
                 return "";

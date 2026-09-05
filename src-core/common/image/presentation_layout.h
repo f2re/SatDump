@@ -36,11 +36,14 @@ namespace image
             bool north_up_requested = true;
             bool north_up_verified = false;
             bool latitudes_valid = false;
+            bool longitudes_valid = false;
             bool inferred_from_projection = false;
             bool inferred_from_gcps = false;
             bool inferred_from_pass_direction = false;
             double top_latitude = 0.0;
             double bottom_latitude = 0.0;
+            double left_longitude = 0.0;
+            double right_longitude = 0.0;
             std::string pass_direction;
             std::string description;
         };
