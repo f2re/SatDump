@@ -1,0 +1,260 @@
+name: Release 1.2.2 - Astra 1.7 offline presentation
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: "Опубликовать GitHub Release после всех проверок"
+        required: false
+        default: false
+        type: boolean
+      release_tag:
+        description: "Тег релиза"
+        required: true
+        default: "v1.2.2-astra17-presentation"
+        type: string
+      run_astra_ubi17:
+        description: "Дополнительно собрать presentation tests внутри официального Astra UBI 1.7"
+        required: false
+        default: false
+        type: boolean
+  push:
+    branches:
+      - release/1.2.2
+    tags:
+      - "v1.2.2-astra17-presentation*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-astra17-presentation-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_VERSION: "1.2.2"
+  RELEASE_TAG_DEFAULT: "v1.2.2-astra17-presentation"
+  RELEASE_ARTIFACT: "satdump-1.2.2-astra17-desktop-presentation-release"
+  BUNDLE_ARTIFACT: "satdump-1.2.2-astra17-desktop-glibc228"
+  BUNDLE_ARCHIVE: "satdump-1.2.2-astra17-desktop-glibc228-x86_64.tar.gz"
+
+jobs:
+  presentation-ci:
+    name: Presentation semantic/render gate
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        startsWith(github.ref, 'refs/tags/v1.2.2-astra17-presentation') ||
+        contains(github.event.head_commit.message, '[astra-release]')
+      }}
+    uses: ./.github/workflows/presentation-1.2.2.yml
+    with:
+      run_astra_ubi17: ${{ inputs.run_astra_ubi17 || false }}
+
+  astra-bundle:
+    name: Astra 1.7 desktop offline bundle
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        startsWith(github.ref, 'refs/tags/v1.2.2-astra17-presentation') ||
+        contains(github.event.head_commit.message, '[astra-release]')
+      }}
+    uses: ./.github/workflows/astra17-bundle.yml
+    with:
+      profile: desktop
+
+  release-gate:
+    name: Assemble release payload
+    needs:
+      - presentation-ci
+      - astra-bundle
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - name: Download validated Astra desktop bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BUNDLE_ARTIFACT }}
+          path: downloaded
+
+      - name: Verify archive and presentation payload
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          archive="$(find downloaded -type f -name "${BUNDLE_ARCHIVE}" -print -quit)"
+          test -s "${archive}"
+          test -s "${archive}.sha256"
+          (
+            cd "$(dirname "${archive}")"
+            sha256sum -c "$(basename "${archive}").sha256"
+          )
+
+          rm -rf extracted
+          mkdir -p extracted
+          tar -xzf "${archive}" -C extracted
+          bundle="$(find extracted -mindepth 1 -maxdepth 1 -type d -name 'satdump-1.2.2-astra17-desktop-*' -print -quit)"
+          test -d "${bundle}"
+
+          test -x "${bundle}/satdump"
+          test -x "${bundle}/satdump-ui"
+          test -x "${bundle}/install.sh"
+          test -s "${bundle}/ASTRA17-MANIFEST.txt"
+          test -s "${bundle}/SHA256SUMS"
+          test -s "${bundle}/README.ru.md"
+          test -s "${bundle}/share/satdump/resources/presentation/composite_profiles_ru.json"
+          test -s "${bundle}/share/satdump/resources/fonts/Roboto-Medium.ttf"
+          grep -Fq 'Full / Presentation' "${bundle}/README.ru.md"
+          grep -Fq 'Minimal / Compact' "${bundle}/README.ru.md"
+          grep -q '^glibc_build=2.28$' "${bundle}/ASTRA17-MANIFEST.txt"
+
+          printf 'ARCHIVE=%s\n' "$(readlink -f "${archive}")" >> "${GITHUB_ENV}"
+          printf 'BUNDLE_DIR=%s\n' "$(readlink -f "${bundle}")" >> "${GITHUB_ENV}"
+
+      - name: Assemble deterministic release metadata
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -rf release
+          mkdir -p release
+
+          cp "${ARCHIVE}" "release/${BUNDLE_ARCHIVE}"
+          cp "${ARCHIVE}.sha256" "release/${BUNDLE_ARCHIVE}.sha256"
+          cp "${BUNDLE_DIR}/ASTRA17-MANIFEST.txt" release/ASTRA17-MANIFEST.txt
+          cp "${BUNDLE_DIR}/SHA256SUMS" release/BUNDLE-SHA256SUMS
+
+          archive_sha="$(sha256sum "release/${BUNDLE_ARCHIVE}" | awk '{print $1}')"
+          presentation_sha="$(sha256sum "${BUNDLE_DIR}/share/satdump/resources/presentation/composite_profiles_ru.json" | awk '{print $1}')"
+          required_glibc="$(awk -F= '$1=="glibc_required" {print $2}' release/ASTRA17-MANIFEST.txt)"
+
+          cat > release/RELEASE-MANIFEST.txt <<EOF2
+          product=SatDump
+          version=${RELEASE_VERSION}
+          git_commit=${GITHUB_SHA}
+          target_os=Astra Linux 1.7
+          architecture=x86_64
+          profile=desktop
+          build_glibc=2.28
+          required_glibc=${required_glibc}
+          dependency_mode=self-contained non-glibc runtime closure
+          offline_runtime_test=required
+          presentation_mode=Full / Presentation; Minimal / Compact
+          presentation_profile_sha256=${presentation_sha}
+          archive=${BUNDLE_ARCHIVE}
+          archive_sha256=${archive_sha}
+          EOF2
+
+          cat > release/RELEASE_NOTES.md <<'EOF2'
+          # SatDump 1.2.2 — Astra Linux 1.7 offline + Presentation
+
+          Специализированный desktop-релиз SatDump 1.2.2 для автономной эксплуатации на Astra Linux 1.7 x86_64.
+
+          Что входит:
+          - `satdump-ui` и `satdump`;
+          - desktop-плагины текущего профиля сборки;
+          - ресурсы SatDump и презентационные профили;
+          - режимы **Full / Presentation** и **Minimal / Compact**;
+          - замкнутый набор несистемных runtime-библиотек;
+          - локальные манифесты и SHA-256 для проверки целостности;
+          - `install.sh`, при этом установка необязательна — архив переносимый.
+
+          Релиз публикуется только после двух независимых gate: presentation semantic/render CI и сборки desktop-бандла на glibc 2.28 с последующим запуском на официальном Astra Linux UBI 1.7. Runtime smoke test выполняется с `--network none`, поэтому для установки, загрузки интерфейса и запуска SatDump внешняя сеть не требуется. Функции, которые сами загружают свежие TLE или иные внешние данные, при их использовании по-прежнему требуют доступ к соответствующему источнику либо заранее подготовленные локальные данные.
+
+          Быстрый запуск:
+          ```bash
+          sha256sum -c satdump-1.2.2-astra17-desktop-glibc228-x86_64.tar.gz.sha256
+          tar -xzf satdump-1.2.2-astra17-desktop-glibc228-x86_64.tar.gz
+          cd satdump-1.2.2-astra17-desktop-glibc228-x86_64
+          ./satdump-ui
+          ```
+
+          Для презентационного экспорта используйте **Full / Presentation**; для компактных плашек — **Minimal / Compact**.
+          EOF2
+
+          sed -i 's/^          //' release/RELEASE-MANIFEST.txt release/RELEASE_NOTES.md
+          (
+            cd release
+            sha256sum \
+              "${BUNDLE_ARCHIVE}" \
+              ASTRA17-MANIFEST.txt \
+              BUNDLE-SHA256SUMS \
+              RELEASE-MANIFEST.txt \
+              > SHA256SUMS.release
+          )
+
+          echo '===== RELEASE-MANIFEST.txt ====='
+          cat release/RELEASE-MANIFEST.txt
+
+      - name: Upload release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.RELEASE_ARTIFACT }}
+          path: release/
+          if-no-files-found: error
+          retention-days: 90
+
+  publish-release:
+    name: Publish GitHub Release
+    needs:
+      - release-gate
+    if: >-
+      ${{
+        (github.event_name == 'workflow_dispatch' && inputs.publish_release == true) ||
+        startsWith(github.ref, 'refs/tags/v1.2.2-astra17-presentation') ||
+        (github.event_name == 'push' && contains(github.event.head_commit.message, '[astra-release]'))
+      }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download release payload
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.RELEASE_ARTIFACT }}
+          path: release
+
+      - name: Publish or replace release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            tag="${GITHUB_REF_NAME}"
+          elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            tag="${{ inputs.release_tag }}"
+          else
+            tag="${RELEASE_TAG_DEFAULT}"
+          fi
+
+          [[ "${tag}" == v1.2.2-astra17-presentation* ]] || {
+            echo "Недопустимый release tag: ${tag}" >&2
+            exit 2
+          }
+
+          title="SatDump 1.2.2 — Astra Linux 1.7 offline + Presentation"
+          assets=(
+            "release/${BUNDLE_ARCHIVE}"
+            "release/${BUNDLE_ARCHIVE}.sha256"
+            release/ASTRA17-MANIFEST.txt
+            release/BUNDLE-SHA256SUMS
+            release/RELEASE-MANIFEST.txt
+            release/SHA256SUMS.release
+          )
+
+          if gh release view "${tag}" >/dev/null 2>&1; then
+            gh release edit "${tag}" \
+              --title "${title}" \
+              --notes-file release/RELEASE_NOTES.md
+            gh release upload "${tag}" "${assets[@]}" --clobber
+          else
+            gh release create "${tag}" \
+              --target "${GITHUB_SHA}" \
+              --title "${title}" \
+              --notes-file release/RELEASE_NOTES.md \
+              "${assets[@]}"
+          fi
+
+          gh release view "${tag}" --json tagName,name,url,isDraft,isPrerelease
