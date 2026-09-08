@@ -1,0 +1,67 @@
+name: Documentation - links, examples and offline handbook
+
+on:
+  push:
+    branches: [release/1.2.2]
+    paths:
+      - 'README.md'
+      - 'CHANGELOG.md'
+      - 'CONTRIBUTING.md'
+      - 'docs/**'
+      - '**/README.md'
+      - 'scripts/docs/**'
+      - 'scripts/station/pack.py'
+      - 'tests/docs/**'
+      - '.github/workflows/documentation.yml'
+  pull_request:
+    branches: [release/1.2.2]
+    paths:
+      - '**/*.md'
+      - 'docs/**'
+      - 'scripts/docs/**'
+      - 'scripts/station/pack.py'
+      - 'tests/docs/**'
+      - '.github/workflows/documentation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: documentation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  handbook:
+    name: Validate source and exported handbook
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test documentation tools
+        run: |
+          python3 -m unittest discover -s tests/docs -v
+          python3 - <<'PY'
+          import ast
+          from pathlib import Path
+          for root in ['scripts/docs', 'tests/docs']:
+              for path in Path(root).rglob('*.py'):
+                  ast.parse(path.read_text(encoding='utf-8'), filename=str(path), feature_version=(3, 5))
+          PY
+      - name: Check curated source documentation
+        run: python3 scripts/docs/check.py
+      - name: Export standalone offline handbook
+        run: |
+          python3 scripts/docs/export.py --output "$RUNNER_TEMP/satdump-documentation" --revision "$GITHUB_SHA"
+          python3 scripts/docs/check.py --root "$RUNNER_TEMP/satdump-documentation"
+      - name: Verify embedded package entry points
+        run: |
+          python3 scripts/docs/export.py --output "$RUNNER_TEMP/satdump-embedded-manual" --revision "$GITHUB_SHA" --package
+          python3 scripts/docs/check.py --root "$RUNNER_TEMP/satdump-embedded-manual"
+      - name: Upload documentation only - not a binary release
+        uses: actions/upload-artifact@v4
+        with:
+          name: satdump-documentation-${{ github.sha }}
+          path: ${{ runner.temp }}/satdump-documentation/
+          if-no-files-found: error
+          retention-days: 30

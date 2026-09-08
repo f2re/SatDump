@@ -1,6 +1,45 @@
-# Docs
+# 📚 Документация SatDump · Astra
 
-Most documentation has been moved to [https://docs.satdump.org/](https://docs.satdump.org/). Some technical docs remain here:
+[← Главная](../README.md) · [Выбор релиза](ru/RELEASES.md) · [Справочник станции](ru/station/README.md)
 
-- [Projection](Projection.md)
-- [ZIQ technical notes](ZIQ.md)
+Документация организована **по задачам**, а не по истории появления скриптов. Начните с одного маршрута; инструкции по станции не следует смешивать с установкой отдельного движка.
+
+## 🚦 Три маршрута
+
+| Кто читает | Последовательность |
+|---|---|
+| Оператор новой станции | [Выбрать пакет](ru/RELEASES.md) → [установить](ru/station/INSTALL.md) → [подать данные](ru/station/INPUTS.md) → [открыть сайт](ru/station/WEBSITE.md) |
+| Администратор | [Архитектура](ru/station/DATAFLOW.md) → [настройки](ru/station/CONFIGURATION.md) → [эксплуатация](ru/station/OPERATIONS.md) → [диагностика](ru/station/TROUBLESHOOTING.md) |
+| Разработчик / инженер сборки | [Внесение изменений](../CONTRIBUTING.md) → [сборка и выпуск](ru/station/BUILD_RELEASE.md) → [контракты и команды](ru/station/REFERENCE.md) |
+
+## 🛰️ Станция Astra 1.6
+
+Полный учебный маршрут, таблицы параметров и технический справочник собраны в [отдельном оглавлении](ru/station/README.md). Старые адреса [STATION_ASTRA16.md](ru/STATION_ASTRA16.md) и [STATION_OPERATIONS.md](ru/STATION_OPERATIONS.md) сохранены как короткие точки входа.
+
+## 🔬 Движок, картография и научное оформление
+
+| Раздел | Документы | Область применения |
+|---|---|---|
+| Движок: установка | [Astra](ru/INSTALL_ASTRA.md), [переносимый glibc224](ru/PORTABLE_ASTRA.md), [Desktop glibc228](ru/ASTRA17_BUNDLE.md) | Сам SatDump, не полный установщик станции |
+| Движок: сборка и запуск | [Сборка](ru/BUILD.md), [запуск](ru/RUN.md), [развёртывание](ru/DEPLOYMENT.md), [диагностика](ru/TROUBLESHOOTING.md) | Нативные/portable сценарии SatDump |
+| Настройки движка | [Конфигурация](ru/CONFIGURATION.md) | `satdump_cfg.json` и пользовательские настройки |
+| Оформление продуктов | [Принципы](ru/PRESENTATION.md), [макеты](ru/PRESENTATION_LAYOUTS.md), [семантика](ru/PRESENTATION_SEMANTICS.md) | Подписи, каналы, физические шкалы, PNG/JSON |
+| Картография | [Наложения](ru/MAP_OVERLAYS.md), [проекции](Projection.md) | Карта, города, геометрия; описание проекций частично на английском |
+| Контроль качества | [Приёмка Astra](ru/ASTRA_VALIDATION.md), [ревью оформления](ru/REVIEW_PRESENTATION.md), [исправление изображений](ru/PRESENTATION_IMAGE_REPAIR.md) | Методика проверки, не гарантия результата конкретного релиза |
+| Научный обмен | [Level-1C / SatProf](ru/LEVEL1C_SATPROF.md), [ZIQ](ZIQ.md) | Выгрузка измерений и формат записи |
+
+> [!NOTE]
+> В старых материалах может описываться паспорт `satdump.presentation/1`. Текущий renderer этой ветки формирует `/2`; галерея принимает обе версии. Конкретные поля проверяйте по [контрактам станции](ru/station/REFERENCE.md) и исходному JSON продукта.
+
+## 🧰 Поддержка документации
+
+[Стиль и правила](STYLE_GUIDE.md) · [Шаблон описания релиза](RELEASE_TEMPLATE.md) · [Журнал изменений](../CHANGELOG.md) · [Навигационный манифест](navigation.json)
+
+Проверка ссылок и примеров выполняется отдельным workflow **Documentation**. Он не собирает SatDump и не выдаёт результат документационных тестов за готовность бинарного пакета. [Как проверять и экспортировать справочник →](STYLE_GUIDE.md)
+
+<details>
+<summary>🗄️ Исторические материалы</summary>
+
+[Предыдущий корневой README](ru/README_LEGACY_1.2.2.md) сохранён для истории. Это не инструкция по текущей станции; его прежние относительные пути могут отражать старое расположение файла. Для текущих команд используйте маршруты выше. [Прежняя документация upstream](pages/) сохранена без переноса исходников.
+
+</details>

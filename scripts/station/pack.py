@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tarfile
 from pathlib import Path
 
@@ -110,12 +111,15 @@ def pack(args):
     bundle.mkdir()
     shutil.copytree(str(engine), str(bundle / 'engine'), symlinks=True)
     shutil.copytree(str(runtime), str(bundle / 'runtime'), symlinks=True)
-    for relative in ('services/station', 'scripts/station', 'config/station', 'tests/station'):
+    for relative in ('services/station', 'scripts/station', 'scripts/docs', 'config/station', 'tests/station'):
         shutil.copytree(str(ROOT / relative), str(bundle / relative),
                         ignore=shutil.ignore_patterns('__pycache__', '*.pyc', '*.pyo'))
     shutil.copyfile(str(ROOT / 'station.sh'), str(bundle / 'station.sh'))
-    shutil.copyfile(str(ROOT / 'docs/ru/STATION_ASTRA16.md'), str(bundle / 'START_HERE.ru.md'))
-    shutil.copyfile(str(ROOT / 'docs/ru/STATION_OPERATIONS.md'), str(bundle / 'OPERATIONS.ru.md'))
+    # One canonical manual: export adjusts source-relative links for the package.
+    # It never downloads files or executes the documented example commands.
+    subprocess.check_call([sys.executable, str(ROOT / 'scripts/docs/export.py'),
+                           '--root', str(ROOT), '--output', str(bundle),
+                           '--revision', revision, '--package'])
     shutil.copyfile(str(ROOT / 'LICENSE'), str(bundle / 'LICENSE'))
     with open(str(bundle / 'install.sh'), 'w') as stream:
         stream.write('#!/usr/bin/env bash\nset -Eeuo pipefail\nROOT="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"\nexec bash "$ROOT/scripts/station/install.sh" "$@"\n')
