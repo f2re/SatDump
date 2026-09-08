@@ -23,6 +23,13 @@ on:
       - release/1.2.2
     tags:
       - "v1.2.2-astra17-presentation*"
+  pull_request:
+    branches:
+      - release/1.2.2
+    paths:
+      - ".github/workflows/release-astra17-presentation.yml"
+      - ".github/workflows/astra17-bundle.yml"
+      - ".github/workflows/presentation-1.2.2.yml"
 
 permissions:
   contents: read
@@ -39,6 +46,24 @@ env:
   BUNDLE_ARCHIVE: "satdump-1.2.2-astra17-desktop-glibc228-x86_64.tar.gz"
 
 jobs:
+  workflow-contract:
+    name: Validate release workflow contract
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check reusable gates and presentation payload
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -q '^  workflow_call:' .github/workflows/presentation-1.2.2.yml
+          grep -q '^  workflow_call:' .github/workflows/astra17-bundle.yml
+          test -s resources/presentation/composite_profiles_ru.json
+          test -s docs/ru/PRESENTATION.md
+          grep -Fq 'Full / Presentation' scripts/astra/astra17/make-bundle.sh
+          grep -Fq 'Minimal / Compact' scripts/astra/astra17/make-bundle.sh
+
   presentation-ci:
     name: Presentation semantic/render gate
     if: >-
