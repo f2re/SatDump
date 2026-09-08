@@ -31,8 +31,10 @@ class TestStation(unittest.TestCase):
         self.inbox.mkdir()
         self.data = self.tmp / 'data'
         self.config = self.tmp / 'station.json'
+        # Adapter tests substitute native() explicitly. They must not depend on a
+        # previously installed engine (Path.resolve is strict on Python 3.5).
         self.cfg = {'schema': 'satdump.station/1', 'data_dir': str(self.data), 'settle_seconds': 0,
-                    'min_free_mb': 0, 'max_attempts': 2,
+                    'engine': sys.executable, 'min_free_mb': 0, 'max_attempts': 2,
                     'sources': [{'id': 'test', 'path': str(self.inbox), 'kind': 'image'}]}
         station.atomic_json(self.config, self.cfg)
         station.atomic_json(self.tmp / 'processing.json', {'satdump_general': {'presentation_enabled': {'value': True}}})
@@ -112,7 +114,7 @@ class TestStation(unittest.TestCase):
         self.assertEqual([], self.catalog())
 
     def test_changed_input_resets_settle_window(self):
-        path = self.save()
+        self.save()
         self.worker.scan()
         self.save(color=(10, 10, 10))
         self.worker.scan()
@@ -282,6 +284,13 @@ class TestStation(unittest.TestCase):
         (payload / 'link').symlink_to('/etc/passwd')
         with self.assertRaises(ValueError):
             list(pack.paths(payload))
+
+    def test_pack_creates_output_before_resolving(self):
+        target = self.tmp / 'new' / 'nested-output'
+        self.assertFalse(target.exists())
+        self.assertEqual(target.resolve() if target.exists() else target,
+                         pack.output_directory(str(target)))
+        self.assertTrue(target.is_dir())
 
 
 if __name__ == '__main__':

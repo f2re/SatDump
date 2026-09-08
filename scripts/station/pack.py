@@ -24,6 +24,13 @@ def sha256(path):
     return digest.hexdigest()
 
 
+def output_directory(value):
+    # Python 3.5 Path.resolve() is strict: create the destination before resolving.
+    path = Path(os.path.abspath(value))
+    path.mkdir(parents=True, exist_ok=True)
+    return path.resolve()
+
+
 def paths(root):
     for path in sorted(root.rglob('*'), key=str):
         if path.is_symlink():
@@ -96,8 +103,7 @@ def pack(args):
     if not re.match(r'^[0-9a-f]{12,40}$', revision):
         raise ValueError('revision must be the built Git commit SHA')
     release_id = '1.2.2-astra16-station-' + revision[:12]
-    output_dir = Path(args.output).resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = output_directory(args.output)
     bundle = output_dir / ('satdump-' + release_id + '-x86_64')
     if bundle.exists():
         raise ValueError('Output already exists; use a clean output directory: ' + str(bundle))
@@ -109,6 +115,7 @@ def pack(args):
                         ignore=shutil.ignore_patterns('__pycache__', '*.pyc', '*.pyo'))
     shutil.copyfile(str(ROOT / 'station.sh'), str(bundle / 'station.sh'))
     shutil.copyfile(str(ROOT / 'docs/ru/STATION_ASTRA16.md'), str(bundle / 'START_HERE.ru.md'))
+    shutil.copyfile(str(ROOT / 'docs/ru/STATION_OPERATIONS.md'), str(bundle / 'OPERATIONS.ru.md'))
     shutil.copyfile(str(ROOT / 'LICENSE'), str(bundle / 'LICENSE'))
     with open(str(bundle / 'install.sh'), 'w') as stream:
         stream.write('#!/usr/bin/env bash\nset -Eeuo pipefail\nROOT="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"\nexec bash "$ROOT/scripts/station/install.sh" "$@"\n')

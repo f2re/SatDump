@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Only an explicitly specified trusted SSH destination. Never disable host-key checks.
 set -Eeuo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ARCHIVE="${1:-}"
 HOST="${2:-}"
 [[ -f "$ARCHIVE" && "$HOST" =~ ^[A-Za-z0-9_.@:-]+$ && "$HOST" != -* ]] || {
@@ -9,8 +10,15 @@ HOST="${2:-}"
 [[ -f "$ARCHIVE.sha256" ]] || { echo 'Missing archive checksum' >&2; exit 1; }
 (cd "$(dirname "$ARCHIVE")"; sha256sum -c "$(basename "$ARCHIVE").sha256")
 SHA="$(sha256sum "$ARCHIVE" | awk '{print $1}')"
+PYTHON=python3
+[[ ! -x "$ROOT/runtime/python" ]] || PYTHON="$ROOT/runtime/python"
+SSH_OPTIONS=(-o BatchMode=yes -o StrictHostKeyChecking=yes)
+if [[ -n "${SSH_KNOWN_HOSTS:-}" ]]; then
+    [[ -r "$SSH_KNOWN_HOSTS" ]] || { echo 'Known-hosts file is unreadable' >&2; exit 1; }
+    SSH_OPTIONS+=(-o "UserKnownHostsFile=$SSH_KNOWN_HOSTS")
+fi
 # Refuse unsafe archives before transferring. Packages are trusted administrator input.
-python3 - "$ARCHIVE" <<'PY'
+"$PYTHON" - "$ARCHIVE" <<'PY'
 import sys,tarfile,posixpath
 with tarfile.open(sys.argv[1]) as archive:
     for m in archive:
@@ -22,10 +30,10 @@ with tarfile.open(sys.argv[1]) as archive:
             if target.startswith('/') or target.split('/')[0] != name.split('/')[0]:
                 raise SystemExit('Unsafe archive link')
 PY
-remote="$(ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$HOST" 'mktemp -d /tmp/satdump-deploy.XXXXXXXX')"
+remote="$(ssh "${SSH_OPTIONS[@]}" "$HOST" 'mktemp -d /tmp/satdump-deploy.XXXXXXXX')"
 [[ "$remote" =~ ^/tmp/satdump-deploy\.[A-Za-z0-9]+$ ]] || { echo 'Unexpected remote directory' >&2; exit 1; }
-scp -o BatchMode=yes -o StrictHostKeyChecking=yes "$ARCHIVE" "$HOST:$remote/package.tar.gz"
-ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$HOST" /bin/bash -s -- "$remote" "$SHA" <<'REMOTE'
+scp "${SSH_OPTIONS[@]}" "$ARCHIVE" "$HOST:$remote/package.tar.gz"
+ssh "${SSH_OPTIONS[@]}" "$HOST" /bin/bash -s -- "$remote" "$SHA" <<'REMOTE'
 set -Eeuo pipefail
 cd "$1"
 printf '%s  package.tar.gz\n' "$2" | sha256sum -c -

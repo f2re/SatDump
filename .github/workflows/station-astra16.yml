@@ -12,7 +12,7 @@ on:
       - 'tests/station/**'
       - 'src-cli/**'
       - 'scripts/astra/portable/**'
-      - 'docs/ru/STATION_ASTRA16.md'
+      - 'docs/ru/STATION*.md'
       - '.github/workflows/station-astra16.yml'
   pull_request:
     branches: [release/1.2.2]
@@ -36,7 +36,7 @@ permissions:
 
 concurrency:
   group: station-astra16-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 jobs:
   tests:
@@ -49,12 +49,12 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y python3-pil shellcheck
-      - name: Python and browser tests
+      - name: Python and browser syntax and contracts
         run: |
           /usr/bin/python3 -m unittest discover -s tests/station -v
           /usr/bin/python3 - <<'PY'
           import ast, pathlib
-          for root in ['services/station', 'scripts/station']:
+          for root in ['services/station', 'scripts/station', 'tests/station']:
               for p in pathlib.Path(root).rglob('*.py'):
                   ast.parse(p.read_text(), filename=str(p), feature_version=(3, 5))
           PY
@@ -68,12 +68,33 @@ jobs:
           ./station.sh help
           ./install.sh --allow-compatible --dry-run
 
+  legacy-runtime:
+    name: Real Python 3.5 and Pillow contracts on Stretch
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test legacy runtime before building the compiler
+        run: |
+          set -Eeuo pipefail
+          docker pull debian:stretch-slim
+          docker run --rm -v "$GITHUB_WORKSPACE:/source:ro" \
+            -e LANG=C.UTF-8 -e LC_ALL=C.UTF-8 -e PYTHONDONTWRITEBYTECODE=1 \
+            debian:stretch-slim /bin/bash -ec '
+              printf "deb http://archive.debian.org/debian stretch main\n" > /etc/apt/sources.list
+              apt-get -o Acquire::Check-Valid-Until=false update
+              apt-get install -y --no-install-recommends python3 python3-pil
+              cd /source
+              python3 --version
+              python3 -m unittest discover -s tests/station -v
+            '
+
   package:
     name: Build real SatDump and embedded runtime on glibc 2.24
-    needs: tests
+    needs: [tests, legacy-runtime]
     if: >-
       (github.event_name == 'workflow_dispatch' && inputs.build_offline && github.ref == 'refs/heads/release/1.2.2') ||
-      (github.event_name == 'push' && contains(github.event.head_commit.message, '[station-release]'))
+      (github.event_name == 'push' && (contains(github.event.head_commit.message, '[station-release]') || contains(github.event.head_commit.message, '[station-deploy]')))
     runs-on: ubuntu-22.04
     timeout-minutes: 300
     steps:
@@ -155,7 +176,7 @@ jobs:
           # SatDump Station для Astra Linux 1.6
           Включены движок glibc224, Python/Pillow, установщик, очередь, цветосинтез через SatDump, презентационные PNG/JSON и локальный сайт.
           Пройдены сборка и тесты в независимой среде Debian Stretch без сети. Это не заменяет приёмку на физической Astra 1.6 и контрольной радиозаписи.
-          Распакуйте пакет, откройте START_HERE.ru.md и запустите sudo ./install.sh. Настройки и данные обновлением не перезаписываются. Предыдущий релиз Astra 1.7 не изменяется.
+          Распакуйте пакет, откройте START_HERE.ru.md и OPERATIONS.ru.md, запустите sudo ./install.sh. Настройки и данные обновлением не перезаписываются. Предыдущий релиз Astra 1.7 не изменяется.
           EOF
           if gh release view "$tag" >/dev/null 2>&1; then
             echo 'Tag already exists; refusing to replace published artifacts.' >&2
@@ -168,9 +189,12 @@ jobs:
   deploy:
     name: Explicit SSH deployment to Astra 1.6
     needs: package
-    if: github.event_name == 'workflow_dispatch' && inputs.deploy_astra16 && github.ref == 'refs/heads/release/1.2.2'
+    if: >-
+      github.ref == 'refs/heads/release/1.2.2' &&
+      ((github.event_name == 'workflow_dispatch' && inputs.deploy_astra16) ||
+       (github.event_name == 'push' && contains(github.event.head_commit.message, '[station-deploy]')))
     environment: astra16-station
-    runs-on: ubuntu-22.04
+    runs-on: ${{ fromJSON(vars.ASTRA16_DEPLOY_RUNNERS || '["ubuntu-22.04"]') }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -187,12 +211,12 @@ jobs:
           set -Eeuo pipefail
           test -n "$DEPLOY_TARGET" && test -n "$DEPLOY_KEY" && test -n "$KNOWN_HOSTS"
           umask 077
-          mkdir -p "$HOME/.ssh"
-          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          key=$(mktemp)
-          printf '%s\n' "$DEPLOY_KEY" > "$key"
+          credentials=$(mktemp -d)
+          printf '%s\n' "$KNOWN_HOSTS" > "$credentials/known_hosts"
+          printf '%s\n' "$DEPLOY_KEY" > "$credentials/key"
           eval "$(ssh-agent -s)" >/dev/null
-          trap 'rm -f "$key"; ssh-agent -k >/dev/null' EXIT
-          ssh-add "$key"
+          trap 'rm -rf -- "$credentials"; ssh-agent -k >/dev/null' EXIT
+          export SSH_KNOWN_HOSTS="$credentials/known_hosts"
+          ssh-add "$credentials/key"
           archive=$(find station-deploy -maxdepth 1 -name '*.tar.gz' -print -quit)
           ./station.sh deploy "$archive" "$DEPLOY_TARGET"
