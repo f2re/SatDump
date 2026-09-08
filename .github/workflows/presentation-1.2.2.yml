@@ -1,6 +1,13 @@
 name: SatDump 1.2.2 Presentation CI
 
 on:
+  workflow_call:
+    inputs:
+      run_astra_ubi17:
+        description: "Дополнительно проверить официальный Astra Linux UBI 1.7"
+        required: false
+        default: false
+        type: boolean
   push:
     branches:
       - release/1.2.2
@@ -21,7 +28,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: presentation-1.2.2-${{ github.ref }}
+  group: presentation-1.2.2-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -248,7 +255,7 @@ jobs:
 
   astra-ubi17:
     name: Official Astra Linux UBI 1.7 smoke build
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_astra_ubi17 }}
+    if: ${{ inputs.run_astra_ubi17 == true }}
     runs-on: ubuntu-22.04
     timeout-minutes: 75
 
