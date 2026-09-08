@@ -1,0 +1,14 @@
+{
+  "satdump_general": {
+    "tle_update_interval": {"value": "Never"},
+    "log_to_file": {"value": false},
+    "presentation_enabled": {"value": true},
+    "presentation": {
+      "enabled": true,
+      "save_presentation": true,
+      "save_minimal": true,
+      "save_legacy_alias": false,
+      "north_up": true
+    }
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "schema": "satdump.station/1",
+  "title": "Спутниковые наблюдения",
+  "data_dir": "/var/lib/satdump-station",
+  "engine": "/opt/satdump-station/current/engine/satdump",
+  "processing_config": "processing.json",
+  "processing_revision": "1",
+  "poll_seconds": 10,
+  "settle_seconds": 30,
+  "timeout_seconds": 1800,
+  "max_attempts": 3,
+  "native_threads": 2,
+  "min_free_mb": 2048,
+  "max_input_mb": 32768,
+  "max_log_mb": 32,
+  "max_image_pixels": 90000000,
+  "max_items": 1000,
+  "keep_work": false,
+  "sources": [
+    {
+      "id": "images",
+      "kind": "image",
+      "path": "/var/lib/satdump-station/inbox/images",
+      "patterns": ["*.png", "*.jpg", "*.jpeg"],
+      "require_ready": false
+    },
+    {
+      "id": "products",
+      "kind": "product",
+      "path": "/var/lib/satdump-station/inbox/products",
+      "require_ready": true
+    },
+    {
+      "id": "meteor_iq",
+      "kind": "pipeline",
+      "enabled": false,
+      "path": "/var/lib/satdump-station/inbox/meteor_iq",
+      "patterns": ["*.cs16"],
+      "pipeline": "meteor_m2x_lrpt",
+      "input_level": "baseband",
+      "options": ["--samplerate", "1024000", "--baseband_format", "s16"],
+      "require_ready": true
+    }
+  ]
+}

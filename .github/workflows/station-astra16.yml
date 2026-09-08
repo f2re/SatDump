@@ -1,0 +1,198 @@
+name: Astra 1.6 station - worker, gallery and offline package
+
+on:
+  push:
+    branches: [release/1.2.2]
+    paths:
+      - 'station.sh'
+      - 'install.sh'
+      - 'services/station/**'
+      - 'scripts/station/**'
+      - 'config/station/**'
+      - 'tests/station/**'
+      - 'src-cli/**'
+      - 'scripts/astra/portable/**'
+      - 'docs/ru/STATION_ASTRA16.md'
+      - '.github/workflows/station-astra16.yml'
+  pull_request:
+    branches: [release/1.2.2]
+  workflow_dispatch:
+    inputs:
+      build_offline:
+        description: 'Собрать полный glibc224-пакет'
+        type: boolean
+        default: true
+      publish:
+        description: 'Опубликовать проверенный пакет как prerelease'
+        type: boolean
+        default: false
+      deploy_astra16:
+        description: 'Установить по SSH на явно настроенный хост Astra 1.6'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: station-astra16-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  tests:
+    name: Queue, image publication, HTTP and installer contracts
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test prerequisites
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y python3-pil shellcheck
+      - name: Python and browser tests
+        run: |
+          /usr/bin/python3 -m unittest discover -s tests/station -v
+          /usr/bin/python3 - <<'PY'
+          import ast, pathlib
+          for root in ['services/station', 'scripts/station']:
+              for p in pathlib.Path(root).rglob('*.py'):
+                  ast.parse(p.read_text(), filename=str(p), feature_version=(3, 5))
+          PY
+          node --check services/station/web/app.js
+      - name: Shell and installer plan
+        run: |
+          bash -n station.sh
+          bash -n install.sh
+          for f in scripts/station/*.sh; do bash -n "$f"; done
+          shellcheck --severity=error station.sh install.sh scripts/station/*.sh
+          ./station.sh help
+          ./install.sh --allow-compatible --dry-run
+
+  package:
+    name: Build real SatDump and embedded runtime on glibc 2.24
+    needs: tests
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.build_offline && github.ref == 'refs/heads/release/1.2.2') ||
+      (github.event_name == 'push' && contains(github.event.head_commit.message, '[station-release]'))
+    runs-on: ubuntu-22.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y debootstrap debian-archive-keyring rsync binutils util-linux xz-utils curl ca-certificates python3
+      - uses: actions/cache@v4
+        with:
+          path: build/station/downloads
+          key: station-sources-v1-${{ hashFiles('scripts/astra/portable/lock.env') }}
+      - name: Build and package
+        run: |
+          set -o pipefail
+          ./station.sh build --jobs 2 2>&1 | tee station-build.log
+      - name: Pull independent runtime test image
+        run: docker pull debian:stretch-slim
+      - name: Test unpacked payload without network or build dependencies
+        run: |
+          set -Eeuo pipefail
+          mkdir check-package
+          archive=$(find dist/station -maxdepth 1 -name '*.tar.gz' -print -quit)
+          test -n "$archive"
+          (cd dist/station; sha256sum -c *.tar.gz.sha256)
+          tar -xzf "$archive" -C check-package
+          bundle=$(find check-package -mindepth 1 -maxdepth 1 -type d -print -quit)
+          docker run --rm --network none -v "$(realpath "$bundle"):/opt/station:ro" debian:stretch-slim \
+            /bin/bash -ec '
+              /opt/station/runtime/python /opt/station/scripts/station/pack.py --verify /opt/station
+              /opt/station/engine/satdump version
+              /opt/station/runtime/python -m unittest discover -s /opt/station/tests/station -v
+              /opt/station/install.sh --allow-compatible --no-start
+            '
+      - name: Upload binary package
+        uses: actions/upload-artifact@v4
+        with:
+          name: satdump-astra16-station-${{ github.sha }}
+          path: |
+            dist/station/*.tar.gz
+            dist/station/*.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: station-build-diagnostics-${{ github.run_id }}
+          path: |
+            station-build.log
+            dist/station/*/PACKAGE-MANIFEST.json
+          if-no-files-found: warn
+
+  publish:
+    name: Publish separate Astra 1.6 station prerelease
+    needs: package
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.publish) ||
+      (github.event_name == 'push' && contains(github.event.head_commit.message, '[station-release]'))
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: satdump-astra16-station-${{ github.sha }}
+          path: release
+      - name: Publish only validated artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -Eeuo pipefail
+          (cd release; sha256sum -c *.tar.gz.sha256)
+          tag="v1.2.2-astra16-station.${GITHUB_RUN_NUMBER}"
+          cat > notes.md <<'EOF'
+          # SatDump Station для Astra Linux 1.6
+          Включены движок glibc224, Python/Pillow, установщик, очередь, цветосинтез через SatDump, презентационные PNG/JSON и локальный сайт.
+          Пройдены сборка и тесты в независимой среде Debian Stretch без сети. Это не заменяет приёмку на физической Astra 1.6 и контрольной радиозаписи.
+          Распакуйте пакет, откройте START_HERE.ru.md и запустите sudo ./install.sh. Настройки и данные обновлением не перезаписываются. Предыдущий релиз Astra 1.7 не изменяется.
+          EOF
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo 'Tag already exists; refusing to replace published artifacts.' >&2
+            exit 1
+          fi
+          gh release create "$tag" --target "$GITHUB_SHA" --draft --prerelease \
+            --title "SatDump 1.2.2 — Astra 1.6 Station ${GITHUB_RUN_NUMBER}" --notes-file notes.md release/*
+          gh release edit "$tag" --draft=false
+
+  deploy:
+    name: Explicit SSH deployment to Astra 1.6
+    needs: package
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy_astra16 && github.ref == 'refs/heads/release/1.2.2'
+    environment: astra16-station
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: satdump-astra16-station-${{ github.sha }}
+          path: station-deploy
+      - name: Verify and install over authenticated SSH
+        env:
+          DEPLOY_TARGET: ${{ secrets.ASTRA16_DEPLOY_TARGET }}
+          DEPLOY_KEY: ${{ secrets.ASTRA16_DEPLOY_KEY }}
+          KNOWN_HOSTS: ${{ secrets.ASTRA16_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DEPLOY_TARGET" && test -n "$DEPLOY_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          key=$(mktemp)
+          printf '%s\n' "$DEPLOY_KEY" > "$key"
+          eval "$(ssh-agent -s)" >/dev/null
+          trap 'rm -f "$key"; ssh-agent -k >/dev/null' EXIT
+          ssh-add "$key"
+          archive=$(find station-deploy -maxdepth 1 -name '*.tar.gz' -print -quit)
+          ./station.sh deploy "$archive" "$DEPLOY_TARGET"

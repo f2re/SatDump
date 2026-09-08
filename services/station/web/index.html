@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Спутниковые наблюдения · SatDump</title><link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header><div><span class="eyebrow">SATDUMP / СТАНЦИЯ ПРИЁМА</span><h1 id="siteTitle">Спутниковые наблюдения</h1></div><p id="health" role="status">Подключение к архиву…</p></header>
+<main>
+<nav aria-label="Фильтры архива"><label>Источник<select id="source"><option value="">Все источники</option></select></label><label>Спутник<select id="satellite"><option value="">Все спутники</option></select></label><label>Поиск<input id="search" type="search" placeholder="Прибор или продукт"></label><label>Дата наблюдения / подпись UTC<input id="date" type="search" placeholder="Фрагмент подписи времени"></label><button id="play" type="button">▶ Презентация</button><button id="exitPresentation" type="button" hidden>К архиву</button><button id="fullscreen" type="button">На весь экран</button></nav>
+<section class="stage" aria-label="Просмотр снимка">
+<div id="empty"><h2 id="emptyTitle">Архив пока пуст</h2><p id="emptyText">Завершённые снимки появятся здесь автоматически. Исходные записи не публикуются.</p></div>
+<img id="hero" alt="" hidden><p id="loading" role="status" hidden>Загрузка снимка…</p>
+<div id="caption" hidden><div><span id="instrument" class="eyebrow"></span><h2 id="title"></h2><p id="time"></p></div><div class="actions"><button id="prev" type="button" aria-label="Предыдущий снимок">←</button><span id="counter"></span><button id="next" type="button" aria-label="Следующий снимок">→</button><a id="original" target="_blank" rel="noopener">Оригинал</a><a id="passport" target="_blank" rel="noopener">Паспорт JSON</a></div></div>
+</section>
+<details id="details"><summary>Паспорт продукта и ограничения интерпретации</summary><pre id="metadata">Выберите снимок.</pre></details>
+<section><div class="sectionHead"><h2>Лента продуктов</h2><span id="count"></span></div><div id="grid" class="grid"></div><button id="more" type="button" hidden>Показать ещё</button></section>
+</main>
+<footer><span>Автономный архив · исходный растр не обрезается</span><span id="updated"></span></footer>
+<script src="app.js" defer></script>
+</body></html>
