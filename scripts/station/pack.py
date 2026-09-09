@@ -137,6 +137,16 @@ def pack(args):
                 'board_schema': 'satdump.board/1', 'control_schema': 'satdump.station.control/1',
                 'control_loopback_only': True, 'new_frontend_included': False,
                 'operator_guide': 'BOARD_INFRASTRUCTURE.ru.md'}
+    provenance_path = getattr(args, 'component_provenance', None)
+    if provenance_path:
+        with open(provenance_path) as stream:
+            provenance = json.load(stream)
+        if (provenance.get('station_revision') != revision or
+                provenance.get('native_inputs_unchanged') is not True or
+                not re.match(r'^[0-9a-f]{40}$', provenance.get('source_revision', '')) or
+                not re.match(r'^[0-9a-f]{64}$', provenance.get('archive_sha256', ''))):
+            raise ValueError('Invalid component provenance')
+        manifest['component_provenance'] = provenance
     with open(str(bundle / 'PACKAGE-MANIFEST.json'), 'w') as stream:
         json.dump(manifest, stream, indent=2, sort_keys=True)
     records = list(paths(bundle))
@@ -171,6 +181,7 @@ def main():
     parser.add_argument('--runtime')
     parser.add_argument('--output', default='dist/station')
     parser.add_argument('--revision', default='')
+    parser.add_argument('--component-provenance', help='Verified native/runtime reuse receipt')
     args = parser.parse_args()
     if args.verify:
         verify(args.verify)

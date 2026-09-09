@@ -264,6 +264,9 @@ else
     cmp "$PACKAGE/SHA256SUMS" "$TARGET/SHA256SUMS" || fail 'Такая версия уже установлена с иным содержимым'
     ui_step 'Проверка установленной копии' "$PYTHON" "$TARGET/scripts/station/pack.py" --verify "$TARGET"
 fi
+# A downloaded archive may live under a private home or SSH temporary directory.
+# Service-account probes must use the root-owned installed copy, never that source.
+PYTHON="$TARGET/runtime/python"
 BACKUP=$(mktemp -d "$PREFIX/.transaction.XXXXXXXX")
 snapshot "$BACKUP"
 MUTATED=1
