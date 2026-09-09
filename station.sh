@@ -1,54 +1,58 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 ROOT="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
-export PATH="/usr/local/sbin:/usr/sbin:/sbin:${PATH}"
-command="${1:-help}"
+export PATH="/usr/local/sbin:/usr/sbin:/sbin:$PATH"
+PYTHON=python3
+[[ ! -x $ROOT/runtime/python ]] || PYTHON="$ROOT/runtime/python"
+command=${1:-help}
 (( $# == 0 )) || shift
 case "$command" in
     help|-h|--help)
         cat <<'EOF'
-SatDump Station — Astra Linux 1.6, автономная обработка и сайт
+SatDump Station / BOARD — Astra 1.6, автономная обработка и серверные API
 
-Исходное дерево:
-  ./station.sh build [--jobs N]        собрать движок glibc 2.24 и офлайн-пакет
-  ./station.sh pack --engine DIR --runtime DIR --output DIR
-  ./station.sh test                    проверить очередь, публикацию, HTTP
+Исходники:
+  ./station.sh build --jobs 2          полный офлайн-пакет: движок + WEB + API
+  ./station.sh pack --engine DIR --runtime DIR --output DIR --revision SHA
+  ./station.sh test                    прежние и новые тесты станции
 
-Готовый распакованный пакет:
-  sudo ./install.sh                    установить и запустить две службы
-  sudo ./install.sh --listen 0.0.0.0    открыть сайт для доверенной локальной сети
-  sudo ./station.sh status             состояние очереди и последние ошибки
-  sudo ./station.sh logs               журналы systemd
-  sudo ./station.sh restart            перезапустить после изменения конфигурации
-  sudo ./station.sh rollback           вернуть предыдущую версию приложения
-  sudo ./station.sh retry --job ID     повторить неуспешное задание
-  ./station.sh deploy ARCHIVE USER@HOST  передать и установить по SSH
+Установка и эксплуатация:
+  sudo ./install.sh                    интерактивный мастер в терминале
+  sudo ./install.sh --yes              установка без вопросов
+  ./install.sh --help                  режимы WEB, пути и параметры мастера
+  sudo ./station.sh ui-deploy DIR      подключить будущие готовые файлы интерфейса
+  sudo ./station.sh doctor             read-only диагностика прав и конфигурации
+  sudo ./station.sh status             последние задания
+  sudo ./station.sh logs               журналы всех служб
+  sudo ./station.sh restart            управляемый перезапуск
+  sudo ./station.sh rollback           прежние код/настройки/службы, не данные
+  sudo ./station.sh retry --job ID     повтор неуспешного задания
+  ./station.sh deploy ARCHIVE USER@HOST -- --port 8090 --web-server builtin
 
-Прямой запуск: worker, once, serve, check (параметры: --help).
-Настройки: /etc/satdump-station/. Сайт: http://127.0.0.1:8090/.
-Движок без сайта: прежняя команда ./build.sh в исходном дереве сохранена.
+WEB: 127.0.0.1:8090/api/v1/board — изображения/паспорта, без нового интерфейса.
+API: 127.0.0.1:8091/api/v1/control/config — токен + ревизии If-Match.
+Прямые команды: worker, once, serve, control, check; параметры: --help.
 EOF
         ;;
+    ui-deploy) exec bash "$ROOT/scripts/station/ui-deploy.sh" "$@" ;;
     build) exec bash "$ROOT/scripts/station/build.sh" "$@" ;;
-    pack) exec python3 "$ROOT/scripts/station/pack.py" "$@" ;;
-    install) exec bash "$ROOT/scripts/station/install.sh" "$@" ;;
-    deploy) exec bash "$ROOT/scripts/station/deploy.sh" "$@" ;;
-    test)
-        python=python3
-        [[ ! -x "$ROOT/runtime/python" ]] || python="$ROOT/runtime/python"
-        exec "$python" -m unittest discover -s "$ROOT/tests/station" -v ;;
-
-    logs) exec journalctl -u satdump-worker.service -u satdump-web.service -n 100 -f ;;
-    restart) exec systemctl restart satdump-worker.service satdump-web.service ;;
+    pack) exec "$PYTHON" "$ROOT/scripts/station/pack.py" "$@" ;;
+    install|deploy) exec bash "$ROOT/scripts/station/$command.sh" "$@" ;;
+    test) exec "$PYTHON" -m unittest discover -s "$ROOT/tests/station" -v ;;
+    logs) exec journalctl -u satdump-worker.service -u satdump-web.service -u satdump-control.service -u satdump-board.service -n 100 -f ;;
+    restart)
+        units=(satdump-worker.service satdump-control.service satdump-web.service)
+        [[ ! -f /etc/systemd/system/satdump-board.service ]] || units+=(satdump-board.service)
+        exec systemctl restart "${units[@]}" ;;
     rollback) exec bash "$ROOT/scripts/station/install.sh" --rollback "$@" ;;
-    worker|once|serve|check|status|retry)
-        if (( EUID == 0 )) && [[ "$command" == status || "$command" == retry ]] && id satdump-station >/dev/null 2>&1; then
+    doctor|status|retry)
+        if (( EUID == 0 )) && id satdump-station >/dev/null 2>&1; then
             exec runuser -u satdump-station -- "$ROOT/station.sh" "$command" "$@"
         fi
-        if [[ -x "$ROOT/runtime/python" ]]; then
-            exec "$ROOT/runtime/python" "$ROOT/services/station/station.py" "$command" "$@"
-        fi
-        exec python3 "$ROOT/services/station/station.py" "$command" "$@"
-        ;;
+        if [[ $command == doctor ]]; then exec "$PYTHON" "$ROOT/scripts/station/configure.py" doctor "$@"; fi
+        exec "$PYTHON" "$ROOT/services/station/station.py" "$command" "$@" ;;
+    worker|once|serve) exec "$PYTHON" "$ROOT/services/station/board.py" "$command" "$@" ;;
+    control) exec "$PYTHON" "$ROOT/services/station/control.py" "$@" ;;
+    check) exec "$PYTHON" "$ROOT/services/station/station.py" check "$@" ;;
     *) printf 'Неизвестная команда: %s. Выполните ./station.sh help\n' "$command" >&2; exit 2 ;;
 esac

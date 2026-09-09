@@ -120,6 +120,8 @@ def pack(args):
     subprocess.check_call([sys.executable, str(ROOT / 'scripts/docs/export.py'),
                            '--root', str(ROOT), '--output', str(bundle),
                            '--revision', revision, '--package'])
+    shutil.copyfile(str(ROOT / 'docs/ru/station/BOARD_INFRASTRUCTURE.md'),
+                    str(bundle / 'BOARD_INFRASTRUCTURE.ru.md'))
     shutil.copyfile(str(ROOT / 'LICENSE'), str(bundle / 'LICENSE'))
     with open(str(bundle / 'install.sh'), 'w') as stream:
         stream.write('#!/usr/bin/env bash\nset -Eeuo pipefail\nROOT="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"\nexec bash "$ROOT/scripts/station/install.sh" "$@"\n')
@@ -130,7 +132,11 @@ def pack(args):
                 'git_commit': revision, 'target': 'Astra Linux 1.6 x86_64',
                 'glibc_required': required, 'glibc_allowed_max': '2.24', 'elf_count': elf_count,
                 'system_glibc_replaced': False, 'native_astra16_acceptance': 'not implied by packaging',
-                'services': ['satdump-worker', 'satdump-web']}
+                'services': ['satdump-worker', 'satdump-web', 'satdump-control'],
+                'optional_services': {'nginx': ['satdump-board']},
+                'board_schema': 'satdump.board/1', 'control_schema': 'satdump.station.control/1',
+                'control_loopback_only': True, 'new_frontend_included': False,
+                'operator_guide': 'BOARD_INFRASTRUCTURE.ru.md'}
     with open(str(bundle / 'PACKAGE-MANIFEST.json'), 'w') as stream:
         json.dump(manifest, stream, indent=2, sort_keys=True)
     records = list(paths(bundle))
