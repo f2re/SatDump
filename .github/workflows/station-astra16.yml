@@ -11,8 +11,14 @@ on:
       - 'config/station/**'
       - 'tests/station/**'
       - 'src-cli/**'
+      - 'src-core/**'
+      - 'plugins/**'
+      - 'resources/**'
+      - 'pipelines/**'
+      - 'satdump_cfg.json'
+      - 'CMakeLists.txt'
       - 'scripts/astra/portable/**'
-      - 'docs/ru/STATION*.md'
+      - 'docs/ru/station/**'
       - '.github/workflows/station-astra16.yml'
   pull_request:
     branches: [release/1.2.2]
@@ -33,7 +39,6 @@ on:
 
 permissions:
   contents: read
-
 concurrency:
   group: station-astra16-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'push' }}
@@ -48,7 +53,7 @@ jobs:
       - name: Test prerequisites
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y python3-pil shellcheck
+          sudo apt-get install -y python3-pil shellcheck nginx
       - name: Python and browser syntax and contracts
         run: |
           /usr/bin/python3 -m unittest discover -s tests/station -v
@@ -150,9 +155,44 @@ jobs:
             dist/station/*/PACKAGE-MANIFEST.json
           if-no-files-found: warn
 
-  publish:
-    name: Publish separate Astra 1.6 station prerelease
+  acceptance:
+    name: Real systemd install, WEB, API, nginx and failure rollback
     needs: package
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: satdump-astra16-station-${{ github.sha }}
+          path: payload
+      - name: Prepare disposable test VM
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nginx python3-pil
+          (cd payload; sha256sum -c *.tar.gz.sha256)
+          mkdir unpacked
+          tar -xzf payload/*.tar.gz -C unpacked
+      - name: Install and test the exact packaged payload
+        run: |
+          set -o pipefail
+          bundle=$(find unpacked -mindepth 1 -maxdepth 1 -type d -print -quit)
+          # The controller uses host Python; each service uses the bundled runtime.
+          sudo env SATDUMP_DISPOSABLE_CI=1 /usr/bin/python3 scripts/station/acceptance.py \
+            --package "$(realpath "$bundle")" --output "$GITHUB_WORKSPACE/STATION-ACCEPTANCE.json" 2>&1 | tee station-acceptance.log
+      - name: Upload acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: station-acceptance-${{ github.sha }}
+          path: |
+            STATION-ACCEPTANCE.json
+            station-acceptance.log
+          if-no-files-found: error
+
+  publish:
+    name: Publish verified Station BOARD prerelease
+    needs: [package, acceptance]
     if: >-
       (github.event_name == 'workflow_dispatch' && inputs.publish) ||
       (github.event_name == 'push' && contains(github.event.head_commit.message, '[station-release]'))
@@ -164,6 +204,10 @@ jobs:
         with:
           name: satdump-astra16-station-${{ github.sha }}
           path: release
+      - uses: actions/download-artifact@v4
+        with:
+          name: station-acceptance-${{ github.sha }}
+          path: evidence
       - name: Publish only validated artifacts
         env:
           GH_TOKEN: ${{ github.token }}
@@ -171,24 +215,37 @@ jobs:
         run: |
           set -Eeuo pipefail
           (cd release; sha256sum -c *.tar.gz.sha256)
+          python3 - <<'PY'
+          import json, os
+          with open('evidence/STATION-ACCEPTANCE.json') as f:
+              report = json.load(f)
+          assert report['success'] is True
+          assert report['package']['git_commit'] == os.environ['GITHUB_SHA']
+          PY
+          cp evidence/STATION-ACCEPTANCE.json release/
           tag="v1.2.2-astra16-station.${GITHUB_RUN_NUMBER}"
           cat > notes.md <<'EOF'
-          # SatDump Station для Astra Linux 1.6
-          Включены движок glibc224, Python/Pillow, установщик, очередь, цветосинтез через SatDump, презентационные PNG/JSON и локальный сайт.
-          Пройдены сборка и тесты в независимой среде Debian Stretch без сети. Это не заменяет приёмку на физической Astra 1.6 и контрольной радиозаписи.
-          Распакуйте пакет, откройте START_HERE.ru.md и OPERATIONS.ru.md, запустите sudo ./install.sh. Настройки и данные обновлением не перезаписываются. Предыдущий релиз Astra 1.7 не изменяется.
+          # SatDump Station / BOARD для Astra Linux 1.6
+          Полный бинарный пакет: движок glibc224, Python/Pillow, интерактивный установщик, обработчик, WEB и защищённый API настроек. Автоматическая публикация PNG/JSON presentation и minimal. Новый дизайн/веб-интерфейс в этот выпуск не входит.
+
+          Проверки: реальный Python 3.5/Pillow; независимый Debian Stretch без сети; установка этого архива на чистой Ubuntu VM с настоящим systemd, запуск WEB/API, PNG+паспорт через очередь, права пользователей, повторная установка, nginx, откат и отказ на занятом порту. Машиночитаемое подтверждение — STATION-ACCEPTANCE.json.
+
+          Это предварительный инженерный выпуск: приёмка на физической Astra 1.6, мандатные политики, контрольная радиозапись и полная перезагрузка целевой станции не подтверждены. Astra 1.5 этим пакетом не поддерживается. Никакого автоматического развёртывания на пользовательский узел не выполнялось.
+
+          Установка: проверьте файл .sha256, распакуйте архив, запустите sudo ./install.sh. WEB устанавливается автоматически. Руководство: docs/ru/station/BOARD_INFRASTRUCTURE.md внутри пакета. nginx необязателен и используется только уже установленный; по умолчанию автономный сервер.
           EOF
+          printf '\nИсходная ревизия: `%s`. Проверка: https://github.com/%s/actions/runs/%s\n' "$GITHUB_SHA" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> notes.md
           if gh release view "$tag" >/dev/null 2>&1; then
-            echo 'Tag already exists; refusing to replace published artifacts.' >&2
+            echo 'Refusing to replace an existing release.' >&2
             exit 1
           fi
           gh release create "$tag" --target "$GITHUB_SHA" --draft --prerelease \
-            --title "SatDump 1.2.2 — Astra 1.6 Station ${GITHUB_RUN_NUMBER}" --notes-file notes.md release/*
+            --title "SatDump 1.2.2 — Station / BOARD ${GITHUB_RUN_NUMBER}" --notes-file notes.md release/*
           gh release edit "$tag" --draft=false
 
   deploy:
     name: Explicit SSH deployment to Astra 1.6
-    needs: package
+    needs: [package, acceptance]
     if: >-
       github.ref == 'refs/heads/release/1.2.2' &&
       ((github.event_name == 'workflow_dispatch' && inputs.deploy_astra16) ||

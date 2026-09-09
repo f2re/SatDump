@@ -168,6 +168,10 @@ snapshot() {
         : > "$destination/$unit"
         if [[ -L $PREFIX/$unit && -d $PREFIX/$unit ]]; then readlink -f "$PREFIX/$unit" > "$destination/$unit"; fi
     done
+    # Managed API settings are outside /etc. Snapshot their atomic active pointer
+    # too; otherwise a failed --source-path update survives configuration rollback.
+    : > "$destination/control-snapshot"
+    [[ ! -f "$DATA/control/active.json" ]] || cp -a "$DATA/control/active.json" "$destination/control-active.json"
     : > "$destination/active"; : > "$destination/enabled"
     for unit in "${UNITS[@]}"; do
         [[ ! -f /etc/systemd/system/$unit ]] || cp -a "/etc/systemd/system/$unit" "$destination/units/$unit"
@@ -194,6 +198,14 @@ restore() {
         fi
     done
     if [[ ! -L $PREFIX/current ]]; then rm -f /usr/local/bin/satdump-station; fi
+    if [[ -f "$source/control-snapshot" && -d "$DATA/control" ]]; then
+        if [[ -f "$source/control-active.json" ]]; then
+            cp -a "$source/control-active.json" "$DATA/control/.restore-active.json"
+            mv -Tf "$DATA/control/.restore-active.json" "$DATA/control/active.json"
+        else
+            rm -f "$DATA/control/active.json"
+        fi
+    fi
     svc daemon-reload
     while IFS= read -r unit; do [[ -z $unit ]] || svc enable "$unit"; done < "$source/enabled"
     while IFS= read -r unit; do [[ -z $unit ]] || svc start "$unit"; done < "$source/active"
