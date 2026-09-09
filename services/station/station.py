@@ -7,6 +7,7 @@ Only the administrator-owned station.json selects native processing commands.
 """
 from __future__ import print_function
 import argparse
+import errno
 import fnmatch
 import hashlib
 import json
@@ -19,6 +20,7 @@ import socketserver
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import warnings
@@ -64,6 +66,67 @@ def atomic_json(path, value):
 
 def contained(path, root):
     return os.path.commonpath([os.path.realpath(str(path)), os.path.realpath(str(root))]) == os.path.realpath(str(root))
+
+
+def move_tree(source, destination, progress=None):
+    """Commit a complete tree, including across systemd bind mounts.
+
+    rename() may return EXDEV even for directories on the same physical disk.
+    On that error only, copy into a private staging wrapper ON THE DESTINATION
+    mount, then rename its completed payload. A reader never sees partial files.
+    The original working tree survives any failure before the final rename.
+    """
+    source, destination = Path(source), Path(destination)
+    if source.is_symlink() or not source.is_dir():
+        raise ValueError("Transfer source must be a real directory")
+    if destination.exists() or destination.is_symlink():
+        raise ValueError("Transfer destination already exists")
+    if contained(source, destination) or contained(destination, source):
+        raise ValueError("Transfer trees must not overlap")
+    # Do not follow decoder-produced links or block on FIFOs/device files.
+    for base, dirs, names in os.walk(str(source), followlinks=False):
+        for name in dirs + names:
+            path = Path(base) / name
+            if path.is_symlink() or not (path.is_dir() or path.is_file()):
+                raise ValueError("Link or special file in transfer tree")
+    if STOP.is_set():
+        raise RuntimeError("Transfer interrupted")
+    try:
+        os.rename(str(source), str(destination))
+        return
+    except OSError as error:
+        if error.errno != errno.EXDEV:
+            raise
+    wrapper = Path(tempfile.mkdtemp(prefix=".transfer-", dir=str(destination.parent)))
+    stage = wrapper / "payload"
+    last = [time.monotonic()]
+
+    def copy_file(src, dst):
+        with open(src, "rb") as incoming, open(dst, "wb") as outgoing:
+            for block in iter(lambda: incoming.read(4 * 1024 * 1024), b""):
+                if STOP.is_set():
+                    raise RuntimeError("Transfer interrupted")
+                outgoing.write(block)
+                if progress is not None and time.monotonic() - last[0] > 5:
+                    progress()
+                    last[0] = time.monotonic()
+            outgoing.flush()
+            os.fsync(outgoing.fileno())
+        shutil.copystat(src, dst)
+        return dst
+
+    try:
+        # Extra wrapper level keeps */item.json scans from seeing staging data.
+        shutil.copytree(str(source), str(stage), copy_function=copy_file)
+        if STOP.is_set():
+            raise RuntimeError("Transfer interrupted")
+        os.rename(str(stage), str(destination))
+    finally:
+        shutil.rmtree(str(wrapper), ignore_errors=True)
+    try:
+        shutil.rmtree(str(source))
+    except OSError:
+        LOG.warning("Transfer committed but working copy cleanup failed: %s", source)
 
 
 def load_config(path):
@@ -398,9 +461,9 @@ class Worker:
         # Scientific/decoded files remain private and are retained independently of the website.
         archive = self.data / "archive" / job_id
         if self.cfg.get("archive_science", True) and not archive.exists():
-            os.rename(str(result), str(archive))
+            move_tree(result, archive, lambda: self.heartbeat("archiving"))
         # All files were written before the only directory rename visible to the web server.
-        os.rename(str(publication), str(final))
+        move_tree(publication, final, lambda: self.heartbeat("publishing"))
         if not self.cfg.get("keep_work", False):
             shutil.rmtree(str(work))
 

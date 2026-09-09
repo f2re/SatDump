@@ -184,8 +184,8 @@ def install_adapter(station, ui_root=None):
             station.atomic_json(publication / 'item.json', {'job_id': job_id, 'entries': entries})
             archive = self.data / 'archive' / job_id
             if self.cfg.get('archive_science', True) and not archive.exists():
-                os.rename(str(result), str(archive))
-            os.rename(str(publication), str(final))
+                station.move_tree(result, archive, lambda: self.heartbeat('archiving'))
+            station.move_tree(publication, final, lambda: self.heartbeat('publishing'))
             if not self.cfg.get('keep_work', False):
                 shutil.rmtree(str(work))
 
