@@ -39,6 +39,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: station-astra16-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'push' }}
@@ -114,10 +115,29 @@ jobs:
         with:
           path: build/station/downloads
           key: station-sources-v1-${{ hashFiles('scripts/astra/portable/lock.env') }}
+      - name: Check pinned native component inputs
+        id: components
+        run: python3 scripts/station/reuse-components.py --select
+      - name: Download pinned compiled components
+        id: component_download
+        if: steps.components.outputs.reuse == 'true'
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.components.outputs.artifact_name }}
+          run-id: ${{ steps.components.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: cached-components
       - name: Build and package
+        env:
+          REUSE_COMPONENTS: ${{ steps.components.outputs.reuse == 'true' && steps.component_download.outcome == 'success' }}
         run: |
           set -o pipefail
-          ./station.sh build --jobs 2 2>&1 | tee station-build.log
+          if [[ "$REUSE_COMPONENTS" == true ]]; then
+            python3 scripts/station/reuse-components.py --input cached-components --output dist/station 2>&1 | tee station-build.log
+          else
+            ./station.sh build --jobs 2 2>&1 | tee station-build.log
+          fi
       - name: Pull independent runtime test image
         run: docker pull debian:stretch-slim
       - name: Test unpacked payload without network or build dependencies
@@ -230,9 +250,11 @@ jobs:
 
           Проверки: реальный Python 3.5/Pillow; независимый Debian Stretch без сети; установка этого архива на чистой Ubuntu VM с настоящим systemd, запуск WEB/API, PNG+паспорт через очередь, права пользователей, повторная установка, nginx, откат и отказ на занятом порту. Машиночитаемое подтверждение — STATION-ACCEPTANCE.json.
 
+          При неизменных исходных данных сборки движок и runtime могут повторно использоваться из закреплённого SHA-256 артефакта. Их исходная ревизия указана отдельно в component_provenance манифеста; код Station и установщик относятся к ревизии этого выпуска. Все проверки заново выполняются на итоговом архиве.
+
           Это предварительный инженерный выпуск: приёмка на физической Astra 1.6, мандатные политики, контрольная радиозапись и полная перезагрузка целевой станции не подтверждены. Astra 1.5 этим пакетом не поддерживается. Никакого автоматического развёртывания на пользовательский узел не выполнялось.
 
-          Установка: проверьте файл .sha256, распакуйте архив, запустите sudo ./install.sh. WEB устанавливается автоматически. Руководство: docs/ru/station/BOARD_INFRASTRUCTURE.md внутри пакета. nginx необязателен и используется только уже установленный; по умолчанию автономный сервер.
+          Установка: проверьте файл .sha256, распакуйте архив, запустите sudo ./install.sh. WEB устанавливается автоматически. Руководство: BOARD_INFRASTRUCTURE.ru.md внутри пакета. nginx необязателен и используется только уже установленный; по умолчанию автономный сервер.
           EOF
           printf '\nИсходная ревизия: `%s`. Проверка: https://github.com/%s/actions/runs/%s\n' "$GITHUB_SHA" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> notes.md
           if gh release view "$tag" >/dev/null 2>&1; then
