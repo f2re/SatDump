@@ -264,8 +264,8 @@ else
     cmp "$PACKAGE/SHA256SUMS" "$TARGET/SHA256SUMS" || fail 'Такая версия уже установлена с иным содержимым'
     ui_step 'Проверка установленной копии' "$PYTHON" "$TARGET/scripts/station/pack.py" --verify "$TARGET"
 fi
-# A downloaded archive may live under a private home or SSH temporary directory.
-# Service-account probes must use the root-owned installed copy, never that source.
+# Use the verified installed copy from here on. A downloaded package may live
+# under a private /root or /home directory inaccessible to service accounts.
 PYTHON="$TARGET/runtime/python"
 BACKUP=$(mktemp -d "$PREFIX/.transaction.XXXXXXXX")
 snapshot "$BACKUP"
@@ -308,7 +308,9 @@ install -m 0644 "$BACKUP/new-units/"*.service /etc/systemd/system/
 if [[ $WEB_SERVER == nginx ]]; then
     install -m 0644 "$BACKUP/new-units/nginx.conf" "$CONFIG/nginx.conf"
     install -d -m 0750 -o satdump-web -g satdump-web /run/satdump-web
-    ui_step 'Проверка собственной конфигурации nginx' /usr/sbin/nginx -t -c "$CONFIG/nginx.conf"
+    # nginx -t creates its PID and temporary files: use the service identity,
+    # otherwise a root-owned PID prevents the first unprivileged start.
+    ui_step 'Проверка собственной конфигурации nginx' runuser -u satdump-web -- /usr/sbin/nginx -t -c "$CONFIG/nginx.conf"
 else
     svc disable satdump-board.service >>"$INSTALL_LOG" 2>&1 || true
     rm -f /etc/systemd/system/satdump-board.service
