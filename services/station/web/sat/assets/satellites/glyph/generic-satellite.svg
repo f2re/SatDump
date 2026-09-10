@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" color="#9fc6d8" viewBox="0 0 64 64" role="img" aria-label="Спутник">
+  <g fill="currentColor" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="24" y="23" width="16" height="18" rx="3" stroke="none"/>
+    <path d="M5 25h18v14H5ZM41 25h18v14H41Z" stroke="none"/>
+    <path d="M11 25v14M17 25v14M47 25v14M53 25v14" fill="none" stroke-width="1.6" opacity=".5"/>
+    <circle cx="32" cy="17" r="6" fill="none" stroke-width="2.2"/>
+    <path d="M32 23v3M32 41v8" fill="none" stroke-width="2.3"/>
+  </g>
+</svg>

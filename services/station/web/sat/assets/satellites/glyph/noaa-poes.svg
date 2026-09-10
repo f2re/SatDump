@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" color="#9fc6d8" viewBox="0 0 64 64" role="img" aria-label="NOAA POES">
+  <g fill="currentColor" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 27 24 21 32 31 26 43 10 39 5 32Z" stroke="none"/>
+    <path d="M25 20 58 8 61 18 29 30Z" stroke="none"/>
+    <path d="M34 17 37.5 27M43.5 13.7 47 23.7M52.5 10.5 56 20.2" fill="none" stroke-width="1.7" opacity=".55"/>
+    <path d="M22 23 29 20" fill="none" stroke-width="2.4"/>
+    <path d="M5 32h8l-3 4H6Z" fill="#000" stroke="none" opacity=".45"/>
+    <circle cx="20" cy="33" r="2.3" fill="#000" stroke="none" opacity=".45"/>
+  </g>
+</svg>

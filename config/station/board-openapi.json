@@ -1,1 +1,2294 @@
-{"openapi":"3.0.3","info":{"title":"SatDump Station / BOARD — серверный контракт","version":"1.0.0","description":"Новый интерфейс не входит в поставку. Control слушает loopback; удалённое управление — только через SSH или отдельно настроенный TLS. Токен не передаётся через URL."},"security":[{"bearerAuth":[]}],"paths":{"/api/v1/board":{"get":{"summary":"Публичная продукция BOARD, только чтение","security":[],"responses":{"200":{"description":"Каталог satdump.board/1","content":{"application/json":{"schema":{"type":"object"}}}},"503":{"description":"Ожидание обработчика","content":{"application/json":{"schema":{"type":"object"}}}}}}},"/api/v1/board/status":{"get":{"summary":"Ревизия, фактически принятая обработчиком","security":[],"responses":{"200":{"description":"applied_revision; не requested revision","content":{"application/json":{"schema":{"type":"object"}}}}}}},"/api/v1/control/health":{"get":{"summary":"Авторизованная проверка API","responses":{"200":{"description":"control_alive","content":{"application/json":{"schema":{"type":"object"}}}},"401":{"description":"Токен отсутствует/неверен","content":{"application/json":{"schema":{"type":"object"}}}}}}},"/api/v1/control/capabilities":{"get":{"summary":"Приборы и пресеты установленного движка; root-политика; изменяемые поля","responses":{"200":{"description":"Динамические возможности установленной версии","content":{"application/json":{"schema":{"type":"object"}}}}}}},"/api/v1/control/config":{"get":{"summary":"Настройки с ревизией и ETag","responses":{"200":{"description":"Текущая желаемая конфигурация","content":{"application/json":{"schema":{"type":"object"}}},"headers":{"ETag":{"schema":{"type":"string"},"description":"SHA-256 settings в двойных кавычках"}}}}},"put":{"summary":"Атомарная запись с If-Match; применяется между заданиями","parameters":[{"name":"If-Match","in":"header","required":true,"schema":{"type":"string"},"description":"ETag из GET, включая кавычки"}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/Update"}}}},"responses":{"200":{"description":"Конфигурация не изменилась","content":{"application/json":{"schema":{"type":"object"}}}},"202":{"description":"Записана новая ревизия; не доказательство применения worker","content":{"application/json":{"schema":{"type":"object"}}}},"401":{"description":"Нет авторизации","content":{"application/json":{"schema":{"type":"object"}}}},"403":{"description":"Host/Origin запрещён","content":{"application/json":{"schema":{"type":"object"}}}},"409":{"description":"Нужно подтверждение возможной повторной обработки","content":{"application/json":{"schema":{"type":"object"}}}},"412":{"description":"Конфликт ревизий","content":{"application/json":{"schema":{"type":"object"}}}},"413":{"description":"Тело больше 1 МиБ","content":{"application/json":{"schema":{"type":"object"}}}},"415":{"description":"Нужен application/json","content":{"application/json":{"schema":{"type":"object"}}}},"422":{"description":"Ошибка строгой/семантической валидации","content":{"application/json":{"schema":{"type":"object"}}}},"428":{"description":"Нужен If-Match","content":{"application/json":{"schema":{"type":"object"}}}},"503":{"description":"Ошибка хранилища","content":{"application/json":{"schema":{"type":"object"}}}}}}},"/api/v1/control/validate":{"post":{"summary":"Проверка настроек без записи","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/Update"}}}},"responses":{"200":{"description":"valid и reprocessing_required","content":{"application/json":{"schema":{"type":"object"}}}},"422":{"description":"validation_failed","content":{"application/json":{"schema":{"type":"object"}}}}}}}},"components":{"securitySchemes":{"bearerAuth":{"type":"http","scheme":"bearer"}},"schemas":{"Update":{"type":"object","additionalProperties":false,"required":["settings"],"properties":{"settings":{"$ref":"#/components/schemas/Settings"},"confirm_reprocess":{"type":"boolean","default":false}}},"Settings":{"type":"object","additionalProperties":false,"required":["station","processing","board"],"properties":{"station":{"type":"object","description":"Источники, параметры очереди, лимиты. engine/data_dir/processing_config запрещены для записи; диапазоны в capabilities."},"processing":{"type":"object","description":"Разрешённые поля presentation; существующие пресеты и выражения каналов. Lua, исполняемые пути, произвольные argv запрещены."},"board":{"type":"object","additionalProperties":false,"properties":{"hidden_sources":{"type":"array","items":{"type":"string"}},"hidden_instruments":{"type":"array","items":{"type":"string"}},"hidden_products":{"type":"array","items":{"type":"string"}},"layouts":{"type":"array","items":{"type":"string","enum":["editorial","minimal","external"]}},"max_items":{"type":"integer","minimum":1,"maximum":10000}}}}}}}}
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "SatDump Station / BOARD — серверный контракт",
+    "version": "1.2.0",
+    "description": "ОРБИТА: спутниковый экран и настройки станции. Сервер определяет файлы, фактические размеры, порядок показа, временное окно и метаданные. Apache2 — штатный веб-сервер, управление доступно на отдельном loopback-порту или через защищённый туннель."
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/v1/board": {
+      "get": {
+        "summary": "Публичная продукция BOARD, только чтение",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Совместимый каталог BOARD",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoardCatalog"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Ожидание обработчика",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "getBoard",
+        "tags": [
+          "Просмотр"
+        ]
+      }
+    },
+    "/api/v1/board/status": {
+      "get": {
+        "summary": "Ревизия, фактически принятая обработчиком",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Последний статус публикации; свежесть отдельно в control/status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoardStatus"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "getBoardStatus",
+        "tags": [
+          "Просмотр"
+        ]
+      }
+    },
+    "/api/v1/control/health": {
+      "get": {
+        "summary": "Авторизованная проверка API",
+        "responses": {
+          "200": {
+            "description": "control_alive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Нет авторизации",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Host/Origin запрещён",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Хранилище недоступно",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "getControlHealth",
+        "tags": [
+          "Управление"
+        ]
+      }
+    },
+    "/api/v1/control/capabilities": {
+      "get": {
+        "summary": "Приборы и пресеты установленного движка; root-политика; изменяемые поля",
+        "responses": {
+          "200": {
+            "description": "Возможности установленного движка и разрешённые поля",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Capabilities"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Нет авторизации",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Host/Origin запрещён",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Хранилище недоступно",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "getControlCapabilities",
+        "tags": [
+          "Управление"
+        ]
+      }
+    },
+    "/api/v1/control/config": {
+      "get": {
+        "summary": "Настройки с ревизией и ETag",
+        "responses": {
+          "200": {
+            "description": "Желаемая конфигурация",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigDocument"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^\"[0-9a-f]{64}\"$"
+                },
+                "description": "SHA-256 представления в двойных кавычках; передать в If-Match при изменении конфигурации"
+              }
+            }
+          },
+          "401": {
+            "description": "Нет авторизации",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Host/Origin запрещён",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Хранилище недоступно",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "getControlConfig",
+        "tags": [
+          "Управление"
+        ]
+      },
+      "put": {
+        "summary": "Атомарная запись с If-Match; применяется между заданиями",
+        "parameters": [
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\"[0-9a-f]{64}\"$"
+            },
+            "description": "ETag из GET, включая кавычки"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Update"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Конфигурация не изменилась",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigDocument"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^\"[0-9a-f]{64}\"$"
+                },
+                "description": "SHA-256 представления в двойных кавычках; передать в If-Match при изменении конфигурации"
+              }
+            }
+          },
+          "202": {
+            "description": "Ревизия сохранена; применение проверяется через control/status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigDocument"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^\"[0-9a-f]{64}\"$"
+                },
+                "description": "SHA-256 представления в двойных кавычках; передать в If-Match при изменении конфигурации"
+              }
+            }
+          },
+          "401": {
+            "description": "Нет авторизации",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Host/Origin запрещён",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Нужно подтверждение возможной повторной обработки",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Конфликт ревизий",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON больше 1 МиБ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Требуется application/json",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Невалидное поле или семантическое ограничение",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Нужен If-Match",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Хранилище недоступно",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Требуется однозначный Content-Length",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "putControlConfig",
+        "tags": [
+          "Управление"
+        ]
+      }
+    },
+    "/api/v1/control/validate": {
+      "post": {
+        "summary": "Проверка настроек без записи",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Update"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Проверка без записи",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Невалидное поле или семантическое ограничение",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Нет авторизации",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Host/Origin запрещён",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Хранилище недоступно",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Требуется однозначный Content-Length",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON больше 1 МиБ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Требуется application/json",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "postControlValidate",
+        "tags": [
+          "Управление"
+        ]
+      }
+    },
+    "/api/v1/satellite/manifest": {
+      "get": {
+        "summary": "Каталог наблюдений за скользящее UTC-окно",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Каталог наблюдений за скользящее UTC-окно",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SatelliteManifest"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^\"[0-9a-f]{64}\"$"
+                },
+                "description": "SHA-256 представления в двойных кавычках; передать в If-Match при изменении конфигурации"
+              }
+            }
+          },
+          "304": {
+            "description": "ETag совпадает, тело отсутствует"
+          },
+          "503": {
+            "description": "Обработчик ещё не опубликовал каталог; не пустой успешный ответ"
+          }
+        },
+        "operationId": "getSatelliteManifest",
+        "tags": [
+          "Просмотр"
+        ]
+      }
+    },
+    "/api/v1/satellite/config": {
+      "get": {
+        "summary": "Настройки, фактически применённые обработчиком",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Настройки, фактически применённые обработчиком",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisplayConfig"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^\"[0-9a-f]{64}\"$"
+                },
+                "description": "SHA-256 представления в двойных кавычках; передать в If-Match при изменении конфигурации"
+              }
+            }
+          },
+          "304": {
+            "description": "ETag совпадает, тело отсутствует"
+          },
+          "503": {
+            "description": "Обработчик ещё не опубликовал каталог; не пустой успешный ответ"
+          }
+        },
+        "operationId": "getSatelliteConfig",
+        "tags": [
+          "Просмотр"
+        ]
+      }
+    },
+    "/api/v1/openapi.json": {
+      "get": {
+        "summary": "Этот OpenAPI-контракт, доступный без сети",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OpenAPI 3.0.3",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "getOpenapi.Json",
+        "tags": [
+          "Просмотр"
+        ]
+      }
+    },
+    "/api/v1/control/status": {
+      "get": {
+        "summary": "Желаемая и применённая ревизии, свежесть обработчика",
+        "responses": {
+          "200": {
+            "description": "Статус применения",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControlStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Нет авторизации",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Host/Origin запрещён",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Хранилище недоступно",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "getControlStatus",
+        "tags": [
+          "Управление"
+        ]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    },
+    "schemas": {
+      "Update": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "settings"
+        ],
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/Settings"
+          },
+          "confirm_reprocess": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "Settings": {
+        "type": "object",
+        "properties": {
+          "station": {
+            "$ref": "#/components/schemas/StationSettings"
+          },
+          "processing": {
+            "$ref": "#/components/schemas/ProcessingSettings"
+          },
+          "board": {
+            "$ref": "#/components/schemas/BoardSettings"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "station",
+          "processing",
+          "board"
+        ]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "detail": {
+            "type": "string",
+            "maxLength": 600
+          },
+          "revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "error"
+        ]
+      },
+      "Display": {
+        "type": "object",
+        "properties": {
+          "windowHours": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 48,
+            "default": 24
+          },
+          "pollSeconds": {
+            "type": "integer",
+            "minimum": 30,
+            "maximum": 3600,
+            "default": 90
+          },
+          "minimumDisplaySeconds": {
+            "type": "integer",
+            "minimum": 25,
+            "maximum": 600,
+            "default": 25
+          },
+          "displaySeconds": {
+            "type": "integer",
+            "minimum": 25,
+            "maximum": 600,
+            "default": 30
+          },
+          "complexDisplaySeconds": {
+            "type": "integer",
+            "minimum": 25,
+            "maximum": 600,
+            "default": 40
+          },
+          "latestSeconds": {
+            "type": "integer",
+            "minimum": 25,
+            "maximum": 600,
+            "default": 45
+          },
+          "preloadSeconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60,
+            "default": 10
+          },
+          "transitionMilliseconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000,
+            "default": 300
+          },
+          "portraitTourEnabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "portraitTourTransitionMilliseconds": {
+            "type": "integer",
+            "minimum": 400,
+            "maximum": 2000,
+            "default": 900
+          },
+          "performanceMode": {
+            "type": "boolean",
+            "default": false
+          },
+          "ambient": {
+            "type": "boolean",
+            "default": true
+          },
+          "sourceDelayHours": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 48,
+            "default": 3
+          },
+          "imageTimeoutSeconds": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 120,
+            "default": 20
+          },
+          "dailyReload": {
+            "type": "boolean",
+            "default": true
+          },
+          "reloadHoursUTC": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 24
+            },
+            "description": "Полуоткрытое UTC-окно [начало, конец), начало < конец.",
+            "default": [
+              3,
+              5
+            ]
+          },
+          "complexProducts": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 240,
+              "minLength": 1
+            },
+            "maxItems": 100,
+            "default": [
+              "cloudtopir",
+              "cloud_top_ir",
+              "mcir",
+              "night_microphysics",
+              "rgb"
+            ]
+          },
+          "productPriority": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 240,
+              "minLength": 1
+            },
+            "maxItems": 100,
+            "default": [
+              "night_microphysics",
+              "natural_color",
+              "cloudtopir",
+              "mcir",
+              "msa",
+              "vis"
+            ]
+          },
+          "imageMode": {
+            "type": "string",
+            "enum": [
+              "original",
+              "preview"
+            ],
+            "default": "original",
+            "description": "Файл для показа выбирает сервер. original — исходный опубликованный PNG/JPEG без уменьшения; preview — отдельное серверное превью."
+          },
+          "ambientOpacityPercent": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "default": 82
+          }
+        },
+        "additionalProperties": false,
+        "description": "Допускается частичное задание с серверными значениями по умолчанию. displaySeconds, complexDisplaySeconds, latestSeconds >= minimumDisplaySeconds; preloadSeconds меньше каждого времени показа. Эти межполевые ограничения проверяет сервер."
+      },
+      "Color": {
+        "oneOf": [
+          {
+            "type": "string",
+            "pattern": "^#?[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 255
+            },
+            "minItems": 3,
+            "maxItems": 4
+          }
+        ]
+      },
+      "Theme": {
+        "type": "object",
+        "properties": {
+          "panel": {
+            "$ref": "#/components/schemas/Color"
+          },
+          "panel_secondary": {
+            "$ref": "#/components/schemas/Color"
+          },
+          "border": {
+            "$ref": "#/components/schemas/Color"
+          },
+          "text": {
+            "$ref": "#/components/schemas/Color"
+          },
+          "muted_text": {
+            "$ref": "#/components/schemas/Color"
+          },
+          "accent": {
+            "$ref": "#/components/schemas/Color"
+          },
+          "warning": {
+            "$ref": "#/components/schemas/Color"
+          },
+          "error": {
+            "$ref": "#/components/schemas/Color"
+          },
+          "red_component": {
+            "$ref": "#/components/schemas/Color"
+          },
+          "green_component": {
+            "$ref": "#/components/schemas/Color"
+          },
+          "blue_component": {
+            "$ref": "#/components/schemas/Color"
+          },
+          "reference_width": {
+            "type": "integer",
+            "minimum": 320,
+            "maximum": 8192
+          },
+          "minimum_scale": {
+            "type": "number",
+            "minimum": 0.25,
+            "maximum": 8
+          },
+          "maximum_scale": {
+            "type": "number",
+            "minimum": 0.25,
+            "maximum": 8
+          }
+        },
+        "additionalProperties": false
+      },
+      "LegendSettings": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "none",
+              "continuous",
+              "categorical",
+              "composite"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "subtitle": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "unit": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1000
+            },
+            "maxItems": 64
+          },
+          "min": {
+            "type": "number",
+            "minimum": -1000000000000.0,
+            "maximum": 1000000000000.0
+          },
+          "max": {
+            "type": "number",
+            "minimum": -1000000000000.0,
+            "maximum": 1000000000000.0
+          },
+          "tick_count": {
+            "type": "integer",
+            "minimum": 2,
+            "maximum": 32
+          },
+          "colors": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/Color"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "position": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "color": {
+                      "$ref": "#/components/schemas/Color"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "position",
+                    "color"
+                  ]
+                }
+              ]
+            },
+            "maxItems": 64
+          },
+          "ticks": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "number",
+                  "minimum": -1000000000000.0,
+                  "maximum": 1000000000000.0
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "number",
+                      "minimum": -1000000000000.0,
+                      "maximum": 1000000000000.0
+                    },
+                    "label": {
+                      "type": "string",
+                      "maxLength": 1000
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "value"
+                  ]
+                }
+              ]
+            },
+            "maxItems": 64
+          },
+          "categories": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "color": {
+                  "$ref": "#/components/schemas/Color"
+                },
+                "label": {
+                  "type": "string",
+                  "maxLength": 1000
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "color",
+                "label"
+              ]
+            },
+            "maxItems": 64
+          },
+          "components": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "component": {
+                  "type": "string",
+                  "maxLength": 2048
+                },
+                "channel": {
+                  "type": "string",
+                  "maxLength": 2048
+                },
+                "spectral_range": {
+                  "type": "string",
+                  "maxLength": 2048
+                },
+                "quantity": {
+                  "type": "string",
+                  "maxLength": 2048
+                },
+                "formula": {
+                  "type": "string",
+                  "maxLength": 2048
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 2048
+                }
+              },
+              "additionalProperties": false
+            },
+            "maxItems": 64
+          }
+        },
+        "additionalProperties": false
+      },
+      "LayoutSettings": {
+        "oneOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "branding": {
+                "type": "string",
+                "maxLength": 240
+              },
+              "show_branding": {
+                "type": "boolean"
+              },
+              "theme": {
+                "$ref": "#/components/schemas/Theme"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "PresentationSettings": {
+        "oneOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "save_minimal": {
+                "type": "boolean"
+              },
+              "save_editorial": {
+                "type": "boolean"
+              },
+              "save_presentation": {
+                "type": "boolean"
+              },
+              "save_legacy_alias": {
+                "type": "boolean"
+              },
+              "north_up": {
+                "type": "boolean"
+              },
+              "show_branding": {
+                "type": "boolean"
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 1000
+              },
+              "subtitle": {
+                "type": "string",
+                "maxLength": 1000
+              },
+              "branding": {
+                "type": "string",
+                "maxLength": 1000
+              },
+              "theme": {
+                "$ref": "#/components/schemas/Theme"
+              },
+              "legend": {
+                "$ref": "#/components/schemas/LegendSettings"
+              },
+              "orientation_mode": {
+                "type": "string",
+                "enum": [
+                  "auto",
+                  "keep",
+                  "none",
+                  "source",
+                  "flip_vertical",
+                  "vertical",
+                  "flip_horizontal",
+                  "horizontal",
+                  "rotate_180",
+                  "180"
+                ]
+              },
+              "orientation": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "auto",
+                      "keep",
+                      "none",
+                      "source",
+                      "flip_vertical",
+                      "vertical",
+                      "flip_horizontal",
+                      "horizontal",
+                      "rotate_180",
+                      "180"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "auto",
+                          "keep",
+                          "none",
+                          "source",
+                          "flip_vertical",
+                          "vertical",
+                          "flip_horizontal",
+                          "horizontal",
+                          "rotate_180",
+                          "180"
+                        ]
+                      },
+                      "north_up": {
+                        "type": "boolean"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "outputs": {
+                "oneOf": [
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "minimal",
+                        "editorial",
+                        "presentation",
+                        "legacy_alias"
+                      ]
+                    },
+                    "maxItems": 1000
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "minimal": {
+                        "type": "boolean"
+                      },
+                      "editorial": {
+                        "type": "boolean"
+                      },
+                      "presentation": {
+                        "type": "boolean"
+                      },
+                      "legacy_alias": {
+                        "type": "boolean"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "minimal": {
+                "$ref": "#/components/schemas/LayoutSettings"
+              },
+              "editorial": {
+                "$ref": "#/components/schemas/LayoutSettings"
+              },
+              "presentational": {
+                "$ref": "#/components/schemas/LayoutSettings"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "Source": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "image",
+              "product",
+              "pipeline"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "maxLength": 4096,
+            "description": "Абсолютный путь внутри input_roots root-политики; без пересечения служебных папок и других входов."
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "require_ready": {
+            "type": "boolean"
+          },
+          "patterns": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "maxItems": 32
+          },
+          "satellite": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "instrument": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "pipeline": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "input_level": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 240
+            },
+            "maxItems": 10,
+            "description": "Только пары разрешённых argv из capabilities; shell/Lua/пути исполняемых файлов запрещены."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "kind",
+          "path"
+        ]
+      },
+      "StationSettings": {
+        "type": "object",
+        "properties": {
+          "poll_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3600
+          },
+          "settle_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3600
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 86400
+          },
+          "max_attempts": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20
+          },
+          "native_threads": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 256
+          },
+          "min_free_mb": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1048576
+          },
+          "max_input_mb": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1048576
+          },
+          "max_log_mb": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1024
+          },
+          "max_image_pixels": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200000000
+          },
+          "max_items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Source"
+            },
+            "maxItems": 64
+          },
+          "keep_work": {
+            "type": "boolean"
+          },
+          "archive_science": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "sources"
+        ]
+      },
+      "ProcessingSettings": {
+        "type": "object",
+        "description": "Наложение на установленный движок. Изменяемы satdump_general и viewer.instruments.*.rgb_composites.*. Корневые расширения из базовой конфигурации разрешены только неизменными. Lua, shell и произвольные параметры исполнения недоступны. Полную семантическую проверку выполняет /validate.",
+        "properties": {
+          "satdump_general": {
+            "type": "object",
+            "properties": {
+              "presentation": {
+                "$ref": "#/components/schemas/PresentationSettings"
+              }
+            }
+          },
+          "viewer": {
+            "type": "object",
+            "properties": {
+              "instruments": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "rgb_composites": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "autogen": {
+                            "type": "boolean"
+                          },
+                          "equation": {
+                            "type": "string",
+                            "maxLength": 2048
+                          },
+                          "presentation": {
+                            "$ref": "#/components/schemas/PresentationSettings"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "BoardSettings": {
+        "type": "object",
+        "properties": {
+          "hidden_sources": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 240
+            },
+            "maxItems": 1000
+          },
+          "hidden_instruments": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 240
+            },
+            "maxItems": 1000
+          },
+          "hidden_products": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 240
+            },
+            "maxItems": 1000
+          },
+          "layouts": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "editorial",
+                "minimal",
+                "external"
+              ]
+            },
+            "maxItems": 1000
+          },
+          "max_items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          },
+          "display": {
+            "$ref": "#/components/schemas/Display"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ConfigDocument": {
+        "type": "object",
+        "properties": {
+          "schema": {
+            "type": "string",
+            "enum": [
+              "satdump.station.control/1"
+            ]
+          },
+          "revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/Settings"
+          },
+          "updated_at": {
+            "type": "number"
+          },
+          "reprocessing_confirmed": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "schema",
+          "revision",
+          "settings",
+          "updated_at"
+        ]
+      },
+      "ValidationResult": {
+        "type": "object",
+        "properties": {
+          "valid": {
+            "type": "boolean"
+          },
+          "reprocessing_required": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "valid",
+          "reprocessing_required"
+        ]
+      },
+      "ControlStatus": {
+        "type": "object",
+        "properties": {
+          "schema": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "phase": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "updated_at": {
+            "type": "number"
+          },
+          "configuration_error": {
+            "type": "boolean"
+          },
+          "applied_revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "nullable": true
+          },
+          "desired_revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "worker_alive": {
+            "type": "boolean"
+          },
+          "applied": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "configuration_error",
+          "applied_revision",
+          "desired_revision",
+          "worker_alive",
+          "applied"
+        ],
+        "description": "applied=true только при свежем heartbeat, принятой текущей ревизии и отсутствии ошибки. Публикация старой ревизии не означает успешное применение новой."
+      },
+      "Capabilities": {
+        "type": "object",
+        "required": [
+          "schema",
+          "instruments",
+          "display_defaults",
+          "display_ranges",
+          "input_roots"
+        ],
+        "properties": {
+          "schema": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "instruments": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 240
+              },
+              "maxItems": 1000
+            }
+          },
+          "pipeline_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 240
+            },
+            "maxItems": 1000
+          },
+          "pipeline_options": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 240
+            },
+            "maxItems": 1000
+          },
+          "source_kinds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 240
+            },
+            "maxItems": 1000
+          },
+          "station_ranges": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 2
+            }
+          },
+          "display_defaults": {
+            "$ref": "#/components/schemas/Display"
+          },
+          "display_ranges": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 2
+            }
+          },
+          "input_roots": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 4096
+            },
+            "maxItems": 1000
+          },
+          "privileged_read_only": {
+            "type": "object"
+          },
+          "restrictions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 240
+            },
+            "maxItems": 1000
+          }
+        }
+      },
+      "PublicAsset": {
+        "type": "string",
+        "pattern": "^/items/[0-9a-f]{64}/[0-9]{3}(-preview|-thumb|-ambient(-2)?)?\\.(png|jpg|json)$"
+      },
+      "Frame": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "eventId": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "satellite": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "instrument": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "product": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "purpose": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "code",
+              "title",
+              "description"
+            ]
+          },
+          "display": {
+            "$ref": "#/components/schemas/PublicAsset"
+          },
+          "ambient": {
+            "type": "string",
+            "pattern": "^/items/[0-9a-f]{64}/[0-9]{3}(-preview|-thumb|-ambient(-2)?)?\\.(png|jpg|json)$",
+            "nullable": true
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "pass": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "layout": {
+            "type": "string",
+            "enum": [
+              "editorial",
+              "minimal",
+              "external"
+            ]
+          },
+          "legend": {
+            "type": "object",
+            "description": "Неизменная семантика легенды из исходного паспорта Presentation; не смешивать с входной схемой LegendSettings."
+          },
+          "metadata": {
+            "type": "string",
+            "pattern": "^/items/[0-9a-f]{64}/[0-9]{3}(-preview|-thumb|-ambient(-2)?)?\\.(png|jpg|json)$",
+            "nullable": true
+          },
+          "original": {
+            "type": "string",
+            "pattern": "^/items/[0-9a-f]{64}/[0-9]{3}(-preview|-thumb|-ambient(-2)?)?\\.(png|jpg|json)$",
+            "nullable": true
+          },
+          "timeKnown": {
+            "type": "boolean",
+            "description": "false: показать кадр с надписью «Время съёмки не указано», не помещать на UTC-шкалу."
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Время публикации, НЕ время наблюдения."
+          },
+          "latest": {
+            "type": "boolean"
+          },
+          "image": {
+            "$ref": "#/components/schemas/ImageAsset"
+          },
+          "originalImage": {
+            "$ref": "#/components/schemas/ImageAsset"
+          },
+          "previewImage": {
+            "$ref": "#/components/schemas/ImageAsset"
+          },
+          "ambientImage": {
+            "$ref": "#/components/schemas/ImageAsset"
+          },
+          "layers": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Состав слоёв из паспорта, либо его legend.components, без синтеза в браузере."
+          },
+          "details": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "quality": {
+            "type": "object"
+          },
+          "orientation": {
+            "type": "object"
+          },
+          "metadataWarnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "start",
+          "end",
+          "eventId",
+          "satellite",
+          "instrument",
+          "product",
+          "display",
+          "width",
+          "height",
+          "legend"
+        ]
+      },
+      "SatelliteManifest": {
+        "type": "object",
+        "properties": {
+          "schema": {
+            "type": "string",
+            "enum": [
+              "meteo-orbit.manifest/1"
+            ]
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "settings_revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "nullable": true
+          },
+          "windowHours": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 48
+          },
+          "display": {
+            "$ref": "#/components/schemas/Display"
+          },
+          "excluded": {
+            "type": "object",
+            "properties": {
+              "invalid_asset": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1000000
+              },
+              "expired": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1000000
+              },
+              "future": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1000000
+              }
+            },
+            "additionalProperties": false
+          },
+          "frames": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Frame"
+            },
+            "maxItems": 10000
+          },
+          "undatedCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "schema",
+          "generatedAt",
+          "settings_revision",
+          "windowHours",
+          "display",
+          "frames",
+          "excluded"
+        ]
+      },
+      "DisplayConfig": {
+        "type": "object",
+        "properties": {
+          "windowHours": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 48,
+            "default": 24
+          },
+          "pollSeconds": {
+            "type": "integer",
+            "minimum": 30,
+            "maximum": 3600,
+            "default": 90
+          },
+          "minimumDisplaySeconds": {
+            "type": "integer",
+            "minimum": 25,
+            "maximum": 600,
+            "default": 25
+          },
+          "displaySeconds": {
+            "type": "integer",
+            "minimum": 25,
+            "maximum": 600,
+            "default": 30
+          },
+          "complexDisplaySeconds": {
+            "type": "integer",
+            "minimum": 25,
+            "maximum": 600,
+            "default": 40
+          },
+          "latestSeconds": {
+            "type": "integer",
+            "minimum": 25,
+            "maximum": 600,
+            "default": 45
+          },
+          "preloadSeconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60,
+            "default": 10
+          },
+          "transitionMilliseconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000,
+            "default": 300
+          },
+          "portraitTourEnabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "portraitTourTransitionMilliseconds": {
+            "type": "integer",
+            "minimum": 400,
+            "maximum": 2000,
+            "default": 900
+          },
+          "performanceMode": {
+            "type": "boolean",
+            "default": false
+          },
+          "ambient": {
+            "type": "boolean",
+            "default": true
+          },
+          "sourceDelayHours": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 48,
+            "default": 3
+          },
+          "imageTimeoutSeconds": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 120,
+            "default": 20
+          },
+          "dailyReload": {
+            "type": "boolean",
+            "default": true
+          },
+          "reloadHoursUTC": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 24
+            },
+            "description": "Полуоткрытое UTC-окно [начало, конец), начало < конец.",
+            "default": [
+              3,
+              5
+            ]
+          },
+          "complexProducts": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 240,
+              "minLength": 1
+            },
+            "maxItems": 100,
+            "default": [
+              "cloudtopir",
+              "cloud_top_ir",
+              "mcir",
+              "night_microphysics",
+              "rgb"
+            ]
+          },
+          "productPriority": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 240,
+              "minLength": 1
+            },
+            "maxItems": 100,
+            "default": [
+              "night_microphysics",
+              "natural_color",
+              "cloudtopir",
+              "mcir",
+              "msa",
+              "vis"
+            ]
+          },
+          "imageMode": {
+            "type": "string",
+            "enum": [
+              "original",
+              "preview"
+            ],
+            "default": "original",
+            "description": "Файл для показа выбирает сервер. original — исходный опубликованный PNG/JPEG без уменьшения; preview — отдельное серверное превью."
+          },
+          "ambientOpacityPercent": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "default": 82
+          },
+          "settings_revision": {
+            "type": "string",
+            "nullable": true,
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "settings_revision"
+        ]
+      },
+      "BoardEntry": {
+        "type": "object",
+        "required": [
+          "id",
+          "source",
+          "satellite",
+          "instrument",
+          "title",
+          "preview",
+          "metadata",
+          "original",
+          "published_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "source": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "satellite": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "instrument": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 400
+          },
+          "preview": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "metadata": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "original": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "published_at": {
+            "type": "number"
+          },
+          "layout": {
+            "type": "string",
+            "enum": [
+              "editorial",
+              "minimal",
+              "external"
+            ]
+          }
+        }
+      },
+      "BoardCatalog": {
+        "type": "object",
+        "properties": {
+          "schema": {
+            "type": "string",
+            "enum": [
+              "satdump.board/1"
+            ]
+          },
+          "updated_at": {
+            "type": "number"
+          },
+          "settings_revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "nullable": true
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000000
+          },
+          "hidden": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000000
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BoardEntry"
+            },
+            "maxItems": 10000
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "schema",
+          "updated_at",
+          "settings_revision",
+          "title",
+          "total",
+          "hidden",
+          "items"
+        ]
+      },
+      "BoardStatus": {
+        "type": "object",
+        "properties": {
+          "schema": {
+            "type": "string",
+            "enum": [
+              "satdump.board.status/1"
+            ]
+          },
+          "updated_at": {
+            "type": "number"
+          },
+          "phase": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "applied_revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "nullable": true
+          },
+          "configuration_error": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "schema",
+          "updated_at",
+          "phase",
+          "applied_revision",
+          "configuration_error"
+        ]
+      },
+      "ImageAsset": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "nullable": true,
+            "pattern": "^/items/[0-9a-f]{64}/[0-9]{3}(-preview|-thumb|-ambient(-2)?)?\\.(png|jpg|json)$"
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 1,
+            "nullable": true
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1,
+            "nullable": true
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "original",
+              "preview"
+            ]
+          }
+        },
+        "required": [
+          "url",
+          "width",
+          "height"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Текущий origin: публичный экран или локальная панель управления"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Просмотр"
+    },
+    {
+      "name": "Управление"
+    }
+  ]
+}

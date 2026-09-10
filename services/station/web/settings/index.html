@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer"><title>SatDump · Настройки станции</title>
+  <link rel="stylesheet" href="/settings/admin.css"><script type="module" src="/settings/admin.js"></script>
+</head>
+<body>
+<header><div><span class="eyebrow">SATDUMP / СТАНЦИЯ</span><h1>Настройки спутникового экрана</h1></div><button type="button" id="logout" hidden>Выйти</button></header>
+<main>
+  <p id="message" role="status" aria-live="polite">Панель доступна локально или через SSH-туннель. Изменения требуют токена.</p>
+  <form id="login"><h2>Доступ к управлению</h2><p>Токен находится в <code>/etc/satdump-station/control.token</code>. Он хранится только в памяти вкладки, не в URL или браузерном хранилище.</p><label>Токен администратора<input id="token" type="password" required autocomplete="off" spellcheck="false" maxlength="64" pattern="[0-9a-f]{64}"></label><button type="submit">Подключиться</button></form>
+  <form id="settings" hidden>
+    <div class="revision"><span id="revision">Ревизия</span><span id="applied" role="status">Проверка применения</span></div>
+    <nav aria-label="Разделы"><a href="#display-section">Показ</a><a href="#sources-section">Источники</a><a href="#processing-section">Обработка</a><a href="#board-section">Каталог</a></nav>
+    <section id="display-section"><h2>Экран и время показа</h2><p>Эти изменения не запускают декодирование повторно. Текущий кадр не прерывается.</p><div id="display-fields" class="fields"></div></section>
+    <section id="sources-section"><h2>Станция и входные данные</h2><div id="station-fields" class="fields"></div><p id="input-roots"></p><div id="sources"></div><button type="button" id="add-source" class="secondary">Добавить источник</button></section>
+    <section id="processing-section"><h2>Оформление и обработка продукции</h2><p>Научные исходники сохраняются. Изменение рецепта или источников требует отдельного подтверждения повторной обработки.</p><div id="presentation-fields" class="fields"></div><h3>Пресеты установленного движка</h3><div class="fields"><label>Прибор<select id="instrument"></select></label><label>Пресет<select id="preset"></select></label></div><div id="preset-fields" class="fields"></div><details><summary>Ручная интерпретация выбранного пресета</summary><p>Объект presentation: название, пояснения, семантическая легенда, компоненты и тема. Пустое поле — наследовать. Не вводите шкалу физической величины для произвольного RGB.</p><label>JSON оформления<textarea id="preset-presentation" rows="10" spellcheck="false"></textarea></label><button type="button" id="apply-preset-json" class="secondary">Применить к черновику</button></details></section>
+    <section id="board-section"><h2>Видимость продукции</h2><div id="board-fields" class="fields"></div></section>
+    <details id="advanced"><summary>Полный черновик конфигурации</summary><p>Пути движка, корень данных и системные команды не изменяются через веб. Сервер проверяет все поля по политике администратора.</p><label>Настройки JSON<textarea id="json-settings" rows="18" spellcheck="false"></textarea></label><button id="use-json" type="button" class="secondary">Применить JSON к черновику</button><button id="show-json" type="button" class="secondary">Обновить из формы</button></details>
+    <div id="reprocess-panel" class="warning" hidden><strong>Изменяется рецепт обработки или источник.</strong><p>Доступные входные данные могут быть обработаны заново. Существующая продукция не удаляется.</p><label class="check"><input type="checkbox" id="confirm-reprocess"> Подтверждаю возможную повторную обработку</label></div>
+    <footer class="actions"><span id="dirty">Нет изменений</span><button type="button" id="reload" class="secondary">Отменить черновик</button><button type="button" id="validate" class="secondary">Проверить</button><button type="submit" id="save">Сохранить</button></footer>
+  </form>
+</main>
+</body></html>

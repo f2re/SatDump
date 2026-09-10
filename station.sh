@@ -9,7 +9,7 @@ command=${1:-help}
 case "$command" in
     help|-h|--help)
         cat <<'EOF'
-SatDump Station / BOARD — Astra 1.6, автономная обработка и серверные API
+SatDump Station / BOARD — Astra 1.6/1.7, спутниковый экран и управление
 
 Исходники:
   ./station.sh build --jobs 2          полный офлайн-пакет: движок + WEB + API
@@ -20,16 +20,17 @@ SatDump Station / BOARD — Astra 1.6, автономная обработка �
   sudo ./install.sh                    интерактивный мастер в терминале
   sudo ./install.sh --yes              установка без вопросов
   ./install.sh --help                  режимы WEB, пути и параметры мастера
-  sudo ./station.sh ui-deploy DIR      подключить будущие готовые файлы интерфейса
+  sudo ./station.sh ui-deploy DIR      подключить отдельный внешний интерфейс (необязательно)
   sudo ./station.sh doctor             read-only диагностика прав и конфигурации
   sudo ./station.sh status             последние задания
   sudo ./station.sh logs               журналы всех служб
   sudo ./station.sh restart            управляемый перезапуск
   sudo ./station.sh rollback           прежние код/настройки/службы, не данные
   sudo ./station.sh retry --job ID     повтор неуспешного задания
-  ./station.sh deploy ARCHIVE USER@HOST -- --port 8090 --web-server builtin
+  ./station.sh deploy ARCHIVE USER@HOST -- --port 8090 --web-server apache2
 
-WEB: 127.0.0.1:8090/api/v1/board — изображения/паспорта, без нового интерфейса.
+WEB: 127.0.0.1:8090/ — спутниковый экран ОРБИТА.
+Управление: 127.0.0.1:8093/settings/ — локально/SSH; токен и ревизии.
 API: 127.0.0.1:8091/api/v1/control/config — токен + ревизии If-Match.
 Прямые команды: worker, once, serve, control, check; параметры: --help.
 EOF

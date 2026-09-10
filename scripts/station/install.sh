@@ -4,10 +4,10 @@ set -Eeuo pipefail
 export PATH="/usr/local/sbin:/usr/sbin:/sbin:$PATH"
 PACKAGE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PREFIX=/opt/satdump-station CONFIG=/etc/satdump-station DATA=/var/lib/satdump-station
-HOST=127.0.0.1 PORT=8090 CONTROL_PORT=8091 BACKEND_PORT=8092 WEB_SERVER=builtin
+HOST=127.0.0.1 PORT=8090 CONTROL_PORT=8091 BACKEND_PORT=8092 ADMIN_PORT=8093 WEB_SERVER=apache2
 SOURCE_PATH='' SOURCE_KIND=image INTERACTIVE=auto COLOR=auto ANIMATION=auto
 DRY=0 START=1 ROLLBACK=0 COMPAT=0 YES=0
-DATA_SET=0 HOST_SET=0 PORT_SET=0 WEB_SET=0 CONTROL_SET=0 BACKEND_SET=0
+DATA_SET=0 HOST_SET=0 PORT_SET=0 WEB_SET=0 CONTROL_SET=0 BACKEND_SET=0 ADMIN_SET=0
 STAGE='' BACKUP='' MUTATED=0 COMMITTED=0 INSTALL_LOG=''
 UNITS=(satdump-worker.service satdump-control.service satdump-board.service satdump-web.service)
 # shellcheck source=scripts/station/terminal.sh
@@ -20,6 +20,7 @@ while (( $# )); do
         --listen) value "$@"; HOST=$2; HOST_SET=1; shift 2 ;;
         --port) value "$@"; PORT=$2; PORT_SET=1; shift 2 ;;
         --control-port) value "$@"; CONTROL_PORT=$2; CONTROL_SET=1; shift 2 ;;
+        --admin-port) value "$@"; ADMIN_PORT=$2; ADMIN_SET=1; shift 2 ;;
         --backend-port) value "$@"; BACKEND_PORT=$2; BACKEND_SET=1; shift 2 ;;
         --web-server) value "$@"; WEB_SERVER=$2; WEB_SET=1; shift 2 ;;
         --source-path) value "$@"; SOURCE_PATH=$2; shift 2 ;;
@@ -45,9 +46,10 @@ SatDump Station / BOARD — автономная установка
   --data-dir DIR       выделенный каталог данных (обновление сохраняет старый)
   --listen IPv4        WEB: 127.0.0.1 по умолчанию; 0.0.0.0 — доверенная ЛВС
   --port N            WEB-порт, по умолчанию 8090
-  --web-server MODE   builtin (автономный) или nginx (уже установленный /usr/sbin/nginx)
+  --web-server MODE   apache2 (штатный, по умолчанию), nginx или builtin (стенд)
   --control-port N    локальный авторизованный API, по умолчанию 8091
-  --backend-port N    внутренний BOARD при nginx, по умолчанию 8092
+  --admin-port N      панель управления на 127.0.0.1, по умолчанию 8093
+  --backend-port N    внутренний BOARD при apache2/nginx, по умолчанию 8092
   --source-path DIR   подключить источник receiver (готовые файлы с .ready)
   --source-kind TYPE  image или product; параметры IQ задаются через API/конфигурацию
   --no-start          подготовить на остановленной станции; не проверяет запуск
@@ -76,6 +78,7 @@ if [[ -f $CONFIG/web.env ]]; then
             SATDUMP_HOST) (( HOST_SET )) || HOST=$setting ;;
             SATDUMP_PORT) (( PORT_SET )) || PORT=$setting ;;
             SATDUMP_CONTROL_PORT) (( CONTROL_SET )) || CONTROL_PORT=$setting ;;
+            SATDUMP_ADMIN_PORT) (( ADMIN_SET )) || ADMIN_PORT=$setting ;;
             SATDUMP_BACKEND_PORT) (( BACKEND_SET )) || BACKEND_PORT=$setting ;;
             SATDUMP_WEB_SERVER) (( WEB_SET )) || WEB_SERVER=$setting ;;
         esac
@@ -106,7 +109,7 @@ if [[ $INTERACTIVE == always || ( $INTERACTIVE == auto && -t 0 && -t 2 ) ]]; the
             0) ui_ask '1/6  Каталог данных' "$DATA" || rc=$? ;;
             1) ui_ask '2/6  IPv4 сайта (локально: 127.0.0.1; ЛВС: 0.0.0.0)' "$HOST" || rc=$? ;;
             2) ui_ask '3/6  Порт сайта' "$PORT" || rc=$? ;;
-            3) ui_ask '4/6  Веб-сервер: builtin или nginx' "$WEB_SERVER" || rc=$? ;;
+            3) ui_ask '4/6  Веб-сервер: apache2, nginx или builtin' "$WEB_SERVER" || rc=$? ;;
             4) ui_ask '5/6  Входная папка приёмника (- = оставить текущие входы)' "${SOURCE_PATH:--}" || rc=$? ;;
             5) ui_ask '6/6  Содержимое входа: image или product' "$SOURCE_KIND" || rc=$? ;;
         esac
@@ -117,7 +120,7 @@ if [[ $INTERACTIVE == always || ( $INTERACTIVE == auto && -t 0 && -t 2 ) ]]; the
                [[ -z ${EXISTING_DATA:-} || $EXISTING_DATA == "$UI_ANSWER" ]] || { ui_error 'Установленные данные переносить этим мастером нельзя'; continue; }; DATA=$UI_ANSWER ;;
             1) valid_ip "$UI_ANSWER" || { ui_error 'Некорректный IPv4'; continue; }; HOST=$UI_ANSWER ;;
             2) valid_port "$UI_ANSWER" || { ui_error 'Порт: 1024..65535'; continue; }; PORT=$UI_ANSWER ;;
-            3) [[ $UI_ANSWER == builtin || $UI_ANSWER == nginx ]] || { ui_error 'Выберите builtin или nginx'; continue; }; WEB_SERVER=$UI_ANSWER ;;
+            3) [[ $UI_ANSWER == builtin || $UI_ANSWER == nginx || $UI_ANSWER == apache2 ]] || { ui_error 'Выберите apache2, nginx или builtin'; continue; }; WEB_SERVER=$UI_ANSWER ;;
             4) if [[ $UI_ANSWER == - ]]; then SOURCE_PATH=''; else valid_path "$UI_ANSWER" || { ui_error 'Некорректный путь'; continue; }; SOURCE_PATH=$UI_ANSWER; fi ;;
             5) [[ $UI_ANSWER == image || $UI_ANSWER == product ]] || { ui_error 'Выберите image или product'; continue; }; SOURCE_KIND=$UI_ANSWER ;;
         esac
@@ -128,20 +131,20 @@ fi
 valid_path "$DATA" || fail 'Некорректный каталог данных'
 case "$DATA" in /etc/*|/usr/*|/bin/*|/sbin/*|/lib/*|/boot/*) fail 'Данные нельзя размещать в системных каталогах' ;; esac
 valid_ip "$HOST" || fail 'Некорректный IPv4'
-for port in "$PORT" "$CONTROL_PORT" "$BACKEND_PORT"; do valid_port "$port" || fail 'Порт должен быть 1024..65535'; done
-[[ $PORT != "$CONTROL_PORT" && $PORT != "$BACKEND_PORT" && $CONTROL_PORT != "$BACKEND_PORT" ]] || fail 'Порты должны различаться'
-[[ $WEB_SERVER == builtin || $WEB_SERVER == nginx ]] || fail 'Веб-сервер: builtin или nginx'
+for port in "$PORT" "$CONTROL_PORT" "$BACKEND_PORT" "$ADMIN_PORT"; do valid_port "$port" || fail 'Порт должен быть 1024..65535'; done
+[[ $ADMIN_PORT != "$PORT" && $ADMIN_PORT != "$CONTROL_PORT" && $ADMIN_PORT != "$BACKEND_PORT" && $PORT != "$CONTROL_PORT" && $PORT != "$BACKEND_PORT" && $CONTROL_PORT != "$BACKEND_PORT" ]] || fail 'Порты должны различаться'
+[[ $WEB_SERVER == builtin || $WEB_SERVER == nginx || $WEB_SERVER == apache2 ]] || fail 'Веб-сервер: apache2, nginx или builtin'
 [[ $SOURCE_KIND == image || $SOURCE_KIND == product ]] || fail 'Вход: image или product'
 [[ -z $SOURCE_PATH ]] || valid_path "$SOURCE_PATH" || fail 'Некорректный путь источника'
 if [[ -r /etc/astra_version ]]; then
-    grep -Eq '^1\.6([.[:space:]]|$)' /etc/astra_version || fail 'Этот пакет только для Astra 1.6, не Astra 1.5/1.7'
-elif (( COMPAT == 0 )); then fail 'Целевая ОС — Astra 1.6. Стенд: --allow-compatible'; fi
+    grep -Eq '^1\.[67]([.[:space:]]|$)' /etc/astra_version || fail 'Этот пакет для Astra 1.6/1.7, не Astra 1.5'
+elif (( COMPAT == 0 )); then fail 'Целевые ОС — Astra 1.6/1.7. Стенд: --allow-compatible'; fi
 ui_heading 'План установки'
 ui_info "Код: $PREFIX/releases; конфигурация: $CONFIG"
 ui_info "Данные и BOARD: $DATA; WEB: $HOST:$PORT ($WEB_SERVER)"
 ui_info "API: 127.0.0.1:$CONTROL_PORT, отдельный токен и пользователь"
 ui_info "Автозапуск WEB + обработчик + API: $START; внешний источник: ${SOURCE_PATH:-без изменения}"
-ui_info 'Интернет/apt/pip не используются. Дизайн и новый веб-интерфейс не устанавливаются.'
+ui_info 'Интернет/apt/pip не используются. Спутниковый интерфейс и настройки входят в пакет.'
 if (( DRY )); then ui_info 'План без изменений; это не тест бинарного пакета или systemd.'; exit 0; fi
 if [[ -t 0 && $INTERACTIVE != never && $YES == 0 ]]; then ui_confirm || { ui_info 'Отменено.'; exit 0; }; fi
 (( EUID == 0 )) || fail 'Запустите через sudo'
@@ -246,7 +249,9 @@ PYTHON="$PACKAGE/runtime/python"
 ui_step 'Контрольные суммы и состав пакета' "$PYTHON" "$PACKAGE/scripts/station/pack.py" --verify "$PACKAGE"
 ui_step 'Встроенный Python, Pillow и библиотеки' "$PYTHON" -c 'import sqlite3,ssl;from PIL import Image;print("runtime OK")'
 ui_step 'Запуск движка SatDump' "$PACKAGE/engine/satdump" version
-if [[ $WEB_SERVER == nginx ]]; then [[ -x /usr/sbin/nginx ]] || fail 'nginx не установлен. Выберите builtin; системные пакеты установщик не меняет.'; fi
+if [[ $WEB_SERVER != builtin ]]; then
+    [[ -x /usr/sbin/$WEB_SERVER ]] || fail "$WEB_SERVER отсутствует. Установите штатный пакет из доверенного репозитория/носителя Astra и повторите; сторонние репозитории не нужны."
+fi
 if (( START == 0 )); then
     for unit in "${UNITS[@]}"; do
         if svc is-active --quiet "$unit"; then fail '--no-start допустим только на остановленной станции'; fi
@@ -286,7 +291,7 @@ if (( START )); then
     done
 fi
 install -d -m 0755 -o root -g root "$CONFIG" "$DATA"
-ARGS=(--package "$TARGET" --config "$CONFIG" --data "$DATA" --source-kind "$SOURCE_KIND")
+ARGS=(--package "$TARGET" --config "$CONFIG" --data "$DATA" --source-kind "$SOURCE_KIND" --admin-port "$ADMIN_PORT")
 [[ -z $SOURCE_PATH ]] || ARGS+=(--source-path "$SOURCE_PATH")
 ui_step 'Конфигурация, источник и защищённый API' "$PYTHON" "$TARGET/scripts/station/configure.py" provision "${ARGS[@]}"
 chown root:satdump-config "$CONFIG/station.json" "$CONFIG/processing.json" "$CONFIG/control-policy.json"
@@ -299,11 +304,11 @@ install -d -m 0755 -o satdump-station -g satdump-station "$DATA/public" "$DATA/p
 chown -R satdump-control:satdump-station "$DATA/control"
 find "$DATA/control" -type d -exec chmod 2750 '{}' +
 find "$DATA/control" -type f -exec chmod 0640 '{}' +
-printf 'SATDUMP_HOST=%s\nSATDUMP_PORT=%s\nSATDUMP_CONTROL_PORT=%s\nSATDUMP_BACKEND_PORT=%s\nSATDUMP_WEB_SERVER=%s\n' "$HOST" "$PORT" "$CONTROL_PORT" "$BACKEND_PORT" "$WEB_SERVER" > "$CONFIG/web.env"
+printf 'SATDUMP_HOST=%s\nSATDUMP_PORT=%s\nSATDUMP_CONTROL_PORT=%s\nSATDUMP_BACKEND_PORT=%s\nSATDUMP_WEB_SERVER=%s\nSATDUMP_ADMIN_PORT=%s\n' "$HOST" "$PORT" "$CONTROL_PORT" "$BACKEND_PORT" "$WEB_SERVER" "$ADMIN_PORT" > "$CONFIG/web.env"
 chmod 0644 "$CONFIG/web.env"
 ui_step 'Подготовка systemd и WEB' "$PYTHON" "$TARGET/scripts/station/configure.py" units \
     --prefix "$PREFIX" --config "$CONFIG" --data "$DATA" --host "$HOST" --port "$PORT" \
-    --control-port "$CONTROL_PORT" --backend-port "$BACKEND_PORT" --web-server "$WEB_SERVER" --output "$BACKUP/new-units"
+    --control-port "$CONTROL_PORT" --backend-port "$BACKEND_PORT" --admin-port "$ADMIN_PORT" --web-server "$WEB_SERVER" --output "$BACKUP/new-units"
 install -m 0644 "$BACKUP/new-units/"*.service /etc/systemd/system/
 if [[ $WEB_SERVER == nginx ]]; then
     install -m 0644 "$BACKUP/new-units/nginx.conf" "$CONFIG/nginx.conf"
@@ -311,6 +316,10 @@ if [[ $WEB_SERVER == nginx ]]; then
     # nginx -t creates its PID and temporary files: use the service identity,
     # otherwise a root-owned PID prevents the first unprivileged start.
     ui_step 'Проверка собственной конфигурации nginx' runuser -u satdump-web -- /usr/sbin/nginx -t -c "$CONFIG/nginx.conf"
+elif [[ $WEB_SERVER == apache2 ]]; then
+    install -m 0644 "$BACKUP/new-units/apache2.conf" "$CONFIG/apache2.conf"
+    install -d -m 0750 -o satdump-web -g satdump-web /run/satdump-web
+    ui_step 'Проверка штатного Apache2 от имени веб-службы' runuser -u satdump-web -- /usr/sbin/apache2 -t -f "$CONFIG/apache2.conf"
 else
     svc disable satdump-board.service >>"$INSTALL_LOG" 2>&1 || true
     rm -f /etc/systemd/system/satdump-board.service
@@ -322,12 +331,14 @@ if [[ -n $OLD && $OLD != "$TARGET" ]]; then ln -sfn "$OLD" "$PREFIX/previous"; f
 ln -sfn "$PREFIX/current/station.sh" /usr/local/bin/satdump-station
 svc daemon-reload
 ACTIVE=(satdump-worker.service satdump-control.service satdump-web.service)
-[[ $WEB_SERVER != nginx ]] || ACTIVE+=(satdump-board.service)
+[[ $WEB_SERVER == builtin ]] || ACTIVE+=(satdump-board.service)
 if (( START )); then
     ui_step 'Автозапуск WEB, обработчика и API' svc enable "${ACTIVE[@]}"
     ui_step 'Запуск служб' svc restart "${ACTIVE[@]}"
+    CHECK_ADMIN=$ADMIN_PORT
+    [[ $WEB_SERVER != builtin ]] || CHECK_ADMIN=$CONTROL_PORT
     ui_step 'Проверка WEB → BOARD → обработчик и авторизации API' "$PYTHON" "$TARGET/scripts/station/healthcheck.py" \
-        --host "$HOST" --port "$PORT" --control-port "$CONTROL_PORT" --token-file "$CONFIG/control.token"
+        --host "$HOST" --port "$PORT" --control-port "$CONTROL_PORT" --admin-port "$CHECK_ADMIN" --token-file "$CONFIG/control.token"
 fi
 # Commit only after health succeeds. Keep the previous configuration snapshot.
 rm -rf -- "$PREFIX/rollback-state"
@@ -335,7 +346,8 @@ mv "$BACKUP" "$PREFIX/rollback-state"; BACKUP=''
 COMMITTED=1
 ui_heading 'Установка завершена'
 ui_info "Версия: $VERSION; журнал: $INSTALL_LOG"
-ui_info "BOARD: http://${HOST/0.0.0.0/127.0.0.1}:$PORT/api/v1/board"
+ui_info "Спутниковый экран: http://${HOST/0.0.0.0/127.0.0.1}:$PORT/"
+ui_info "Настройки: http://127.0.0.1:$ADMIN_PORT/settings/ (для builtin: порт $CONTROL_PORT)"
 ui_info "Настройки API: http://127.0.0.1:$CONTROL_PORT/api/v1/control/config"
 ui_info "Токен хранится в $CONFIG/control.token и не выводится в журнал."
 ui_info 'Диагностика: sudo satdump-station doctor; журналы: sudo satdump-station logs'
