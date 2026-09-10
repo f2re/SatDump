@@ -1,0 +1,51 @@
+name: Apply reviewed city runtime audit
+on:
+  push:
+    branches: ['fix/city-labels-runtime-ci-20260910']
+    paths: ['.github/workflows/city-runtime-apply.yml']
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.repository == 'f2re/SatDump' && github.ref == 'refs/heads/fix/city-labels-runtime-ci-20260910'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify and apply exact reviewed patch
+        run: |
+          python3 - <<'PY'
+          import base64, gzip, hashlib
+          from pathlib import Path
+          encoded = Path('.github/city-runtime.patch.b64').read_text().strip()
+          corrections = [
+              ('Q68TGtTrAewj9NdDYZJ0dFyxN40V7RAwII2icolaRGqe5FKHj', 'Q68TGtTrAewj9NdDYZJ0dFyx40V7RAwII2icolaRGqe5FKHj'),
+              ('cEaySk9yXHxK4UIxBQkT1c5w5EH8UdvClO/H5FRNPcvpz7Ct0', 'cEaySk9yXHxK4UIxBQkT1c5wEH8UdvClO/H5FRNPcvpz7Ct0'),
+              ('yq+TkRVN7DIL0UVCsEIIvxc6PIdi/xbaz3wCoX2AjtJyefS7', 'yq+TkRVN7DIL0UVCsEIIvxc6zPIdi/xbaz3wCoX2AjtJyefS7'),
+          ]
+          for old, new in corrections:
+              assert encoded.count(old) == 1
+              encoded = encoded.replace(old, new)
+          patch = gzip.decompress(base64.b64decode(encoded, validate=True))
+          assert hashlib.sha256(patch).hexdigest() == 'fb915224a3df29d2a2f15f15de64e79ca725aa58f6b608b6fa6b2589ffd8f884'
+          Path('/tmp/city-runtime.patch').write_bytes(patch)
+          PY
+          git apply --check /tmp/city-runtime.patch
+          git apply /tmp/city-runtime.patch
+          git diff --check
+      - name: Test reviewed changes
+        run: |
+          python3 -m unittest discover -s tests/maps -v
+          g++ -std=c++17 -fsyntax-only -Isrc-core src-testing/city_names_runtime_test.cpp
+          bash -n scripts/maps/validate_city_runtime.sh
+          bash -n scripts/astra/build-native.sh
+          bash -n scripts/astra/astra17/make-bundle.sh
+          bash -n scripts/astra/portable/make-bundle.sh
+      - name: Commit changes and remove temporary transport
+        run: |
+          git rm .github/city-runtime.patch.b64 .github/workflows/city-runtime-apply.yml
+          git add src-core/common/map/map_drawer.cpp src-testing/CMakeLists.txt src-testing/city_names_runtime_test.cpp scripts/maps/verify_installed_city_names.py scripts/maps/validate_city_runtime.sh scripts/astra/build-native.sh scripts/astra/astra17/inside-chroot.sh scripts/astra/astra17/make-bundle.sh scripts/astra/portable/inside-chroot.sh scripts/astra/portable/make-bundle.sh .github/workflows/presentation-1.2.2.yml .github/workflows/astra17-bundle.yml .github/workflows/city-names-ru.yml .github/workflows/city-labels-runtime.yml tests/maps/test_installed_city_names.py docs/ru/CITY_LABELS_VALIDATION.md
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(maps): validate Russian city rendering and packaged resources'
+          git push origin HEAD:fix/city-labels-runtime-ci-20260910
