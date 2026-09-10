@@ -24,6 +24,11 @@ import satellite
 import station
 
 
+def json_value(raw):
+    """Python 3.5 requires explicit decoding of HTTP JSON bytes."""
+    return json.loads(raw.decode('utf-8') if isinstance(raw, bytes) else raw)
+
+
 def request(base, path, method='GET', value=None, headers=None):
     raw = None if value is None else control.canonical(value)
     req = Request(base + path, data=raw, method=method, headers=headers or {})
@@ -84,7 +89,7 @@ class SatelliteRules(unittest.TestCase):
                 ast.parse((ROOT/relative).read_text())
 
     def test_openapi_refs_and_display_ranges(self):
-        spec = json.loads((ROOT/'config/station/board-openapi.json').read_text())
+        spec = json_value((ROOT/'config/station/board-openapi.json').read_text())
         self.assertEqual('3.0.3', spec['openapi'])
         def walk(value):
             if isinstance(value, dict):
@@ -101,6 +106,13 @@ class SatelliteRules(unittest.TestCase):
         ids=[op['operationId'] for route in spec['paths'].values() for op in route.values()]
         self.assertEqual(len(ids),len(set(ids)))
         self.assertIn('/api/v1/control/status',spec['paths'])
+
+    def test_apache_preserves_astra_security_mode(self):
+        config = configure.apache_config('127.0.0.1',8090,8092,8091,8093)
+        self.assertIn('LoadModule mpm_prefork_module',config)
+        self.assertNotIn('LoadModule mpm_event_module',config)
+        self.assertNotIn('AstraMode off',config)
+        self.assertIn('MaxRequestWorkers 8',config)
 
     def test_deployment_modes_isolation(self):
         for mode in ('apache2','nginx','builtin'):
@@ -145,14 +157,14 @@ class SatelliteHTTP(Fixture):
         return path
 
     def document(self, path='/api/v1/satellite/manifest'):
-        code,headers,raw=request(self.base,path);self.assertEqual(200,code);return json.loads(raw),headers
+        code,headers,raw=request(self.base,path);self.assertEqual(200,code);return json_value(raw),headers
 
     def test_end_to_end_publication_and_passport_preserved(self):
         original=self.ingest();doc,_=self.document();self.assertEqual(1,len(doc['frames']));frame=doc['frames'][0]
         self.assertEqual((2400,1600),(frame['width'],frame['height']));self.assertEqual('original',frame['image']['mode']);self.assertEqual(frame['original'],frame['display'])
         for field in ('display','ambient','metadata','original'):
             code,headers,raw=request(self.base,frame[field]);self.assertEqual(200,code)
-            if field=='metadata': self.assertEqual(self.passport,json.loads(raw))
+            if field=='metadata': self.assertEqual(self.passport,json_value(raw))
             if field=='original': self.assertEqual(hashlib.sha256(original.read_bytes()).hexdigest(),hashlib.sha256(raw).hexdigest())
         self.assertEqual(self.passport['legend'],frame['legend'])
         self.assertEqual('descending',frame['pass'])
@@ -225,19 +237,19 @@ class SatelliteHTTP(Fixture):
 
     def test_display_settings_apply_without_new_processing(self):
         self.ingest();doc=self.store.current();settings=copy.deepcopy(doc['settings']);settings['board']['display']['windowHours']=6
-        self.assertEqual(200,json.loads(request(self.admin,'/api/v1/control/validate','POST',{'settings':settings},self.auth)[2])['valid']*200)
-        self.assertFalse(json.loads(request(self.admin,'/api/v1/control/validate','POST',{'settings':settings},self.auth)[2])['reprocessing_required'])
+        self.assertEqual(200,json_value(request(self.admin,'/api/v1/control/validate','POST',{'settings':settings},self.auth)[2])['valid']*200)
+        self.assertFalse(json_value(request(self.admin,'/api/v1/control/validate','POST',{'settings':settings},self.auth)[2])['reprocessing_required'])
         code,_,raw=request(self.admin,'/api/v1/control/config','PUT',{'settings':settings},dict(self.auth,**{'If-Match':'"'+doc['revision']+'"'}))
-        self.assertEqual(202,code);new=json.loads(raw)
-        status=json.loads(request(self.admin,'/api/v1/control/status',headers=self.auth)[2]);self.assertFalse(status['applied'])
-        self.worker.tick();status=json.loads(request(self.admin,'/api/v1/control/status',headers=self.auth)[2]);self.assertTrue(status['applied'])
+        self.assertEqual(202,code);new=json_value(raw)
+        status=json_value(request(self.admin,'/api/v1/control/status',headers=self.auth)[2]);self.assertFalse(status['applied'])
+        self.worker.tick();status=json_value(request(self.admin,'/api/v1/control/status',headers=self.auth)[2]);self.assertTrue(status['applied'])
         manifest,_=self.document();self.assertEqual(6,manifest['windowHours']);self.assertEqual(new['revision'],manifest['settings_revision'])
         self.assertEqual(1,self.worker.db.execute('SELECT count(*) FROM jobs').fetchone()[0])
 
     def test_status_stale_worker_never_claims_applied(self):
-        self.worker.heartbeat();status=json.loads(request(self.admin,'/api/v1/control/status',headers=self.auth)[2]);self.assertTrue(status['applied'])
+        self.worker.heartbeat();status=json_value(request(self.admin,'/api/v1/control/status',headers=self.auth)[2]);self.assertTrue(status['applied'])
         heartbeat=control.read(self.data/'public/worker.json');heartbeat['updated_at']-=3600;control.atomic(self.data/'public/worker.json',heartbeat)
-        status=json.loads(request(self.admin,'/api/v1/control/status',headers=self.auth)[2]);self.assertFalse(status['applied']);self.assertFalse(status['worker_alive'])
+        status=json_value(request(self.admin,'/api/v1/control/status',headers=self.auth)[2]);self.assertFalse(status['applied']);self.assertFalse(status['worker_alive'])
 
     def test_ui_public_file_does_not_authorize_api(self):
         self.assertEqual(200,request(self.admin,'/settings/')[0])

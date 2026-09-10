@@ -20,7 +20,7 @@ from urllib.request import urlopen
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'tests/station'))
-from test_satellite_web import SatelliteHTTP, request
+from test_satellite_web import SatelliteHTTP, request, json_value
 import control
 import configure
 
@@ -39,6 +39,18 @@ def wait_js(page, expression, arg=None, timeout=30000):
             return
         page.wait_for_timeout(100)
     raise AssertionError('Browser condition timed out: ' + expression)
+
+
+def save_settings(page):
+    """Wait for this PUT, never reuse a success message from the previous save."""
+    previous = page.locator('#revision').inner_text()
+    with page.expect_response(lambda response: response.url.endswith('/api/v1/control/config') and response.request.method == 'PUT') as saved:
+        page.locator('#save').click()
+    response = saved.value
+    assert response.status == 202, (response.status, response.text())
+    response.finished()
+    wait_js(page, '(old)=>document.querySelector("#revision").textContent !== old && !document.querySelector("#save").disabled', arg=previous)
+    return response.json()
 
 
 def main():
@@ -96,7 +108,7 @@ def main():
         # This mode is also used inside the target OS image without a GUI stack.
         import healthcheck
         assert healthcheck.check('127.0.0.1',public_port,fixture.api.server_port,'a'*64,admin_port)
-        manifest=json.loads(request(public,'/api/v1/satellite/manifest')[2])
+        manifest=json_value(request(public,'/api/v1/satellite/manifest')[2])
         assert len(manifest['frames'])==3
         for frame in manifest['frames']:
             for path in (frame['display'],frame['ambient'],frame['metadata']):
@@ -142,13 +154,13 @@ def main():
             page.set_viewport_size({'width':1920,'height':1080})
             page.locator('#pause-button').click();assert page.locator('#pause-button').get_attribute('aria-pressed')=='true'
             first=page.locator('#image-stage .is-active').get_attribute('src')
-            page.locator('#next').click();wait_js(page, '(old)=>document.querySelector("#image-stage .is-active")?.src !== old',arg=first)
+            page.locator('#next').click();wait_js(page, '(old)=>document.querySelector("#image-stage .is-active")?.getAttribute("src") !== old',arg=first)
             page.wait_for_timeout(400)
             second=page.locator('#image-stage .is-active').get_attribute('src');assert first!=second
             assert page.locator('#image-stage .is-active').evaluate('(i)=>i.naturalWidth')==80
             assert 'Нет времени' in page.locator('#acquisition-time').inner_text()
             checks.append('small_undated_image_visible_without_fake_timeline')
-            page.locator('#previous').click();wait_js(page, '(old)=>document.querySelector("#image-stage .is-active")?.src !== old',arg=second)
+            page.locator('#previous').click();wait_js(page, '(old)=>document.querySelector("#image-stage .is-active")?.getAttribute("src") !== old',arg=second)
             page.wait_for_timeout(400)
             assert page.locator('#passport-link').get_attribute('href').startswith(public+'/items/')
             checks.append('pause_navigation_and_passport')
@@ -162,7 +174,7 @@ def main():
             window_input=settings.locator('#display-fields label').filter(has_text='Глубина истории').locator('input')
             window_input.fill('1');window_input.press('Tab')
             settings.locator('#validate').click();wait_js(settings, "document.querySelector('#message').textContent.includes('Повторная обработка не требуется')")
-            settings.locator('#save').click();wait_js(settings, "document.querySelector('#message').textContent.includes('Ревизия сохранена')")
+            save_settings(settings)
             fixture.worker.tick()
             wait_js(settings, "document.querySelector('#applied').textContent === 'Применено обработчиком'",timeout=10000)
             assert fixture.store.current()['settings']['board']['display']['windowHours']==1
@@ -171,12 +183,12 @@ def main():
             # Avoid relying on visibility events in headless tabs; explicitly refresh.
             page.bring_to_front();page.locator('#refresh').click();page.wait_for_timeout(400)
             assert request(public,'/api/v1/satellite/config')[0]==200
-            assert len(json.loads(request(public,'/api/v1/satellite/manifest')[2])['frames'])==2
+            assert len(json_value(request(public,'/api/v1/satellite/manifest')[2])['frames'])==2
             assert fixture.worker.db.execute('SELECT count(*) FROM jobs').fetchone()[0]==3
             checks.append('hot_settings_without_new_jobs')
             settings.bring_to_front()
             settings.locator('#display-fields label').filter(has_text='Файл для показа').locator('select').select_option('preview')
-            settings.locator('#save').click();wait_js(settings, "document.querySelector('#message').textContent.includes('Ревизия сохранена')")
+            save_settings(settings)
             fixture.worker.tick()
             page.bring_to_front();page.locator('#refresh').click()
             wait_js(page, "document.querySelector('.sat-image.is-active').src.endsWith('-preview.jpg')")
@@ -187,7 +199,7 @@ def main():
             editor=settings.locator('#json-settings');draft=json.loads(editor.input_value());draft['processing']['satdump_general']['presentation']['save_minimal']=False
             editor.fill(json.dumps(draft));settings.locator('#use-json').click();wait_js(settings, "document.querySelector('#message').textContent.includes('JSON проверен')")
             settings.locator('#save').click();settings.locator('#reprocess-panel').wait_for(state='visible');assert fixture.store.current()['settings']['processing']['satdump_general']['presentation']['save_minimal'] is True
-            settings.locator('#confirm-reprocess').check();settings.locator('#save').click();wait_js(settings, "document.querySelector('#message').textContent.includes('Ревизия сохранена')")
+            settings.locator('#confirm-reprocess').check();save_settings(settings)
             checks.append('explicit_reprocessing_confirmation')
             # Both desktop and narrow admin layout must remain usable without overflow.
             settings.set_viewport_size({'width':390,'height':844});settings.screenshot(path=str(out/(args.server+'-settings-mobile.png')),full_page=True)
@@ -211,6 +223,7 @@ def main():
             print((out/(args.server+'.log')).read_text(),file=sys.stderr)
         if 'runtime' in locals() and (runtime/'error.log').is_file():
             print((runtime/'error.log').read_text(),file=sys.stderr)
+        (out/(args.server+'-progress.json')).write_text(json.dumps({'completed_checks':checks},ensure_ascii=False,indent=2)+'\n')
         fixture.tearDown()
 
 

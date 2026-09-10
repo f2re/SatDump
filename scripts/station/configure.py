@@ -185,7 +185,8 @@ ServerName 127.0.0.1
 DefaultRuntimeDir /run/satdump-web
 PidFile /run/satdump-web/apache2.pid
 Mutex file:/run/satdump-web default
-LoadModule mpm_event_module /usr/lib/apache2/modules/mod_mpm_event.so
+# AstraMode requires the process-based MPM; never disable the OS security mode.
+LoadModule mpm_prefork_module /usr/lib/apache2/modules/mod_mpm_prefork.so
 LoadModule authz_core_module /usr/lib/apache2/modules/mod_authz_core.so
 LoadModule authz_host_module /usr/lib/apache2/modules/mod_authz_host.so
 LoadModule proxy_module /usr/lib/apache2/modules/mod_proxy.so
@@ -199,13 +200,12 @@ Timeout 30
 KeepAlive On
 KeepAliveTimeout 5
 MaxKeepAliveRequests 100
-ServerLimit 1
-StartServers 1
-ThreadLimit 16
-ThreadsPerChild 16
-MaxRequestWorkers 16
-MinSpareThreads 1
-MaxSpareThreads 16
+ServerLimit 8
+StartServers 2
+MinSpareServers 1
+MaxSpareServers 4
+MaxRequestWorkers 8
+MaxConnectionsPerChild 1000
 LimitRequestBody 1048576
 ProxyRequests Off
 ProxyPreserveHost Off
