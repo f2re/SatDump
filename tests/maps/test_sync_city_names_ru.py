@@ -31,7 +31,7 @@ class SynchronizationTests(unittest.TestCase):
         self.assertEqual(sync.without_ru(output), sync.without_ru(target))
         self.assertEqual(report['failures'], [])
 
-    def test_duplicate_rounded_ids_use_coordinates(self):
+    def test_duplicate_ids_use_coordinates(self):
         a, b = feature(lon=88), feature(name='Another', lon=90, ru='Другой')
         output, report = sync.synchronize(document(a, b), document(b, a))
         self.assertEqual(report['matched_features'], 2)
@@ -134,6 +134,107 @@ class SynchronizationTests(unittest.TestCase):
             self.assertEqual(target.read_bytes(), before)
             self.assertEqual(report.read_bytes(), report_before)
 
+
+    def test_historical_coordinates_with_name_and_country(self):
+        target = feature(lon=90)
+        target['properties'].update(longitude=88.2, latitude=69.3)
+        output, report = sync.synchronize(document(target), document(feature()))
+        self.assertEqual(report['match_methods'], {'historical_coordinates_country_name': 1})
+        self.assertEqual(output['features'][0]['geometry'], target['geometry'])
+
+    def test_historical_coordinates_do_not_match_unrelated_name(self):
+        target = feature(name='Unrelated', lon=90, identifier=0)
+        target['properties'].update(longitude=88.2, latitude=69.3)
+        _, report = sync.synchronize(document(target), document(feature(identifier=0)))
+        self.assertEqual(len(report['failures']), 1)
+
+    def test_invalid_historical_coordinates_are_ignored(self):
+        target = feature(lon=90)
+        target['properties'].update(longitude=88.2, latitude=95)
+        _, report = sync.synchronize(document(target), document(feature()))
+        self.assertEqual(len(report['failures']), 1)
+
+    def reviewed(self, target, source, missing=False):
+        entry = {'target_ne_id': target['properties']['ne_id'],
+                 'target_feature_sha256': sync.feature_digest(target),
+                 'source_index': None if missing else 0, 'reason': 'Reviewed test fixture'}
+        if not missing:
+            entry['source_feature_sha256'] = sync.digest(source)
+        return {'schema_version': 1, 'source_document_sha256': sync.digest(document(source)), 'entries': [entry]}
+
+    def test_reviewed_pair_verbatim_and_idempotent(self):
+        target, source = feature(lon=90), feature(ru='Имя из источника')
+        manifest = self.reviewed(target, source)
+        output, report = sync.synchronize(document(target), document(source), manifest)
+        self.assertEqual(report['match_methods'], {'reviewed_version_pair': 1})
+        self.assertEqual(output['features'][0]['properties']['name_ru'], 'Имя из источника')
+        again, next_report = sync.synchronize(output, document(source), manifest)
+        self.assertEqual(output, again)
+        self.assertEqual(report, next_report)
+
+    def test_reviewed_target_change_is_rejected(self):
+        target, source = feature(lon=90), feature()
+        manifest = self.reviewed(target, source)
+        target['properties']['name'] = 'Changed'
+        with self.assertRaises(sync.SyncError):
+            sync.synchronize(document(target), document(source), manifest)
+
+    def test_reviewed_source_snapshot_change_is_rejected(self):
+        target, source = feature(lon=90), feature()
+        manifest = self.reviewed(target, source)
+        source['properties']['name_ru'] = 'Changed'
+        with self.assertRaises(sync.SyncError):
+            sync.synchronize(document(target), document(source), manifest)
+
+    def test_reviewed_source_feature_hash_is_checked(self):
+        target, source = feature(lon=90), feature()
+        manifest = self.reviewed(target, source)
+        manifest['entries'][0]['source_feature_sha256'] = 'incorrect'
+        with self.assertRaises(sync.SyncError):
+            sync.synchronize(document(target), document(source), manifest)
+
+    def test_absent_reviewed_place_remains_null(self):
+        target, source = feature(name='Absent', lon=90), feature()
+        output, report = sync.synchronize(document(target), document(source), self.reviewed(target, source, True))
+        self.assertIsNone(output['features'][0]['properties']['name_ru'])
+        self.assertEqual(report['failures'], [])
+        self.assertEqual(len(report['missing_in_source']), 1)
+
+    def test_absent_reviewed_place_must_not_have_match(self):
+        target, source = feature(), feature()
+        with self.assertRaises(sync.SyncError):
+            sync.synchronize(document(target), document(source), self.reviewed(target, source, True))
+
+    def test_conflicting_reviewed_pairs_are_rejected(self):
+        target, source = feature(lon=90), feature()
+        manifest = self.reviewed(target, source)
+        manifest['entries'].append(manifest['entries'][0])
+        with self.assertRaises(sync.SyncError):
+            sync.synchronize(document(target), document(source), manifest)
+
+    def test_malformed_geometry_rejected(self):
+        for geometry in ([], 7, {'type': 'Point', 'coordinates': 4}):
+            target = feature()
+            target['geometry'] = geometry
+            with self.assertRaises(sync.SyncError):
+                sync.synchronize(document(target), document(feature()))
+
+    def test_runtime_has_no_transliteration_or_alias_dictionary(self):
+        code = (ROOT/'src-core/common/map/city_labels.cpp').read_text(encoding='utf-8')
+        self.assertIn('resolve_city_name(', code)
+        self.assertNotIn('transliterate_to_russian', code)
+        self.assertNotIn('russian_names()', code)
+
+    def test_cli_source_is_not_overwritten(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target, source = root/'target.json', root/'source.json'
+            target.write_text(json.dumps(document(feature())), encoding='utf-8')
+            source.write_text(json.dumps(document(feature())), encoding='utf-8')
+            before = source.read_bytes()
+            args = ['--source', str(source), '--target', str(target), '--report', str(source)]
+            self.assertEqual(sync.main(args), 1)
+            self.assertEqual(source.read_bytes(), before)
 
 if __name__ == '__main__':
     unittest.main()

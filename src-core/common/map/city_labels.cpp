@@ -1,4 +1,5 @@
 #include "city_labels.h"
+#include "city_name_resolver.h"
 
 #include "nlohmann/json.hpp"
 
@@ -8,7 +9,6 @@
 #include <fstream>
 #include <limits>
 #include <set>
-#include <unordered_map>
 
 namespace map
 {
@@ -43,36 +43,6 @@ namespace map
             std::transform(value.begin(), value.end(), value.begin(), [](unsigned char character)
                            { return character < 128 ? (char)std::tolower(character) : (char)character; });
             return value;
-        }
-
-        std::string normalize_key(const std::string &value)
-        {
-            std::string output;
-            bool previous_space = false;
-            for (unsigned char character : value)
-            {
-                if (character < 128 && (std::isalnum(character) || character == '-'))
-                {
-                    output.push_back((char)std::tolower(character));
-                    previous_space = false;
-                }
-                else if (character < 128)
-                {
-                    if (!output.empty() && !previous_space)
-                    {
-                        output.push_back(' ');
-                        previous_space = true;
-                    }
-                }
-                else
-                {
-                    output.push_back((char)character);
-                    previous_space = false;
-                }
-            }
-            while (!output.empty() && output.back() == ' ')
-                output.pop_back();
-            return output;
         }
 
         const json *property_ci(const json &properties, const std::string &name)
@@ -152,207 +122,9 @@ namespace map
             return false;
         }
 
-        bool contains_cyrillic(const std::string &value)
-        {
-            for (size_t index = 0; index + 1 < value.size(); index++)
-            {
-                const unsigned char first = (unsigned char)value[index];
-                const unsigned char second = (unsigned char)value[index + 1];
-                if ((first == 0xD0 && second >= 0x90) || first == 0xD1)
-                    return true;
-            }
-            return false;
-        }
-
-        bool looks_like_mojibake(const std::string &value)
-        {
-            return value.find(u8"Ã") != std::string::npos ||
-                   value.find(u8"Ä") != std::string::npos ||
-                   value.find(u8"Å") != std::string::npos ||
-                   value.find(u8"È") != std::string::npos ||
-                   value.find(u8"�") != std::string::npos;
-        }
-
-        const std::unordered_map<std::string, std::string> &russian_names()
-        {
-            static const std::unordered_map<std::string, std::string> names = {
-                {"moscow", "Москва"}, {"st petersburg", "Санкт-Петербург"},
-                {"saint petersburg", "Санкт-Петербург"}, {"murmansk", "Мурманск"},
-                {"dudinka", "Дудинка"}, {"naryan mar", "Нарьян-Мар"},
-                {"naryan-mar", "Нарьян-Мар"}, {"salekhard", "Салехард"},
-                {"khanty mansiysk", "Ханты-Мансийск"}, {"khanty-mansiysk", "Ханты-Мансийск"},
-                {"archangel", "Архангельск"}, {"arkhangelsk", "Архангельск"},
-                {"vologda", "Вологда"}, {"petrozavodsk", "Петрозаводск"},
-                {"syktyvkar", "Сыктывкар"}, {"perm", "Пермь"},
-                {"yekaterinburg", "Екатеринбург"}, {"ekaterinburg", "Екатеринбург"},
-                {"tyumen", "Тюмень"}, {"kurgan", "Курган"},
-                {"chelyabinsk", "Челябинск"}, {"ufa", "Уфа"},
-                {"kazan", "Казань"}, {"samara", "Самара"},
-                {"saratov", "Саратов"}, {"volgograd", "Волгоград"},
-                {"astrakhan", "Астрахань"}, {"rostov", "Ростов-на-Дону"},
-                {"rostov on don", "Ростов-на-Дону"}, {"rostov-na-donu", "Ростов-на-Дону"},
-                {"krasnodar", "Краснодар"}, {"stavropol", "Ставрополь"},
-                {"makhachkala", "Махачкала"}, {"grozny", "Грозный"},
-                {"sochi", "Сочи"}, {"orenburg", "Оренбург"},
-                {"izhevsk", "Ижевск"}, {"kirov", "Киров"},
-                {"nizhny novgorod", "Нижний Новгород"}, {"yoshkar ola", "Йошкар-Ола"},
-                {"yoshkar-ola", "Йошкар-Ола"}, {"cheboksary", "Чебоксары"},
-                {"ulyanovsk", "Ульяновск"}, {"saransk", "Саранск"},
-                {"penza", "Пенза"}, {"tambov", "Тамбов"},
-                {"ryazan", "Рязань"}, {"tula", "Тула"},
-                {"kaluga", "Калуга"}, {"smolensk", "Смоленск"},
-                {"tver", "Тверь"}, {"yaroslavl", "Ярославль"},
-                {"ivanovo", "Иваново"}, {"vladimir", "Владимир"},
-                {"kursk", "Курск"}, {"belgorod", "Белгород"},
-                {"voronezh", "Воронеж"}, {"lipetsk", "Липецк"},
-                {"bryansk", "Брянск"}, {"oryol", "Орёл"}, {"orel", "Орёл"},
-                {"pskov", "Псков"}, {"velikiy novgorod", "Великий Новгород"},
-                {"veliky novgorod", "Великий Новгород"}, {"kaliningrad", "Калининград"},
-                {"novosibirsk", "Новосибирск"}, {"omsk", "Омск"},
-                {"tomsk", "Томск"}, {"kemerovo", "Кемерово"},
-                {"krasnoyarsk", "Красноярск"}, {"irkutsk", "Иркутск"},
-                {"yakutsk", "Якутск"}, {"magadan", "Магадан"},
-                {"vladivostok", "Владивосток"}, {"khabarovsk", "Хабаровск"},
-                {"helsinki", "Хельсинки"}, {"tallinn", "Таллин"},
-                {"riga", "Рига"}, {"vilnius", "Вильнюс"}, {"minsk", "Минск"},
-                {"kiev", "Киев"}, {"kyiv", "Киев"}, {"oslo", "Осло"},
-                {"stockholm", "Стокгольм"}, {"copenhagen", "Копенгаген"},
-                {"berlin", "Берлин"}, {"warsaw", "Варшава"},
-                {"prague", "Прага"}, {"vienna", "Вена"}, {"budapest", "Будапешт"},
-                {"bucharest", "Бухарест"}, {"sofia", "София"},
-                {"athens", "Афины"}, {"ankara", "Анкара"},
-                {"istanbul", "Стамбул"}, {"tbilisi", "Тбилиси"},
-                {"yerevan", "Ереван"}, {"baku", "Баку"},
-                {"london", "Лондон"}, {"paris", "Париж"},
-                {"madrid", "Мадрид"}, {"rome", "Рим"}, {"lisbon", "Лиссабон"},
-                {"brussels", "Брюссель"}, {"amsterdam", "Амстердам"},
-                {"dublin", "Дублин"}, {"reykjavik", "Рейкьявик"},
-                {"washington d c", "Вашингтон"}, {"new york", "Нью-Йорк"},
-                {"ottawa", "Оттава"}, {"mexico city", "Мехико"},
-                {"havana", "Гавана"}, {"brasilia", "Бразилиа"},
-                {"buenos aires", "Буэнос-Айрес"}, {"santiago", "Сантьяго"},
-                {"lima", "Лима"}, {"chisinau", "Кишинёв"},
-                {"kishinev", "Кишинёв"}, {"balti", "Бельцы"},
-                {"dubasari", "Дубоссары"}, {"tiraspol", "Тирасполь"},
-                {"beijing", "Пекин"}, {"tokyo", "Токио"},
-                {"seoul", "Сеул"}, {"pyongyang", "Пхеньян"},
-                {"ulaanbaatar", "Улан-Батор"}, {"new delhi", "Нью-Дели"},
-                {"delhi", "Дели"}, {"tehran", "Тегеран"},
-                {"baghdad", "Багдад"}, {"jerusalem", "Иерусалим"},
-                {"cairo", "Каир"}, {"addis ababa", "Аддис-Абеба"},
-                {"nairobi", "Найроби"}, {"pretoria", "Претория"},
-                {"cape town", "Кейптаун"}, {"canberra", "Канберра"},
-                {"sydney", "Сидней"}, {"wellington", "Веллингтон"}};
-            return names;
-        }
-
-        std::string transliterate_to_russian(const std::string &input)
-        {
-            static const std::vector<std::pair<std::string, std::string>> groups = {
-                {"shch", "щ"}, {"sch", "щ"}, {"yo", "ё"}, {"zh", "ж"},
-                {"kh", "х"}, {"ts", "ц"}, {"ch", "ч"}, {"sh", "ш"},
-                {"yu", "ю"}, {"ya", "я"}, {"ye", "е"}};
-            static const std::unordered_map<char, std::string> letters = {
-                {'a', "а"}, {'b', "б"}, {'c', "к"}, {'d', "д"}, {'e', "е"},
-                {'f', "ф"}, {'g', "г"}, {'h', "х"}, {'i', "и"}, {'j', "дж"},
-                {'k', "к"}, {'l', "л"}, {'m', "м"}, {'n', "н"}, {'o', "о"},
-                {'p', "п"}, {'q', "к"}, {'r', "р"}, {'s', "с"}, {'t', "т"},
-                {'u', "у"}, {'v', "в"}, {'w', "в"}, {'x', "кс"}, {'y', "ы"},
-                {'z', "з"}};
-            static const std::unordered_map<std::string, std::string> uppercase_letters = {
-                {"а", "А"}, {"б", "Б"}, {"в", "В"}, {"г", "Г"}, {"д", "Д"},
-                {"е", "Е"}, {"ё", "Ё"}, {"ж", "Ж"}, {"з", "З"}, {"и", "И"},
-                {"к", "К"}, {"л", "Л"}, {"м", "М"}, {"н", "Н"}, {"о", "О"},
-                {"п", "П"}, {"р", "Р"}, {"с", "С"}, {"т", "Т"}, {"у", "У"},
-                {"ф", "Ф"}, {"х", "Х"}, {"ц", "Ц"}, {"ч", "Ч"}, {"ш", "Ш"},
-                {"щ", "Щ"}, {"ы", "Ы"}, {"ю", "Ю"}, {"я", "Я"},
-                {"дж", "Дж"}, {"кс", "Кс"}};
-
-            std::string output;
-            bool word_start = true;
-            size_t index = 0;
-            while (index < input.size())
-            {
-                const unsigned char raw = (unsigned char)input[index];
-                if (raw >= 128)
-                {
-                    output.push_back((char)raw);
-                    index++;
-                    word_start = false;
-                    continue;
-                }
-                if (!std::isalpha(raw))
-                {
-                    output.push_back((char)raw);
-                    word_start = raw == ' ' || raw == '-' || raw == '/' || raw == '(';
-                    index++;
-                    continue;
-                }
-
-                const bool uppercase = std::isupper(raw) != 0;
-                const std::string tail = lowercase_ascii(input.substr(index));
-                std::string replacement;
-                size_t consumed = 1;
-                for (const auto &group : groups)
-                    if (tail.rfind(group.first, 0) == 0)
-                    {
-                        replacement = group.second;
-                        consumed = group.first.size();
-                        break;
-                    }
-                if (replacement.empty())
-                {
-                    auto iterator = letters.find((char)std::tolower(raw));
-                    replacement = iterator == letters.end() ? std::string(1, (char)raw) : iterator->second;
-                }
-                if ((uppercase || word_start) && !replacement.empty())
-                {
-                    auto upper = uppercase_letters.find(replacement);
-                    if (upper != uppercase_letters.end())
-                        replacement = upper->second;
-                }
-                output += replacement;
-                word_start = false;
-                index += consumed;
-            }
-            return output;
-        }
-
         std::string resolve_label(const json &properties, const CityLabelStyle &style)
         {
-            std::vector<std::string> fields;
-            if (!style.label_field.empty())
-                fields.push_back(style.label_field);
-            if (lowercase_ascii(style.locale) == "ru")
-            {
-                fields.push_back("name_ru");
-                fields.push_back("name:ru");
-            }
-            for (const std::string &field : style.fallback_fields)
-                fields.push_back(field);
-            fields.push_back("name");
-            fields.push_back("nameascii");
-            fields.push_back("namepar");
-
-            std::string source;
-            std::set<std::string> visited;
-            for (const std::string &field : fields)
-            {
-                const std::string key = lowercase_ascii(field);
-                if (!visited.insert(key).second)
-                    continue;
-                source = property_string(properties, field);
-                if (!source.empty() && !looks_like_mojibake(source))
-                    break;
-                source.clear();
-            }
-            if (source.empty())
-                return "";
-            if (lowercase_ascii(style.locale) != "ru" || contains_cyrillic(source))
-                return source;
-            const auto &aliases = russian_names();
-            auto exact = aliases.find(normalize_key(source));
-            return exact != aliases.end() ? exact->second : transliterate_to_russian(source);
+            return resolve_city_name(properties, style.locale, style.label_field, style.fallback_fields);
         }
 
         bool base_filter(const CityCandidate &candidate, const CityLabelStyle &style)

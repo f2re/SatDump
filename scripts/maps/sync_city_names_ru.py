@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Copy Natural Earth NAME_RU verbatim; never translate or guess a place name.
 
-Python 3.5+ / standard library only. See README.md in this directory.
+Python 3.6+ / standard library only. See README.md in this directory.
 """
 import argparse
 import collections
@@ -16,9 +16,11 @@ import sys
 import tempfile
 import urllib.request
 
-SOURCE_COMMIT = 'b2b3e9a2a561df0e674b4ca816f0964eac9c6bfa'
+SOURCE_COMMIT = '90266457d82d3717e47313e72a921e31a087d2c4'
 SOURCE_URL = ('https://raw.githubusercontent.com/martynafford/natural-earth-geojson/'
               + SOURCE_COMMIT + '/10m/cultural/ne_10m_populated_places.json')
+SOURCE_SHA256 = '536ed7d8b1618e999d0569f69300e642b8b6a62234fb516fedfee0bb2901609f'
+OVERRIDES = Path(__file__).with_name('city_names_ru.matches.json')
 ROOT = Path(__file__).resolve().parents[2]
 TARGET = ROOT / 'resources/maps/ne_10m_populated_places_simple.json'
 REPORT = ROOT / 'resources/maps/city_names_ru.report.json'
@@ -62,7 +64,11 @@ def place_id(properties):
 
 def point(feature):
     geometry = feature.get('geometry') or {}
+    if not isinstance(geometry, dict):
+        raise SyncError('Invalid geometry object')
     coordinates = geometry.get('coordinates', [])
+    if not isinstance(coordinates, list):
+        raise SyncError('Invalid coordinates array')
     if feature.get('type') != 'Feature' or geometry.get('type') != 'Point' or len(coordinates) < 2:
         raise SyncError('Expected a Point feature')
     if any(isinstance(v, bool) or not isinstance(v, (int, float)) for v in coordinates[:2]):
@@ -110,7 +116,21 @@ def without_ru(document):
     return result
 
 
-def synchronize(target, source):
+def historical_point(properties):
+    """Older Natural Earth coordinates retained in the simple properties."""
+    lon, lat = prop(properties, 'longitude'), prop(properties, 'latitude')
+    if any(isinstance(v, bool) or not isinstance(v, (int, float)) for v in (lon, lat)):
+        return None
+    if not math.isfinite(lon) or not math.isfinite(lat) or not -180 <= lon <= 180 or not -90 <= lat <= 90:
+        return None
+    return float(lon), float(lat)
+
+
+def feature_digest(feature):
+    return digest(without_ru({'features': [feature]})['features'][0])
+
+
+def synchronize(target, source, overrides=None):
     """Return (new_document, deterministic_report). Errors never mutate inputs."""
     targets, sources = features(target), features(source)
     target_ids = collections.Counter(place_id(f['properties']) for f in targets)
@@ -126,8 +146,20 @@ def synchronize(target, source):
     if not any(any(k.lower() == 'name_ru' for k in f['properties']) for f in sources):
         raise SyncError('Source has no NAME_RU/name_ru field')
 
+    reviewed = {}
+    if overrides:
+        if overrides.get('schema_version') != 1 or overrides.get('source_document_sha256') != digest(source):
+            raise SyncError('Reviewed matches belong to a different source snapshot')
+        for entry in overrides.get('entries', []):
+            key = str(entry['target_ne_id'])
+            if key in reviewed or not key or target_ids[key] != 1:
+                raise SyncError('Reviewed target identifier is missing or not unique: ' + key)
+            reviewed[key] = entry
+
     result = copy.deepcopy(target)
     used = set()
+    used_reviewed = set()
+    absent = []
     methods = collections.Counter()
     missing = []
     failures = []
@@ -157,6 +189,43 @@ def synchronize(target, source):
             candidates = [i for i in sorted(possible)
                           if distance(coordinates, point(sources[i])) <= MAX_DISTANCE_M]
             method = 'country_name_and_distance'
+        if not candidates:
+            # A newer geometry must never overwrite an older place's identity.
+            # Check the retained historical coordinates only with exact names
+            # and country. No nearest-neighbour or fuzzy-name assignment.
+            historical = historical_point(properties)
+            if historical is not None:
+                candidates = [i for i in sorted(possible)
+                              if distance(historical, point(sources[i])) <= 1.0]
+                method = 'historical_coordinates_country_name'
+        override = reviewed.get(place_id(properties))
+        if override is not None:
+            if override.get('target_feature_sha256') != feature_digest(feature):
+                raise SyncError('Reviewed target changed: ' + str(index))
+            used_reviewed.add(place_id(properties))
+            match = override.get('source_index')
+            if match is None:
+                if candidates:
+                    raise SyncError('A supposedly absent place now has a match: ' + str(index))
+                destination = result['features'][index]['properties']
+                for key in list(destination):
+                    if key.lower() == 'name_ru':
+                        del destination[key]
+                destination['name_ru'] = None
+                absent.append({'target_index': index, 'name': prop(properties, 'name'),
+                               'ne_id': prop(properties, 'ne_id'), 'reason': override['reason']})
+                mapping.append([index, None, None])
+                continue
+            if isinstance(match, bool) or not isinstance(match, int) or not 0 <= match < len(sources):
+                raise SyncError('Invalid reviewed source index')
+            if override.get('source_feature_sha256') != digest(sources[match]):
+                raise SyncError('Reviewed source changed: ' + str(match))
+            if not compatible(match) or not names(properties) & names(sources[match]['properties']):
+                raise SyncError('Reviewed pair has no common name/country')
+            if candidates and candidates != [match]:
+                raise SyncError('Reviewed match conflicts with automatic candidates')
+            candidates = [match]
+            method = 'reviewed_version_pair'
         if len(candidates) != 1 or candidates[0] in used:
             failures.append({'target_index': index, 'name': prop(properties, 'name'),
                              'country': nation, 'coordinates': list(coordinates),
@@ -178,24 +247,29 @@ def synchronize(target, source):
         if not isinstance(russian, str) or not russian.strip():
             missing.append({'target_index': index, 'name': prop(properties, 'name'), 'source_index': match})
     report = {
-        'schema_version': 1,
+        'schema_version': 2,
         'source_commit': SOURCE_COMMIT,
         'source_url': SOURCE_URL,
         'source_document_sha256': digest(source),
         'target_unmanaged_sha256': digest(without_ru(target)),
         'source_features': len(sources), 'target_features': len(targets),
         'matched_features': len(used), 'russian_names': len(used) - len(missing),
+        'missing_in_source': absent,
+        'reviewed_matches_sha256': digest(overrides) if overrides else None,
         'missing_russian_names': missing, 'match_methods': dict(sorted(methods.items())),
         'unused_source_features': len(sources) - len(used),
         'duplicate_target_ne_id_values': sum(v > 1 for k, v in target_ids.items() if k),
         'max_fallback_distance_m': MAX_DISTANCE_M,
         'mapping_sha256': digest(mapping), 'failures': failures,
     }
+    if used_reviewed != set(reviewed):
+        raise SyncError('Unused reviewed matches; inspect the target catalogue')
     if not failures:
         if without_ru(result) != without_ru(target):
             raise SyncError('Unexpected change outside name_ru')
         for target_index, source_index, russian in mapping:
-            if result['features'][target_index]['properties']['name_ru'] != prop(sources[source_index]['properties'], 'name_ru'):
+            expected = None if source_index is None else prop(sources[source_index]['properties'], 'name_ru')
+            if result['features'][target_index]['properties']['name_ru'] != expected:
                 raise SyncError('Source identity verification failed')
         report['output_document_sha256'] = digest(result)
     return result, report
@@ -236,6 +310,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', default=SOURCE_URL, help='Pinned HTTPS source or local GeoJSON')
     parser.add_argument('--target', default=str(TARGET), help='Existing SatDump GeoJSON')
+    parser.add_argument('--matches', default=str(OVERRIDES), help='Reviewed version-pair manifest for the pinned source')
     parser.add_argument('--output', help='Output path; default: atomically update --target')
     parser.add_argument('--report', default=str(REPORT), help='Deterministic verification report')
     parser.add_argument('--check', action='store_true', help='Verify only; do not write any files')
@@ -243,12 +318,23 @@ def main(argv=None):
     try:
         if Path(args.report).resolve() in (Path(args.target).resolve(), Path(args.output or args.target).resolve()):
             raise SyncError('Report and data paths must differ')
+        if not str(args.source).startswith('https://'):
+            protected = (Path(args.source).resolve(), Path(args.matches).resolve())
+            if Path(args.report).resolve() in protected or Path(args.output or args.target).resolve() in protected:
+                raise SyncError('Output/report must not overwrite source or reviewed matches')
         source_data = read_bytes(args.source)
         source = json.loads(source_data.decode('utf-8-sig'))
         target = json.loads(read_bytes(args.target).decode('utf-8-sig'))
-        output, report = synchronize(target, source)
-        report['source_bytes_sha256'] = hashlib.sha256(source_data).hexdigest()
-        if args.source != SOURCE_URL:
+        source_hash = hashlib.sha256(source_data).hexdigest()
+        pinned = source_hash == SOURCE_SHA256
+        if args.source == SOURCE_URL and not pinned:
+            raise SyncError('Pinned source checksum mismatch')
+        overrides = None
+        if pinned:
+            overrides = json.loads(read_bytes(args.matches).decode('utf-8'))
+        output, report = synchronize(target, source, overrides)
+        report['source_bytes_sha256'] = source_hash
+        if not pinned:
             report['source_url'] = None
             report['source_commit'] = None
             report['source_input'] = str(args.source)

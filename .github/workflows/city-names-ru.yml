@@ -19,43 +19,40 @@ jobs:
     if: github.repository == 'f2re/SatDump' && github.ref == 'refs/heads/release/1.2.2'
     runs-on: ubuntu-22.04
     timeout-minutes: 10
-    env:
-      SOURCE_URL: https://raw.githubusercontent.com/martynafford/natural-earth-geojson/90266457d82d3717e47313e72a921e31a087d2c4/10m/cultural/ne_10m_populated_places.json
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
-      - name: Retain exact source and audit inputs
-        run: |
-          mkdir -p city-names-audit
-          curl --fail --location --retry 3 "$SOURCE_URL" -o city-names-audit/source.json
-          cp src-core/common/map/city_labels.cpp city-names-audit/city_labels.cpp
-          cp src-core/common/map/city_labels.h city-names-audit/city_labels.h
-          cp -r src-core/nlohmann city-names-audit/nlohmann
       - name: Unit tests
         run: python3 -m unittest discover -s tests/maps -v
-      - name: Compile and test name resolver
+      - name: Compile resolver and check rendering translation unit
         run: |
-          if test -f tests/maps/test_city_name_resolver.cpp; then
-            g++ -std=c++17 -Wall -Wextra -Werror -Isrc-core tests/maps/test_city_name_resolver.cpp -o /tmp/test-city-names
-            /tmp/test-city-names
-          fi
-      - name: Synchronize pinned source and verify exact identity
+          g++ -std=c++17 -Wall -Wextra -Werror -Isrc-core tests/maps/test_city_name_resolver.cpp -o /tmp/test-city-names
+          /tmp/test-city-names
+          g++ -std=c++17 -fsyntax-only -Isrc-core src-core/common/map/city_labels.cpp
+      - name: Fetch pinned source once
         run: |
-          python3 scripts/maps/sync_city_names_ru.py --source "$SOURCE_URL"
-          python3 scripts/maps/sync_city_names_ru.py --source "$SOURCE_URL" --check
+          mkdir -p city-names-audit
+          SOURCE_URL=$(python3 -c "import runpy; print(runpy.run_path('scripts/maps/sync_city_names_ru.py')['SOURCE_URL'])")
+          curl --fail --location --retry 3 "$SOURCE_URL" -o city-names-audit/source.json
+      - name: Synchronize and verify exact identity and idempotence
+        run: |
+          python3 scripts/maps/sync_city_names_ru.py --source city-names-audit/source.json
+          python3 scripts/maps/sync_city_names_ru.py --source city-names-audit/source.json --check
           cp resources/maps/ne_10m_populated_places_simple.json /tmp/cities-first.json
           cp resources/maps/city_names_ru.report.json /tmp/report-first.json
-          python3 scripts/maps/sync_city_names_ru.py --source "$SOURCE_URL"
+          python3 scripts/maps/sync_city_names_ru.py --source city-names-audit/source.json
           cmp /tmp/cities-first.json resources/maps/ne_10m_populated_places_simple.json
           cmp /tmp/report-first.json resources/maps/city_names_ru.report.json
-      - name: Commit verified data to the same branch
+          /tmp/test-city-names resources/maps/ne_10m_populated_places_simple.json
+          git diff --check
+      - name: Commit only verified data to the same branch
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add resources/maps/ne_10m_populated_places_simple.json resources/maps/city_names_ru.report.json
           if ! git diff --cached --quiet; then
-            git commit -m 'data(maps): synchronize exact Natural Earth Russian city names'
+            git commit -m 'data(maps): import 6209 verbatim Russian names from pinned Natural Earth'
             git push origin HEAD:release/1.2.2
           fi
       - name: Collect audit result
