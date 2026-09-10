@@ -185,6 +185,10 @@ jobs:
                 grep -Fq "Minimal / Compact" /opt/satdump-test/README.ru.md
               fi
 
+              LD_LIBRARY_PATH=/opt/satdump-test/lib:/opt/satdump-test/lib/satdump/plugins \
+                /opt/satdump-test/bin/satdump-city-names-runtime-test \
+                /opt/satdump-test/share/satdump/resources /tmp/city-label-runtime
+
               failed=0
               for elf in \
                 /opt/satdump-test/bin/satdump* \

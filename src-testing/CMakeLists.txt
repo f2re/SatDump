@@ -23,3 +23,11 @@ target_link_libraries(satdump-map-label-test PUBLIC satdump_core)
 add_executable(satdump-presentation-semantics-test presentation_semantics_test.cpp)
 target_include_directories(satdump-presentation-semantics-test PUBLIC src-testing src-core)
 target_link_libraries(satdump-presentation-semantics-test PUBLIC satdump_core)
+
+# Exercise the real core, glyph renderer and installed resources, not a mock.
+add_executable(satdump-city-names-runtime-test city_names_runtime_test.cpp)
+target_include_directories(satdump-city-names-runtime-test PUBLIC src-testing src-core)
+target_link_libraries(satdump-city-names-runtime-test PUBLIC satdump_core)
+if(ENABLE_INSTALL)
+    install(TARGETS satdump-city-names-runtime-test RUNTIME DESTINATION bin)
+endif()

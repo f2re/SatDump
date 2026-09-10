@@ -353,6 +353,11 @@ PLUGIN_COUNT="$(find "${BUNDLE}/lib/satdump/plugins" -maxdepth 1 -type f -name '
     find "${BUNDLE}/lib" -maxdepth 1 \( -type f -o -type l \) -name '*.so*' -printf '%f -> %l\n' | sort
 } > "${BUNDLE}/ASTRA17-MANIFEST.txt"
 
+# Reject stale/missing maps and run the installed C++ renderer against the
+# packaged core and fonts before creating the archive or publishing checksums.
+bash "${SOURCE_DIR}/scripts/maps/validate_city_runtime.sh" \
+    "${SOURCE_DIR}/resources" "${BUNDLE}" "${BUNDLE}/validation/city-labels"
+
 (
     cd "${BUNDLE}"
     find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS

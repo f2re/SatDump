@@ -1,28 +1,46 @@
 name: Russian city labels runtime
 on:
   push:
-    branches: ['fix/city-labels-runtime-ci-20260910']
+    branches: ['release/1.2.2', 'fix/city-labels-runtime-ci-20260910']
+    paths:
+      - 'src-core/common/map/**'
+      - 'src-core/common/image/**'
+      - 'src-core/common/overlay_handler*'
+      - 'src-testing/**'
+      - 'resources/maps/**'
+      - 'resources/fonts/**'
+      - 'scripts/maps/**'
+      - 'tests/maps/**'
+      - 'scripts/astra/**'
+      - '.github/workflows/city-labels-runtime.yml'
+  pull_request:
+    branches: ['release/1.2.2']
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: city-runtime-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
-  runtime:
+  contracts:
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Verify current resolver and catalogue
+      - name: Offline unit tests and full catalogue resolver
         run: |
           python3 -m unittest discover -s tests/maps -v
           g++ -std=c++17 -Wall -Wextra -Werror -Isrc-core tests/maps/test_city_name_resolver.cpp -o /tmp/city-name-test
           /tmp/city-name-test resources/maps/ne_10m_populated_places_simple.json
-      - name: Collect audit source without fonts or credentials
+          python3 scripts/maps/verify_installed_city_names.py resources resources
+          bash -n scripts/maps/validate_city_runtime.sh
+      - name: Collect call-site audit without font binaries
         run: |
-          mkdir -p city-runtime-audit
-          git archive --format=tar.gz HEAD src-core src-testing scripts .github config tests docs plugins CMakeLists.txt satdump_cfg.json > city-runtime-audit/source.tar.gz
-          git rev-parse HEAD > city-runtime-audit/commit.txt
+          mkdir -p city-callsite-audit
+          git grep -n -E 'drawProjectedCitiesGeoJson|OverlayHandler|nameascii' -- src-core src-cli src-ui src-interface tools plugins > city-callsite-audit/call-sites.txt
+          git rev-parse HEAD > city-callsite-audit/commit.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: city-runtime-audit
-          path: city-runtime-audit/
-          retention-days: 7
+          name: city-callsite-audit
+          path: city-callsite-audit/
+          retention-days: 14

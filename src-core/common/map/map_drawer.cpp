@@ -1,5 +1,6 @@
 #define _CRT_NO_VA_START_VALIDATION
 #include "map_drawer.h"
+#include "city_name_resolver.h"
 #include "nlohmann/json.hpp"
 #include <fstream>
 #include "shapefile.h"
@@ -188,7 +189,8 @@ namespace map
                     map_image.draw_line(cc.first + font_size * 0.3, cc.second - font_size * 0.3, cc.first - font_size * 0.3, cc.second + font_size * 0.3, color);
                     map_image.draw_circle(cc.first, cc.second, 0.15 * font_size, color, true);
 
-                    std::string name = mapStruct["properties"]["nameascii"];
+                    // Keep this legacy entry point consistent with the Russian overlay default.
+                    const std::string name = resolve_city_name(mapStruct["properties"], "ru", "", {"name", "nameascii"});
                     // map_image.draw_text(cc.first, cc.second + 20 * ratio, color, font, name);
                     text_drawer.draw_text(map_image, cc.first, cc.second + font_size * 0.15, color, font_size, name);
                 }

@@ -257,6 +257,15 @@ if [[ "${RUN_TESTS}" == "1" && -x "${BUILD_DIR}/satdump-presentation-test" ]]; t
     log_ok "Тестовые изображения: ${TEST_OUTPUT}"
 fi
 
+if [[ "${RUN_TESTS}" == "1" ]]; then
+    [[ -x "${BUILD_DIR}/satdump-map-label-test" ]] || die "Не собран тест картографических подписей"
+    [[ -x "${BUILD_DIR}/satdump-city-names-runtime-test" ]] || die "Не собран сквозной тест русских городов"
+    LD_LIBRARY_PATH="${BUILD_DIR}:${BUILD_DIR}/plugins:${LD_LIBRARY_PATH}" \
+        "${BUILD_DIR}/satdump-map-label-test" "${SATDUMP_ROOT}/resources/fonts/font.ttf" "${BUILD_DIR}/map-label-test-output"
+    LD_LIBRARY_PATH="${BUILD_DIR}:${BUILD_DIR}/plugins:${LD_LIBRARY_PATH}" \
+        "${BUILD_DIR}/satdump-city-names-runtime-test" "${SATDUMP_ROOT}/resources" "${BUILD_DIR}/city-label-test-output/source"
+fi
+
 cat > "${BUILD_DIR}/astra-env.sh" <<EOF
 #!/usr/bin/env bash
 export SATDUMP_BUILD_MODE="native"
@@ -353,6 +362,10 @@ if [[ "${DO_INSTALL}" == "1" ]]; then
 
     install_command "${CMAKE_EXECUTABLE}" --install "${BUILD_DIR}"
     write_install_marker
+    if [[ "${RUN_TESTS}" == "1" ]]; then
+        bash "${SATDUMP_ROOT}/scripts/maps/validate_city_runtime.sh" \
+            "${SATDUMP_ROOT}/resources" "${INSTALL_PREFIX}" "${BUILD_DIR}/city-label-test-output/installed"
+    fi
     log_ok "SatDump установлен в ${INSTALL_PREFIX}"
 fi
 
