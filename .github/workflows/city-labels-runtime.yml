@@ -1,0 +1,28 @@
+name: Russian city labels runtime
+on:
+  push:
+    branches: ['fix/city-labels-runtime-ci-20260910']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  runtime:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify current resolver and catalogue
+        run: |
+          python3 -m unittest discover -s tests/maps -v
+          g++ -std=c++17 -Wall -Wextra -Werror -Isrc-core tests/maps/test_city_name_resolver.cpp -o /tmp/city-name-test
+          /tmp/city-name-test resources/maps/ne_10m_populated_places_simple.json
+      - name: Collect audit source without fonts or credentials
+        run: |
+          mkdir -p city-runtime-audit
+          git archive --format=tar.gz HEAD src-core src-testing scripts .github config tests docs plugins CMakeLists.txt satdump_cfg.json > city-runtime-audit/source.tar.gz
+          git rev-parse HEAD > city-runtime-audit/commit.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: city-runtime-audit
+          path: city-runtime-audit/
+          retention-days: 7
