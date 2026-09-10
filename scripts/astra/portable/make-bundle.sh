@@ -283,6 +283,11 @@ NNG_COMMIT="$(awk -F= '$1 == "commit" { print $2 }' /usr/local/share/satdump-por
     find "${BUNDLE}/lib" -maxdepth 1 -type f -name '*.so*' -printf '%f\n' | sort
 } > "${BUNDLE}/PORTABLE-MANIFEST.txt"
 
+# Reject stale/missing maps and run the installed C++ renderer against the
+# packaged core and fonts before creating the archive or publishing checksums.
+bash "${SOURCE_DIR}/scripts/maps/validate_city_runtime.sh" \
+    "${SOURCE_DIR}/resources" "${BUNDLE}" "${BUNDLE}/validation/city-labels"
+
 (
     cd "${BUNDLE}"
     find . -type f ! -name 'SHA256SUMS' -print0 \

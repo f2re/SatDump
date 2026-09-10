@@ -4,10 +4,14 @@ on:
     branches: ['release/1.2.2']
     paths:
       - 'scripts/maps/**'
+      - 'resources/maps/**'
       - 'tests/maps/**'
       - 'src-core/common/map/city_labels.cpp'
       - 'src-core/common/map/city_name_resolver.h'
       - '.github/workflows/city-names-ru.yml'
+  pull_request:
+    branches: ['release/1.2.2']
+    paths: ['scripts/maps/**', 'tests/maps/**', 'src-core/common/map/**', 'resources/maps/**']
   workflow_dispatch:
 permissions:
   contents: write
@@ -16,7 +20,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   synchronize:
-    if: github.repository == 'f2re/SatDump' && github.ref == 'refs/heads/release/1.2.2'
+    if: github.repository == 'f2re/SatDump'
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     steps:
@@ -37,6 +41,7 @@ jobs:
           curl --fail --location --retry 3 "$SOURCE_URL" -o city-names-audit/source.json
       - name: Synchronize and verify exact identity and idempotence
         run: |
+          python3 scripts/maps/sync_city_names_ru.py --source city-names-audit/source.json --check
           python3 scripts/maps/sync_city_names_ru.py --source city-names-audit/source.json
           python3 scripts/maps/sync_city_names_ru.py --source city-names-audit/source.json --check
           cp resources/maps/ne_10m_populated_places_simple.json /tmp/cities-first.json
@@ -47,6 +52,7 @@ jobs:
           /tmp/test-city-names resources/maps/ne_10m_populated_places_simple.json
           git diff --check
       - name: Commit only verified data to the same branch
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/release/1.2.2'
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'

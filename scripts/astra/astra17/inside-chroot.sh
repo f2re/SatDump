@@ -25,7 +25,7 @@ export LANG=C
 log "Установка build-зависимостей Debian 10"
 apt-get update
 apt-get install -y --no-install-recommends \
-    build-essential cmake git ca-certificates curl pkg-config \
+    python3 build-essential cmake git ca-certificates curl pkg-config \
     binutils file patch rsync patchelf xz-utils tar gzip bzip2 \
     zlib1g-dev libfftw3-dev libpng-dev libtiff5-dev libjemalloc-dev \
     libcurl4-openssl-dev libvolk1-dev libzstd-dev libhdf5-dev libsqlite3-dev \
@@ -101,7 +101,7 @@ cmake -S "${SOURCE_DIR}" -B "${BUILD_DIR}" \
     -DCMAKE_INSTALL_RPATH= \
     -DCMAKE_INSTALL_RPATH_USE_LINK_PATH=OFF \
     -DBUILD_GUI="${GUI}" \
-    -DBUILD_TESTING=OFF \
+    -DBUILD_TESTING=ON \
     -DBUILD_TOOLS=OFF \
     -DBUILD_DOCS=OFF \
     -DBUILD_OPENCL=OFF \

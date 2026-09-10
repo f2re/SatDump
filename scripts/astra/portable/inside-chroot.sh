@@ -59,7 +59,7 @@ if [[ "${ROOTLESS}" == "1" ]]; then
 fi
 apt-get "${APT_ARGS[@]}" update
 apt-get "${APT_ARGS[@]}" install -y --no-install-recommends \
-    build-essential flex bison git curl ca-certificates pkg-config \
+    python3 build-essential flex bison git curl ca-certificates pkg-config \
     xz-utils tar gzip bzip2 patch file rsync binutils \
     libgmp-dev libmpfr-dev libmpc-dev libisl-dev \
     zlib1g-dev libfftw3-dev libpng-dev libtiff5-dev \
