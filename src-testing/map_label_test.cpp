@@ -32,12 +32,12 @@ namespace
         output << R"JSON({
   "type": "FeatureCollection",
   "features": [
-    {"type":"Feature","properties":{"featurecla":"Admin-0 capital","nameascii":"Moscow","scalerank":0,"pop_max":12000000},"geometry":{"type":"Point","coordinates":[37.62,55.75]}},
-    {"type":"Feature","properties":{"featurecla":"Admin-1 capital","nameascii":"St Petersburg","scalerank":1,"pop_max":5300000},"geometry":{"type":"Point","coordinates":[30.31,59.94]}},
-    {"type":"Feature","properties":{"featurecla":"Admin-1 capital","nameascii":"Murmansk","scalerank":4,"pop_max":270000},"geometry":{"type":"Point","coordinates":[33.08,68.97]}},
-    {"type":"Feature","properties":{"featurecla":"Admin-0 capital","nameascii":"Paris","scalerank":0,"pop_max":11000000},"geometry":{"type":"Point","coordinates":[2.35,48.86]}},
-    {"type":"Feature","properties":{"featurecla":"Admin-0 capital","nameascii":"London","scalerank":0,"pop_max":9000000},"geometry":{"type":"Point","coordinates":[-0.13,51.51]}},
-    {"type":"Feature","properties":{"featurecla":"Admin-0 capital","name":"ChiÈ™inÄƒu","nameascii":"Chisinau","scalerank":0,"pop_max":700000},"geometry":{"type":"Point","coordinates":[80.0,30.0]}},
+    {"type":"Feature","properties":{"featurecla":"Admin-0 capital","name_ru":"Москва","nameascii":"Moscow","scalerank":0,"pop_max":12000000},"geometry":{"type":"Point","coordinates":[37.62,55.75]}},
+    {"type":"Feature","properties":{"featurecla":"Admin-1 capital","name_ru":"Санкт-Петербург","nameascii":"St Petersburg","scalerank":1,"pop_max":5300000},"geometry":{"type":"Point","coordinates":[30.31,59.94]}},
+    {"type":"Feature","properties":{"featurecla":"Admin-1 capital","name_ru":"Мурманск","nameascii":"Murmansk","scalerank":4,"pop_max":270000},"geometry":{"type":"Point","coordinates":[33.08,68.97]}},
+    {"type":"Feature","properties":{"featurecla":"Admin-0 capital","name_ru":"Париж","nameascii":"Paris","scalerank":0,"pop_max":11000000},"geometry":{"type":"Point","coordinates":[2.35,48.86]}},
+    {"type":"Feature","properties":{"featurecla":"Admin-0 capital","name_ru":"Лондон","nameascii":"London","scalerank":0,"pop_max":9000000},"geometry":{"type":"Point","coordinates":[-0.13,51.51]}},
+    {"type":"Feature","properties":{"featurecla":"Admin-0 capital","name_ru":"Кишинёв","name":"ChiÈ™inÄƒu","nameascii":"Chisinau","scalerank":0,"pop_max":700000},"geometry":{"type":"Point","coordinates":[80.0,30.0]}},
     {"type":"Feature","properties":{"featurecla":"Populated place","name_ru":"Тестовый город","nameascii":"Test City","scalerank":5,"pop_max":100000},"geometry":{"type":"Point","coordinates":[40.0,56.0]}},
     {"type":"Feature","properties":{"featurecla":"Populated place","nameascii":"Nearby City","scalerank":5,"pop_max":90000},"geometry":{"type":"Point","coordinates":[40.1,56.0]}}
   ]
