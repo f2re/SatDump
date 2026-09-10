@@ -9,12 +9,11 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Export integration sources without third-party assets
+      - name: Export baseline sources for integration tests
         run: |
-          mkdir -p /tmp/satellite-review
-          tar -czf /tmp/satellite-review/sources.tar.gz services/station scripts/station config/station tests src-core/products/processor src-core/products/image_products.h src-core/common/image/presentation CMakeLists.txt .github/workflows/station-astra16.yml 2>/dev/null || test -s /tmp/satellite-review/sources.tar.gz
+          git archive --format=tar.gz --output=/tmp/satellite-baseline.tar.gz HEAD
       - uses: actions/upload-artifact@v4
         with:
-          name: satellite-integration-sources
-          path: /tmp/satellite-review/sources.tar.gz
+          name: satellite-complete-baseline
+          path: /tmp/satellite-baseline.tar.gz
           retention-days: 3
