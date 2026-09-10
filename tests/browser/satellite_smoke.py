@@ -30,6 +30,17 @@ def port():
         sock.bind(('127.0.0.1',0)); return sock.getsockname()[1]
 
 
+def wait_js(page, expression, arg=None, timeout=30000):
+    """Poll through CDP evaluation, not in-page eval/string timers forbidden by CSP."""
+    predicate = expression if '=>' in expression else '() => (' + expression + ')'
+    deadline = time.monotonic() + timeout / 1000.0
+    while time.monotonic() < deadline:
+        if page.evaluate(predicate, arg):
+            return
+        page.wait_for_timeout(100)
+    raise AssertionError('Browser condition timed out: ' + expression)
+
+
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--server',choices=('apache2','nginx'),default='apache2');parser.add_argument('--chromium',help='Optional explicit executable; default is Playwright managed Chromium');parser.add_argument('--http-only',action='store_true');parser.add_argument('--artifacts',default='/tmp/satdump-browser-results');args=parser.parse_args()
     if not Path('/usr/sbin/'+args.server).is_file():raise SystemExit('OS web server is required for this test')
@@ -51,6 +62,8 @@ def main():
         confpath=fixture.root/(args.server+'.conf')
         if args.server=='apache2':
             config=configure.apache_config('127.0.0.1',public_port,fixture.web.server_port,fixture.api.server_port,admin_port)
+            # Capture Apache diagnostics even in a minimal OS container without syslog.
+            config=config.replace('ErrorLog syslog:daemon:satdump-web','ErrorLog '+str(runtime/'error.log'))
             command=['/usr/sbin/apache2','-f',str(confpath),'-DFOREGROUND']
             probe=['/usr/sbin/apache2','-t','-f',str(confpath)]
         else:
@@ -102,8 +115,8 @@ def main():
                 page.on('pageerror',lambda e:errors.append(str(e)))
                 page.on('request',lambda req:external.append(req.url) if not any(req.url.startswith(origin+'/') for origin in (public,admin)) else None)
                 page.on('response',lambda response:missing.append((response.status,response.url)) if response.status>=400 else None)
-            page=context.new_page();watch(page);page.clock.install();page.goto(public+'/',wait_until='networkidle')
-            page.wait_for_function("document.querySelector('#image-stage .is-active')?.naturalWidth > 0")
+            page=context.new_page();watch(page);page.goto(public+'/',wait_until='networkidle')
+            wait_js(page, "document.querySelector('#image-stage .is-active')?.naturalWidth > 0")
             checks.append('real_png_loaded')
             assert page.locator('#frame-b').evaluate('(img)=>img.naturalHeight')==2400
             assert page.locator('#satellite-art').evaluate('(img)=>!img.hidden && img.naturalWidth>0')
@@ -111,11 +124,9 @@ def main():
             assert page.locator('#legend-entries').inner_text().find('ch3')>=0
             page.screenshot(path=str(out/(args.server+'-portrait.png')))
             initial_ambient=page.locator('.ambient.is-active').get_attribute('src')
-            # Virtual clock advances the real player; no shortened production timings or mock image network.
-            page.clock.fast_forward(21000)
-            page.wait_for_function("[...document.querySelectorAll('.sat-image')].some(i=>!i.classList.contains('is-active') && i.naturalWidth===4096)")
-            page.clock.fast_forward(5000)
-            page.wait_for_function("document.querySelector('.sat-image.is-active').naturalWidth===4096")
+            # Real production interval and image decode; never weaken CSP for a fake clock.
+            wait_js(page, "[...document.querySelectorAll('.sat-image')].some(i=>!i.classList.contains('is-active') && i.naturalWidth===4096)")
+            wait_js(page, "document.querySelector('.sat-image.is-active').naturalWidth===4096")
             page.wait_for_timeout(350)
             assert page.locator('.ambient.is-active').get_attribute('src')!=initial_ambient
             assert page.locator('.ambient.is-active').evaluate('(img)=>Number(getComputedStyle(img).opacity)')>.7
@@ -131,29 +142,29 @@ def main():
             page.set_viewport_size({'width':1920,'height':1080})
             page.locator('#pause-button').click();assert page.locator('#pause-button').get_attribute('aria-pressed')=='true'
             first=page.locator('#image-stage .is-active').get_attribute('src')
-            page.locator('#next').click();page.wait_for_function('(old)=>document.querySelector("#image-stage .is-active")?.src !== old',arg=first)
+            page.locator('#next').click();wait_js(page, '(old)=>document.querySelector("#image-stage .is-active")?.src !== old',arg=first)
             page.wait_for_timeout(400)
             second=page.locator('#image-stage .is-active').get_attribute('src');assert first!=second
             assert page.locator('#image-stage .is-active').evaluate('(i)=>i.naturalWidth')==80
             assert 'Нет времени' in page.locator('#acquisition-time').inner_text()
             checks.append('small_undated_image_visible_without_fake_timeline')
-            page.locator('#previous').click();page.wait_for_function('(old)=>document.querySelector("#image-stage .is-active")?.src !== old',arg=second)
+            page.locator('#previous').click();wait_js(page, '(old)=>document.querySelector("#image-stage .is-active")?.src !== old',arg=second)
             page.wait_for_timeout(400)
             assert page.locator('#passport-link').get_attribute('href').startswith(public+'/items/')
             checks.append('pause_navigation_and_passport')
             page.screenshot(path=str(out/(args.server+'-screen.png')))
             settings=context.new_page();watch(settings);settings.goto(admin+'/settings/',wait_until='networkidle')
             settings.locator('#token').fill('a'*64);settings.locator('#login button').click();settings.locator('#settings').wait_for(state='visible')
-            settings.wait_for_function("document.querySelector('#message').textContent.includes('Настройки загружены')")
+            wait_js(settings, "document.querySelector('#message').textContent.includes('Настройки загружены')")
             assert settings.evaluate('localStorage.length')==0
             assert settings.evaluate('sessionStorage.length')==0
             checks.append('authenticated_ui_no_persistent_token')
             window_input=settings.locator('#display-fields label').filter(has_text='Глубина истории').locator('input')
             window_input.fill('1');window_input.press('Tab')
-            settings.locator('#validate').click();settings.wait_for_function("document.querySelector('#message').textContent.includes('Повторная обработка не требуется')")
-            settings.locator('#save').click();settings.wait_for_function("document.querySelector('#message').textContent.includes('Ревизия сохранена')")
+            settings.locator('#validate').click();wait_js(settings, "document.querySelector('#message').textContent.includes('Повторная обработка не требуется')")
+            settings.locator('#save').click();wait_js(settings, "document.querySelector('#message').textContent.includes('Ревизия сохранена')")
             fixture.worker.tick()
-            settings.wait_for_function("document.querySelector('#applied').textContent === 'Применено обработчиком'",timeout=10000)
+            wait_js(settings, "document.querySelector('#applied').textContent === 'Применено обработчиком'",timeout=10000)
             assert fixture.store.current()['settings']['board']['display']['windowHours']==1
             checks.append('form_validate_save_and_applied_revision')
             settings.screenshot(path=str(out/(args.server+'-settings.png')))
@@ -165,18 +176,18 @@ def main():
             checks.append('hot_settings_without_new_jobs')
             settings.bring_to_front()
             settings.locator('#display-fields label').filter(has_text='Файл для показа').locator('select').select_option('preview')
-            settings.locator('#save').click();settings.wait_for_function("document.querySelector('#message').textContent.includes('Ревизия сохранена')")
+            settings.locator('#save').click();wait_js(settings, "document.querySelector('#message').textContent.includes('Ревизия сохранена')")
             fixture.worker.tick()
             page.bring_to_front();page.locator('#refresh').click()
-            page.wait_for_function("document.querySelector('.sat-image.is-active').src.endsWith('-preview.jpg')")
+            wait_js(page, "document.querySelector('.sat-image.is-active').src.endsWith('-preview.jpg')")
             assert '1920 × 563' in page.locator('#image-dimensions').inner_text()
             assert fixture.worker.db.execute('SELECT count(*) FROM jobs').fetchone()[0]==3
             checks.append('server_preview_switch_while_paused_no_new_jobs')
             settings.bring_to_front();settings.locator('#advanced').click()
             editor=settings.locator('#json-settings');draft=json.loads(editor.input_value());draft['processing']['satdump_general']['presentation']['save_minimal']=False
-            editor.fill(json.dumps(draft));settings.locator('#use-json').click();settings.wait_for_function("document.querySelector('#message').textContent.includes('JSON проверен')")
+            editor.fill(json.dumps(draft));settings.locator('#use-json').click();wait_js(settings, "document.querySelector('#message').textContent.includes('JSON проверен')")
             settings.locator('#save').click();settings.locator('#reprocess-panel').wait_for(state='visible');assert fixture.store.current()['settings']['processing']['satdump_general']['presentation']['save_minimal'] is True
-            settings.locator('#confirm-reprocess').check();settings.locator('#save').click();settings.wait_for_function("document.querySelector('#message').textContent.includes('Ревизия сохранена')")
+            settings.locator('#confirm-reprocess').check();settings.locator('#save').click();wait_js(settings, "document.querySelector('#message').textContent.includes('Ревизия сохранена')")
             checks.append('explicit_reprocessing_confirmation')
             # Both desktop and narrow admin layout must remain usable without overflow.
             settings.set_viewport_size({'width':390,'height':844});settings.screenshot(path=str(out/(args.server+'-settings-mobile.png')),full_page=True)
@@ -195,7 +206,11 @@ def main():
             process.terminate()
             try:process.wait(timeout=10)
             except subprocess.TimeoutExpired:process.kill();process.wait()
-        if log:log.close()
+        if log:
+            log.close()
+            print((out/(args.server+'.log')).read_text(),file=sys.stderr)
+        if 'runtime' in locals() and (runtime/'error.log').is_file():
+            print((runtime/'error.log').read_text(),file=sys.stderr)
         fixture.tearDown()
 
 
