@@ -1,0 +1,60 @@
+name: Natural Earth Russian city names
+on:
+  push:
+    branches: ['release/1.2.2']
+    paths:
+      - 'scripts/maps/**'
+      - 'tests/maps/**'
+      - 'src-core/common/map/city_labels.cpp'
+      - 'src-core/common/map/city_name_resolver.h'
+      - '.github/workflows/city-names-ru.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: city-names-ru-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  synchronize:
+    if: github.repository == 'f2re/SatDump' && github.ref == 'refs/heads/release/1.2.2'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Unit tests
+        run: python3 -m unittest discover -s tests/maps -v
+      - name: Compile and test name resolver
+        run: |
+          if test -f tests/maps/test_city_name_resolver.cpp; then
+            g++ -std=c++17 -Wall -Wextra -Werror -Isrc-core tests/maps/test_city_name_resolver.cpp -o /tmp/test-city-names
+            /tmp/test-city-names
+          fi
+      - name: Synchronize pinned source and verify exact identity
+        run: |
+          python3 scripts/maps/sync_city_names_ru.py
+          python3 scripts/maps/sync_city_names_ru.py --check
+          cp resources/maps/ne_10m_populated_places_simple.json /tmp/cities-first.json
+          cp resources/maps/city_names_ru.report.json /tmp/report-first.json
+          python3 scripts/maps/sync_city_names_ru.py
+          cmp /tmp/cities-first.json resources/maps/ne_10m_populated_places_simple.json
+          cmp /tmp/report-first.json resources/maps/city_names_ru.report.json
+      - name: Commit verified data to the same branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add resources/maps/ne_10m_populated_places_simple.json resources/maps/city_names_ru.report.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'data(maps): synchronize exact Natural Earth Russian city names'
+            git push origin HEAD:release/1.2.2
+          fi
+      - name: Save data and audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: city-names-ru
+          path: |
+            resources/maps/ne_10m_populated_places_simple.json
+            resources/maps/city_names_ru.report.json
+          retention-days: 14
