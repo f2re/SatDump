@@ -1,0 +1,20 @@
+name: Satellite integration staging
+on:
+  push:
+    branches: [integration/satellite-web-20260910]
+permissions:
+  contents: read
+jobs:
+  sources:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Export integration sources without third-party assets
+        run: |
+          mkdir -p /tmp/satellite-review
+          tar -czf /tmp/satellite-review/sources.tar.gz services/station scripts/station config/station tests src-core/products/processor src-core/products/image_products.h src-core/common/image/presentation CMakeLists.txt .github/workflows/station-astra16.yml 2>/dev/null || test -s /tmp/satellite-review/sources.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: satellite-integration-sources
+          path: /tmp/satellite-review/sources.tar.gz
+          retention-days: 3
