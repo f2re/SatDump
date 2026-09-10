@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""BOARD adapter; no new frontend. Uses the existing SatDump queue and renderer."""
+"""BOARD and satellite UI adapter using the existing SatDump queue/renderer."""
 from __future__ import print_function
 import argparse
 import copy
@@ -14,6 +14,8 @@ import time
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 import control
+import satellite
+import hashlib
 
 LOG = logging.getLogger('satdump-board')
 
@@ -40,6 +42,7 @@ def install_adapter(station, ui_root=None):
     class BoardWorker(BaseWorker):
         def __init__(self, cfg):
             self.base = copy.deepcopy(cfg)
+            self.satellite_cache = {}
             self.managed = None
             self.revision = ''
             self.revision_error = False
@@ -100,9 +103,8 @@ def install_adapter(station, ui_root=None):
             passport = station.read_json(dest / ('{0:03d}.json'.format(index)))
             entry['layout'] = layout(passport, native)
             entry['settings_revision'] = self.revision or None
-            # Preserve the complete original sidecar at entry['metadata'].
-            # No guessed observation time, channels, calibration or orientation.
-            return entry
+            # The complete original passport is retained without rewriting.
+            return satellite.enrich(entry, passport, dest, index)
 
         def process(self, job):
             """Native base algorithm with explicit editorial AND minimal discovery.
@@ -203,6 +205,29 @@ def install_adapter(station, ui_root=None):
                 'schema': 'satdump.board/1', 'updated_at': time.time(), 'settings_revision': self.revision or None,
                 'title': self.cfg.get('title', 'Спутниковые наблюдения'), 'total': len(items),
                 'hidden': len(entries) - len(items), 'items': items[:self.board_settings.get('max_items', 1000)]})
+            selected = items[:self.board_settings.get('max_items', 1000)]
+            # Upgrade old public previews in-place without touching scientific files
+            # or re-running reception/decoding. Cache by immutable item id.
+            for entry in selected:
+                if entry.get('asset_revision') != satellite.ASSET_REVISION:
+                    try:
+                        key = entry['id']
+                        if key not in self.satellite_cache:
+                            if not satellite.public_asset(entry.get('metadata')):
+                                raise ValueError('Invalid public metadata path')
+                            path = self.data / 'public' / entry['metadata']
+                            if not station.contained(path, self.data / 'public'):
+                                raise ValueError('Metadata outside public storage')
+                            upgraded = satellite.enrich(copy.deepcopy(entry), station.read_json(path),
+                                                         path.parent, int(path.stem))
+                            self.satellite_cache[key] = upgraded
+                        entry.update(self.satellite_cache[key])
+                    except (OSError, ValueError, KeyError, TypeError):
+                        LOG.warning('Legacy display upgrade skipped: %s', entry.get('id'))
+            live = {e['id'] for e in selected}
+            self.satellite_cache = {k: v for k, v in self.satellite_cache.items() if k in live}
+            station.atomic_json(self.data / 'public/satellite.json', satellite.publication(
+                selected, self.board_settings, self.revision or None, time.time()))
 
         def heartbeat(self, phase='idle'):
             BaseWorker.heartbeat(self, phase)
@@ -211,10 +236,61 @@ def install_adapter(station, ui_root=None):
                 'applied_revision': self.revision or None, 'configuration_error': self.revision_error})
 
     class BoardHandler(station.GalleryHandler):
+        def send_header(self, keyword, value):
+            if keyword.lower() == 'content-security-policy':
+                value = value.replace("style-src 'self';", "style-src 'self' 'unsafe-inline';")
+            station.GalleryHandler.send_header(self, keyword, value)
+
         def respond(self, body):
+            path = unquote(urlsplit(self.path).path)
+            if '\x00' in path or '\\' in path or '..' in path.split('/'):
+                self.send_error(404)
+                return
+            if path in ('/api/v1/satellite/manifest', '/sat/manifest', '/api/v1/satellite/config'):
+                try:
+                    published = station.read_json(self.server.public / 'satellite.json', limit=32 * 1024 * 1024)
+                    if path.endswith('/config'):
+                        value = satellite.display_settings(published.get('display'))
+                        value['settings_revision'] = published.get('settings_revision')
+                    else:
+                        value = satellite.manifest(published, time.time())
+                    raw = control.canonical(value)
+                    etag = '"' + hashlib.sha256(raw).hexdigest() + '"'
+                    if self.headers.get('If-None-Match') == etag:
+                        self.send_response(304)
+                        self.send_header('ETag', etag)
+                        self.send_header('Cache-Control', 'no-cache')
+                        self.end_headers()
+                    else:
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'application/json; charset=utf-8')
+                        self.send_header('Content-Length', str(len(raw)))
+                        self.send_header('ETag', etag)
+                        self.send_header('Cache-Control', 'no-cache')
+                        self.send_header('X-Content-Type-Options', 'nosniff')
+                        self.end_headers()
+                        if body:
+                            self.wfile.write(raw)
+                except (OSError, ValueError, KeyError, TypeError):
+                    self.send_error(503, 'Waiting for satellite publication')
+                return
+            if path == '/api/v1/openapi.json':
+                schema = Path(__file__).resolve().parents[2] / 'config/station/board-openapi.json'
+                self.send_bytes(schema.read_bytes(), 'application/json', body)
+                return
+            if path.startswith('/items/') and satellite.ASSET.match(path[1:]) and '-ambient' in path:
+                target = self.server.public / path[1:]
+                if station.contained(target, self.server.public) and target.is_file():
+                    with open(str(target), 'rb') as stream:
+                        self.headers_ok(os.fstat(stream.fileno()).st_size, 'image/jpeg', True)
+                        if body:
+                            shutil.copyfileobj(stream, self.wfile)
+                else:
+                    self.send_error(404)
+                return
             endpoints = {'/api/v1/board': 'board.json', '/api/v1/board/status': 'board-status.json'}
-            if self.path in endpoints:
-                path = self.server.public / endpoints[self.path]
+            if path in endpoints:
+                path = self.server.public / endpoints[path]
                 try:
                     self.send_bytes(control.canonical(station.read_json(path, limit=32 * 1024 * 1024)), 'application/json', body)
                 except (OSError, ValueError):
@@ -223,10 +299,12 @@ def install_adapter(station, ui_root=None):
             path = unquote(urlsplit(self.path).path)
             reserved = path.startswith(('/api/', '/items/', '/health')) or path in ('/catalog.json', '/worker.json')
             if ui_root and not reserved:
-                relative = 'index.html' if path == '/' else path.lstrip('/')
+                relative = {'/': 'sat/index.html', '/index.html': 'sat/index.html',
+                            '/sat': 'sat/index.html', '/sat/': 'sat/index.html',
+                            '/settings': 'settings/index.html', '/settings/': 'settings/index.html'}.get(path, path.lstrip('/'))
                 types = {'.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8',
                          '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml',
-                         '.png': 'image/png', '.jpg': 'image/jpeg', '.ico': 'image/x-icon',
+                         '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon',
                          '.woff': 'font/woff', '.woff2': 'font/woff2'}
                 target = Path(ui_root) / relative
                 safe = '\x00' not in path and '\\' not in path and not any(p.startswith('.') for p in relative.split('/'))
@@ -247,7 +325,7 @@ def install_adapter(station, ui_root=None):
             if path in ('/app.js', '/style.css'):
                 self.send_error(404)
                 return
-            if self.path == '/health/ready':
+            if path == '/health/ready':
                 try:
                     status = station.read_json(self.server.public / 'worker.json')
                     alive = time.time() - status['updated_at'] < status['stale_after']
@@ -271,10 +349,11 @@ def install_adapter(station, ui_root=None):
 def main():
     import station
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument('--ui-root', default='/opt/satdump-station/board-ui/current')
+    parser.add_argument('--ui-root', default=str(Path(__file__).resolve().parent / 'web'))
     args, remaining = parser.parse_known_args()
     sys.argv = [sys.argv[0]] + remaining
-    worker, server = install_adapter(station, args.ui_root)
+    ui_root = args.ui_root if Path(args.ui_root).is_dir() else str(Path(__file__).resolve().parent / 'web')
+    worker, server = install_adapter(station, ui_root)
     station.Worker, station.GalleryServer = worker, server
     return station.main()
 

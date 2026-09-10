@@ -19,6 +19,7 @@ import socketserver
 import tempfile
 import threading
 import time
+import satellite
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -157,10 +158,81 @@ def jsonc(path):
     return json.loads(raw)
 
 
+def color(value):
+    if isinstance(value, str):
+        require(bool(re.match(r'^#?[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$', value)), 'Некорректный цвет')
+    else:
+        require(isinstance(value, list) and len(value) in (3, 4), 'Цвет: RGB/RGBA')
+        for channel in value:
+            number(channel, 0, 255)
+
+
+def legend(value):
+    keys(value, ('kind', 'title', 'subtitle', 'unit', 'notes', 'colors', 'min', 'max',
+                 'ticks', 'tick_count', 'categories', 'components'), 'legend')
+    if 'kind' in value:
+        require(value['kind'] in ('none', 'continuous', 'categorical', 'composite'), 'Неизвестный тип легенды')
+    for key in ('title', 'subtitle', 'unit'):
+        if key in value:
+            text(value[key], 1000)
+    for key in ('min', 'max'):
+        if key in value:
+            number(value[key], -1e12, 1e12)
+    if 'min' in value and 'max' in value:
+        require(value['max'] > value['min'], 'legend.max должен быть больше min')
+    if 'tick_count' in value:
+        number(value['tick_count'], 2, 32, True)
+    for key in ('notes', 'colors', 'ticks', 'categories', 'components'):
+        if key not in value:
+            continue
+        items = value[key]
+        require(isinstance(items, list) and len(items) <= 64, 'legend.' + key + ': не более 64 элементов')
+        for item in items:
+            if key == 'notes':
+                text(item, 2000)
+            elif key == 'colors':
+                if isinstance(item, dict):
+                    keys(item, ('position', 'color'), 'color stop')
+                    require('color' in item, 'Нужен color')
+                    number(item.get('position', 0), 0, 1)
+                    color(item['color'])
+                else:
+                    color(item)
+            elif key == 'ticks':
+                if type(item) in (float, int):
+                    number(item, -1e12, 1e12)
+                else:
+                    keys(item, ('position', 'value', 'label'), 'tick')
+                    if 'position' in item:
+                        number(item['position'], 0, 1)
+                    if 'value' in item:
+                        number(item['value'], -1e12, 1e12)
+                    if 'label' in item:
+                        text(item['label'])
+            else:
+                fields = ('color', 'label') if key == 'categories' else ('component', 'channel', 'spectral_range', 'quantity', 'formula', 'description', 'color')
+                keys(item, fields, key)
+                for field, content in item.items():
+                    if field == 'color':
+                        color(content)
+                    else:
+                        text(content, 2000)
+
+
 def presentation(value):
-    keys(value, PBOOLS + ('orientation_mode', 'orientation', 'outputs', 'minimal', 'editorial', 'presentational'), 'presentation')
+    if type(value) is bool:
+        return
+    keys(value, PBOOLS + ('orientation_mode', 'orientation', 'outputs', 'minimal', 'editorial', 'presentational',
+                          'title', 'subtitle', 'branding', 'theme', 'legend'), 'presentation')
     for key, v in value.items():
-        if key in PBOOLS:
+        if key in ('title', 'subtitle', 'branding'):
+            text(v, 1000)
+        elif key == 'theme':
+            # Reuse the same validated theme vocabulary as layout overrides.
+            presentation({'minimal': {'theme': v}})
+        elif key == 'legend':
+            legend(v)
+        elif key in PBOOLS:
             boolean(v)
         elif key == 'orientation_mode':
             require(v in MODES, 'Неизвестный режим ориентации')
@@ -223,7 +295,8 @@ class Store:
         return {'schema': 'satdump.station.capabilities/1', 'instruments': presets,
                 'source_kinds': ['image', 'product', 'pipeline'], 'pipeline_ids': self.policy.get('pipeline_ids', []),
                 'pipeline_options': sorted(PIPE_OPTIONS), 'station_ranges': RANGES,
-                'presentation_fields': list(PBOOLS) + ['orientation', 'orientation_mode', 'outputs', 'minimal', 'editorial', 'presentational'],
+                'display_defaults': satellite.DISPLAY_DEFAULTS, 'display_ranges': satellite.DISPLAY_RANGES,
+                'presentation_fields': list(PBOOLS) + ['orientation', 'orientation_mode', 'outputs', 'minimal', 'editorial', 'presentational', 'title', 'subtitle', 'branding', 'theme', 'legend'],
                 'theme_fields': list(COLORS) + ['reference_width', 'minimum_scale', 'maximum_scale'],
                 'preset_fields': ['autogen', 'equation', 'presentation'], 'input_roots': self.policy['input_roots'],
                 'privileged_read_only': {'data_dir': self.base['data_dir'], 'engine': self.base['engine'],
@@ -234,7 +307,8 @@ class Store:
         s = {k: copy.deepcopy(v) for k, v in self.base.items() if k in tuple(RANGES) + BOOLS + ('title', 'sources')}
         return {'station': s, 'processing': copy.deepcopy(self.processing),
                 'board': {'hidden_sources': [], 'hidden_instruments': [], 'hidden_products': [],
-                          'layouts': ['editorial', 'minimal', 'external'], 'max_items': self.base.get('max_items', 1000)}}
+                          'layouts': ['editorial', 'minimal', 'external'], 'max_items': self.base.get('max_items', 1000),
+                          'display': satellite.display_settings()}}
 
     def current(self):
         path = self.root / 'active.json'
@@ -349,7 +423,7 @@ class Store:
                 if 'presentation' in params:
                     presentation(params['presentation'])
         b = settings['board']
-        keys(b, ('hidden_sources', 'hidden_instruments', 'hidden_products', 'layouts', 'max_items'), 'board')
+        keys(b, ('hidden_sources', 'hidden_instruments', 'hidden_products', 'layouts', 'max_items', 'display'), 'board')
         for field in ('hidden_sources', 'hidden_instruments', 'hidden_products', 'layouts'):
             value = b.get(field, [])
             require(isinstance(value, list) and len(value) <= 1000, 'Некорректный список ' + field)
@@ -357,6 +431,7 @@ class Store:
                 text(entry)
         require(all(x in ('editorial', 'minimal', 'external') for x in b.get('layouts', [])), 'Неизвестный макет')
         number(b.get('max_items', 1000), 1, 10000, True)
+        satellite.display_settings(b.get('display'))
         return settings
 
     @staticmethod
@@ -416,10 +491,41 @@ class Handler(BaseHTTPRequestHandler):
             origins = ['http://' + h for h in hosts] + self.server.store.policy.get('admin_origins', [])
             if len(self.headers.get_all('Origin', [])) > 1 or (self.headers.get('Origin') and self.headers['Origin'] not in origins):
                 return self.response(403, {'error': 'origin_rejected'})
+            static = {'/settings': 'index.html', '/settings/': 'index.html',
+                      '/settings/index.html': 'index.html', '/settings/admin.js': 'admin.js',
+                      '/settings/api.js': 'api.js', '/settings/admin.css': 'admin.css'}
+            if self.command == 'GET' and self.path in static:
+                target = Path(__file__).resolve().parent / 'web/settings' / static[self.path]
+                raw = target.read_bytes()
+                self.send_response(200)
+                self.send_header('Content-Type', {'.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8'}[target.suffix])
+                self.send_header('Content-Length', str(len(raw)))
+                self.send_header('Cache-Control', 'no-store')
+                self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'none'")
+                self.send_header('X-Content-Type-Options', 'nosniff')
+                self.end_headers()
+                self.wfile.write(raw)
+                return
             auth = self.headers.get('Authorization', '')
             if len(self.headers.get_all('Authorization', [])) != 1 or not hmac.compare_digest(auth.encode('utf-8'), ('Bearer ' + self.server.token).encode('ascii')):
                 return self.response(401, {'error': 'authentication_required'})
             store = self.server.store
+            if self.path == '/api/v1/control/status' and self.command == 'GET':
+                desired = store.current()['revision']
+                public = Path(store.base['data_dir']) / 'public'
+                status = {'applied_revision': None, 'configuration_error': False}
+                alive = False
+                try:
+                    status = read(public / 'board-status.json')
+                    heartbeat = read(public / 'worker.json')
+                    age = time.time() - heartbeat['updated_at']
+                    alive = 0 <= age < heartbeat['stale_after']
+                except (OSError, ValueError, KeyError, TypeError):
+                    pass
+                status['desired_revision'] = desired
+                status['worker_alive'] = alive
+                status['applied'] = bool(alive and status.get('applied_revision') == desired and not status.get('configuration_error'))
+                return self.response(200, status)
             if self.path == '/api/v1/control/health' and self.command == 'GET':
                 return self.response(200, {'control_alive': True})
             if self.path == '/api/v1/control/capabilities' and self.command == 'GET':

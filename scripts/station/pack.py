@@ -129,13 +129,13 @@ def pack(args):
         os.chmod(str(bundle / relative), 0o755)
     required, elf_count = glibc_floor(bundle)
     manifest = {'schema': 'satdump.station.package/1', 'release_id': release_id,
-                'git_commit': revision, 'target': 'Astra Linux 1.6 x86_64',
+                'git_commit': revision, 'target': 'Astra Linux 1.6/1.7 x86_64',
                 'glibc_required': required, 'glibc_allowed_max': '2.24', 'elf_count': elf_count,
                 'system_glibc_replaced': False, 'native_astra16_acceptance': 'not implied by packaging',
                 'services': ['satdump-worker', 'satdump-web', 'satdump-control'],
-                'optional_services': {'nginx': ['satdump-board']},
+                'optional_services': {'nginx': ['satdump-board'], 'apache2': ['satdump-board']},
                 'board_schema': 'satdump.board/1', 'control_schema': 'satdump.station.control/1',
-                'control_loopback_only': True, 'new_frontend_included': False,
+                'control_loopback_only': True, 'new_frontend_included': True, 'web_server_default': 'apache2',
                 'operator_guide': 'BOARD_INFRASTRUCTURE.ru.md'}
     provenance_path = getattr(args, 'component_provenance', None)
     if provenance_path:

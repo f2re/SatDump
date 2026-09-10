@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#07131c">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'">
+  <title>Орбита · Спутниковое наблюдение</title>
+  <!-- Системные шрифты и локальные изображения: внешние CDN не используются. -->
+  <link rel="icon" type="image/svg+xml" href="/sat/assets/orbit.svg">
+  <link rel="stylesheet" href="/sat/styles/sat.css">
+  <script type="module" src="/sat/js/app.js"></script>
+</head>
+<body>
+  <main id="chronoscope" class="chronoscope" data-layout="landscape">
+    <!-- Два малых буфера меняют ambient-фон одновременно со снимком. -->
+    <div class="ambient-wrap" aria-hidden="true">
+      <img id="ambient-a" class="ambient" alt="" decoding="async">
+      <img id="ambient-b" class="ambient" alt="" decoding="async">
+    </div>
+    <img class="earth-overlay" src="/sat/assets/earth-overlay.webp" alt="" aria-hidden="true">
+
+    <!-- Компактная служебная строка высотой 58 px для Full HD. -->
+    <header class="masthead">
+      <div class="identity">
+        <img src="/sat/assets/orbit.svg" width="38" height="38" alt="">
+        <span class="identity-name">ОРБИТА</span><span class="identity-divider">/</span>
+        <span class="identity-caption">СПУТНИКОВОЕ НАБЛЮДЕНИЕ</span>
+      </div>
+      <nav class="player-controls" aria-label="Управление показом">
+        <button id="previous" type="button" title="Предыдущий кадр · ←">Назад</button>
+        <button id="pause-button" type="button" aria-pressed="false" title="Пауза · Пробел">Пауза</button>
+        <button id="next" type="button" title="Следующий кадр · →">Вперёд</button>
+        <button id="latest-button" type="button" title="Самый свежий кадр · Home">Свежий</button>
+        <button id="refresh" type="button" title="Обновить каталог · R">Обновить</button>
+      </nav><time id="clock" class="clock">UTC</time>
+    </header>
+
+    <!-- Главная сцена: снимок занимает 70%, краткая сводка — 30%. -->
+    <section class="scene" aria-label="Спутниковое наблюдение">
+      <div id="image-stage" class="image-stage">
+        <span class="frame-label">СПУТНИКОВЫЙ СНИМОК</span>
+        <span class="corner tl" aria-hidden="true"></span><span class="corner br" aria-hidden="true"></span>
+        <!-- Полноразмерных кадра ровно два: текущий и декодируемый следующий. -->
+        <img id="frame-a" class="sat-image" alt="" decoding="async">
+        <img id="frame-b" class="sat-image" alt="" decoding="async">
+        <div class="image-vignette" aria-hidden="true"></div>
+        <div id="empty-state" class="empty-state">
+          <span class="eyebrow">ПРИЁМ СПУТНИКОВЫХ ДАННЫХ</span>
+          <h1>В ожидании<br>наблюдений</h1>
+          <p>Снимки появятся автоматически<br>после поступления данных.</p><span class="empty-rule"></span>
+        </div>
+      </div>
+
+      <aside class="context" aria-label="Краткая информация о снимке">
+        <div class="source-row">
+          <div class="source"><span id="source-label" class="eyebrow">СПУТНИКОВОЕ НАБЛЮДЕНИЕ</span><h1 id="satellite">Спутниковая съёмка</h1><p id="instrument" class="instrument">Архив наблюдений</p></div>
+          <!-- Крупный цветной рендер берётся из локального каталога и не показывается для неизвестного семейства. -->
+          <img id="satellite-art" class="satellite-art" alt="" hidden>
+        </div>
+        <div class="product-block">
+          <div class="product-number"><span id="product-index">ПРОДУКТ</span><span id="latest" hidden>САМЫЙ СВЕЖИЙ</span></div>
+          <h2 id="product">Облачность и поверхность</h2>
+        </div>
+        <div class="acquisition">
+          <div id="acquisition-date" class="eyebrow">ВРЕМЯ НАБЛЮДЕНИЯ · UTC</div><time id="acquisition-time">—</time>
+          <div class="acquisition-detail"><span id="pass"></span><span id="age"></span></div>
+        </div>
+        <div class="interpretation">
+          <span class="eyebrow">КАК ЧИТАТЬ СНИМОК</span><p id="description">Непрерывная картина метеорологических наблюдений из космоса.</p>
+          <figure id="legend" hidden><figcaption><span id="legend-title"></span><span id="legend-kind" class="legend-kind"></span></figcaption><p id="legend-subtitle" class="legend-subtitle"></p><img id="legend-image" alt="Цветовая шкала продукта" hidden><div id="legend-stops" hidden></div><div id="legend-entries" hidden></div><p id="legend-note" class="legend-note" hidden></p></figure>
+          <p id="purpose" class="product-purpose" hidden></p>
+          <p id="image-dimensions" class="image-dimensions"></p>
+          <p id="metadata-warning" class="metadata-warning" role="status" hidden></p>
+          <details class="metadata-panel"><summary>Слои, обработка и метаданные</summary><dl id="metadata-details"></dl></details>
+          <p class="product-links"><a id="passport-link" hidden target="_blank" rel="noopener">Паспорт JSON</a><a id="original-link" hidden target="_blank" rel="noopener">Файл публикации</a></p>
+        </div>
+      </aside>
+    </section>
+
+    <!-- Самостоятельная панель истории высотой 175 px. -->
+    <footer class="timeline" aria-label="Временная шкала наблюдений">
+      <div class="timeline-main">
+        <div class="timeline-heading"><span><span id="timeline-title">ПОСЛЕДНИЕ НАБЛЮДЕНИЯ</span> <span class="timeline-utc">/ UTC</span></span><button id="undated-button" type="button" hidden></button><span id="status" role="status"></span></div>
+        <div class="timeline-track"><div id="timeline-ticks"></div><div id="timeline-events"></div><div id="selection-card" class="selection-card" hidden><strong id="selection-time"></strong><span id="selection-satellite"></span></div></div>
+        <div class="timeline-bottom"><span id="window-start">Начало окна</span><span id="timeline-caption">Время съёмки</span><span id="window-end">СЕЙЧАС</span></div>
+      </div>
+      <div class="timeline-summary"><div><strong id="observation-count">—</strong><span id="timeline-summary-label">за выбранный период</span></div><div><span>Последний кадр</span><strong id="last-observation">—</strong></div></div>
+    </footer>
+
+    <div id="paused" class="paused" hidden>ПОКАЗ ПРИОСТАНОВЛЕН</div><pre id="diagnostics" hidden aria-label="Диагностика"></pre>
+  </main>
+</body>
+</html>

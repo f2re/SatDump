@@ -1,0 +1,113 @@
+{
+  "schema": "orbita.satellite-assets/1",
+  "language": "ru",
+  "description": "Локальный набор изображений спутников для правой информационной панели и одноцветных глифов для временной шкалы.",
+  "displayUsage": "Цветные изображения 256×256 WebP показываются рядом с названием текущего спутника. Размер выбран как достаточный для интерфейса 1920×1080 и экономный для Raspberry Pi.",
+  "glyphUsage": "SVG-глифы остаются масштабируемым резервом для интерфейса; их цвет задаётся через CSS-свойство color.",
+  "timelineGlyphUsage": "Одноцветные PNG 32×32 подготовлены из исходных PNG 48×48. Они сохраняют прозрачность и сглаживание, но содержат только светло-циановый цвет #8EDDF0.",
+  "fallback": {
+    "glyph": "/sat/assets/satellites/glyph/generic-satellite.svg",
+    "timelineGlyph": "/sat/assets/satellites/timeline/generic-satellite.png",
+    "description": "Условная универсальная пиктограмма для семейства без отдельной иллюстрации; не фотография конкретного аппарата."
+  },
+  "items": [
+    {
+      "id": "meteor-m",
+      "title": "Метеор-М",
+      "matches": [
+        "Метеор-М",
+        "Метеор-М №2-2",
+        "Метеор-М №2-3",
+        "Метеор-М №2-4",
+        "Meteor-M",
+        "Meteor-M N2-2",
+        "Meteor-M N2-3",
+        "Meteor-M N2-4",
+        "meteor-m-2-2",
+        "meteor-m-2-3",
+        "meteor-m-2-4",
+        "METEOR-M 2-2",
+        "METEOR-M 2-3",
+        "METEOR-M 2-4",
+        "Метеор-М 2-2",
+        "Метеор-М 2-3",
+        "Метеор-М 2-4"
+      ],
+      "display": "/sat/assets/satellites/display/meteor-m.webp",
+      "glyph": "/sat/assets/satellites/glyph/meteor-m.svg",
+      "timelineGlyph": "/sat/assets/satellites/timeline/meteor-m.png",
+      "description": "Российская серия полярно-орбитальных метеорологических спутников. Один семейный рендер применяется к аппаратам №2-2, №2-3 и №2-4."
+    },
+    {
+      "id": "metop",
+      "title": "MetOp",
+      "matches": [
+        "Metop-A",
+        "Metop-B",
+        "Metop-C",
+        "METOP-A",
+        "METOP-B",
+        "METOP-C",
+        "metop-a",
+        "metop-b",
+        "metop-c"
+      ],
+      "display": "/sat/assets/satellites/display/metop.webp",
+      "glyph": "/sat/assets/satellites/glyph/metop.svg",
+      "timelineGlyph": "/sat/assets/satellites/timeline/metop.png",
+      "description": "Европейская серия полярно-орбитальных метеорологических спутников EUMETSAT."
+    },
+    {
+      "id": "noaa-poes",
+      "title": "NOAA / POES",
+      "matches": [
+        "NOAA-15",
+        "NOAA-18",
+        "NOAA-19",
+        "POES",
+        "noaa-15",
+        "noaa-18",
+        "noaa-19",
+        "poes"
+      ],
+      "display": "/sat/assets/satellites/display/noaa-poes.webp",
+      "glyph": "/sat/assets/satellites/glyph/noaa-poes.svg",
+      "timelineGlyph": "/sat/assets/satellites/timeline/noaa-poes.png",
+      "description": "Американское семейство полярных метеорологических спутников NOAA/POES."
+    },
+    {
+      "id": "arktika-m",
+      "title": "Арктика-М",
+      "matches": [
+        "Арктика-М",
+        "Арктика-М №1",
+        "Арктика-М №2",
+        "Arktika-M",
+        "arktika-m-1",
+        "arktika-m-2"
+      ],
+      "display": "/sat/assets/satellites/display/arktika-m.webp",
+      "glyph": "/sat/assets/satellites/glyph/arktika-m.svg",
+      "timelineGlyph": "/sat/assets/satellites/timeline/arktika-m.png",
+      "description": "Российская серия метеорологических спутников на высокоэллиптической орбите для наблюдения Арктики и высоких широт."
+    },
+    {
+      "id": "elektro-l",
+      "title": "Электро-Л",
+      "matches": [
+        "Электро-Л",
+        "Электро-Л №2",
+        "Электро-Л №3",
+        "Электро-Л №4",
+        "Elektro-L",
+        "elektro-l-2",
+        "elektro-l-3",
+        "elektro-l-4"
+      ],
+      "display": "/sat/assets/satellites/display/elektro-l.webp",
+      "glyph": "/sat/assets/satellites/glyph/elektro-l.svg",
+      "timelineGlyph": "/sat/assets/satellites/timeline/elektro-l.png",
+      "description": "Российская серия геостационарных метеорологических спутников."
+    }
+  ]
+}

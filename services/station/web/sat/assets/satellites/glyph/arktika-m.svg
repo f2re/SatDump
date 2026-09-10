@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" color="#9fc6d8" viewBox="0 0 64 64" role="img" aria-label="Арктика-М">
+  <g fill="currentColor" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M25 24h14l7 10-7 12H24l-7-11Z" stroke="none"/>
+    <path d="M3 23 22 18l2 13-19 5Z" stroke="none"/>
+    <path d="M41 27 61 22l1 13-18 4Z" stroke="none"/>
+    <path d="M9 21.5 12 34M16 19.5 19 32M48 25.5 50 37M55 24 57 35" fill="none" stroke-width="1.6" opacity=".5"/>
+    <circle cx="34" cy="15" r="7" fill="none" stroke-width="2.4"/>
+    <path d="M34 22v5M45 32 58 29" fill="none" stroke-width="2.4"/>
+    <path d="M45 36 59 39" fill="none" stroke-width="2.8"/>
+    <circle cx="60" cy="39" r="2" stroke="none"/>
+  </g>
+</svg>

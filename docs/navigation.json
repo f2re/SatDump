@@ -10,7 +10,7 @@
     "docs/ru/station/README.md", "docs/ru/station/INSTALL.md",
     "docs/ru/station/DATAFLOW.md", "docs/ru/station/INPUTS.md",
     "docs/ru/station/CONFIGURATION.md", "docs/ru/station/PRODUCTS.md",
-    "docs/ru/station/WEBSITE.md", "docs/ru/station/OPERATIONS.md",
+    "docs/ru/station/WEBSITE.md", "docs/ru/station/SATELLITE_WEB.md", "docs/ru/station/OPERATIONS.md",
     "docs/ru/station/BUILD_RELEASE.md", "docs/ru/station/TROUBLESHOOTING.md",
     "docs/ru/station/REFERENCE.md", "services/station/README.md",
     "scripts/station/README.md", "config/station/README.md",

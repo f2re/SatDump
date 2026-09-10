@@ -1,6 +1,26 @@
 name: Build All
 
-on: [push]
+# Native-platform builds must not consume unavailable self-hosted RF/mobile runners
+# for web-only changes. Station/browser checks live in satellite-web.yml.
+on:
+  push:
+    paths:
+      - 'CMakeLists.txt'
+      - 'cmake/**'
+      - 'src-core/**'
+      - 'src-cli/**'
+      - 'src-ui/**'
+      - 'src-interface/**'
+      - 'src-testing/**'
+      - 'plugins/**'
+      - 'resources/**'
+      - 'pipelines/**'
+      - 'satdump_cfg.json'
+      - 'std_filesystem/**'
+      - 'android/**'
+      - 'macOS/**'
+      - '.gitmodules'
+  workflow_dispatch:
 
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)

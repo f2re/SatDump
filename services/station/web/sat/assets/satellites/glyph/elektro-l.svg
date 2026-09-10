@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" color="#9fc6d8" viewBox="0 0 64 64" role="img" aria-label="Электро-Л">
+  <g fill="currentColor" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M25 26 40 23 47 33 39 45 23 41 18 32Z" stroke="none"/>
+    <path d="M5 15 27 8 33 18 12 26Z" stroke="none"/>
+    <path d="M13 12 19 23M21 9.5 27 20" fill="none" stroke-width="1.7" opacity=".5"/>
+    <circle cx="50" cy="20" r="8" fill="none" stroke-width="2.5"/>
+    <circle cx="49" cy="44" r="6" fill="none" stroke-width="2.2"/>
+    <path d="M43 25 48 22M42 40 47 42" fill="none" stroke-width="2.2"/>
+    <path d="M33 43 35 57" fill="none" stroke-width="3"/>
+    <circle cx="35" cy="58" r="2.4" stroke="none"/>
+  </g>
+</svg>
