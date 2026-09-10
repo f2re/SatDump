@@ -1,0 +1,55 @@
+name: Import satellite integration component
+on:
+  push:
+    branches: [integration/orbita-web]
+    paths: [.github/workflows/orbita-stage.yml]
+permissions:
+  contents: write
+jobs:
+  import:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Import checksum-verified satellite component
+        env:
+          COMPONENT_URL: 'https://sdmntprnortheu.oaiusercontent.com/files/00000000-1700-81f4-bf40-002fa13d4b8b/raw?se=2026-09-10T18%3A44%3A00Z&sp=r&sv=2026-02-06&sr=b&scid=889d666b-9a2e-5625-a5ba-8fdfe7da625f&skoid=1d6acb5b-b3f4-43ec-a5ec-b05c4a7708c8&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-10T15%3A16%3A14Z&ske=2026-09-11T15%3A16%3A14Z&sks=b&skv=2026-02-06&sig=Izh7w/nfJm7Ess479rNy8tIMtAlA4iA7LR9tVxL7czk%3D'
+        run: |
+          curl --fail --silent --show-error --location --max-time 60 "$COMPONENT_URL" -o "$RUNNER_TEMP/component.tar.xz"
+          echo "b77a49c3bb1b0bff39cad2a5e8bbba349d6470f989aa1949c80e1c35e8c982c2  $RUNNER_TEMP/component.tar.xz" | sha256sum --check
+          python3 - <<'PY'
+          import os, tarfile
+          from pathlib import PurePosixPath
+          allowed = ('services/station/', 'scripts/station/', 'config/station/', 'tests/station/', 'tests/browser/', 'tests/contracts/')
+          exact = {'station.sh', 'docs/ru/station/SATELLITE_WEB.md', '.github/workflows/all_build.yml', '.github/workflows/satellite-web.yml'}
+          with tarfile.open(os.environ['RUNNER_TEMP']+'/component.tar.xz') as archive:
+              members = archive.getmembers()
+              assert len(members) == 51
+              for member in members:
+                  path = PurePosixPath(member.name)
+                  assert member.isfile() and not path.is_absolute() and '..' not in path.parts
+                  assert member.name in exact or member.name.startswith(allowed)
+                  assert path.suffix.lower() not in ('.ttf','.woff','.woff2','.otf')
+              archive.extractall('.', members=members, filter='data')
+          PY
+          mkdir -p tmp/orbita-ci
+          mv .github/workflows/satellite-web.yml tmp/orbita-ci/satellite-web.yml
+          cp .github/workflows/all_build.yml tmp/orbita-ci/all_build.yml
+          git checkout HEAD -- .github/workflows/all_build.yml
+      - name: Verify imported code before committing
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y python3-pil
+          /usr/bin/python3 -m unittest discover -s tests/station -v
+          node --test services/station/web/sat/js/player.test.mjs
+          bash -n scripts/station/install.sh
+          git diff --check
+      - name: Commit satellite source; workflow installation uses the authorized connector
+        run: |
+          git config user.name 'F2re'
+          git config user.email 'f2re@users.noreply.github.com'
+          git add services/station scripts/station config/station tests/station tests/browser tests/contracts docs/ru/station/SATELLITE_WEB.md station.sh tmp/orbita-ci
+          git reset -- '**/__pycache__/**' || true
+          git commit -m 'feat(web): integrate Orbita satellite player, authoritative images and local settings'
+          git push origin HEAD:integration/orbita-web
+          git rev-parse HEAD
