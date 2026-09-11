@@ -285,8 +285,12 @@ namespace satdump
                     {
                         if (!presentation_settings.enabled || presentation_saved || source.size() == 0)
                             return;
-                        if (!ensure_presentation_font())
+                        if (!presentation_settings.prepare_online_board && !ensure_presentation_font())
                             return;
+
+                        if (presentation_settings.save_minimal || presentation_settings.save_editorial ||
+                            presentation_settings.save_legacy_alias)
+                            ensure_presentation_font();
 
                         product_presentation::OutputResult output =
                             product_presentation::save_outputs(
@@ -621,8 +625,12 @@ namespace satdump
                         product_path + "/channel_" + img.channel_name +
                             "_projected" + fmt);
 
-                    if (output_settings.enabled && ensure_presentation_font())
+                    if (output_settings.enabled &&
+                        (output_settings.prepare_online_board || ensure_presentation_font()))
                     {
+                        if (output_settings.save_minimal || output_settings.save_editorial ||
+                            output_settings.save_legacy_alias)
+                            ensure_presentation_font();
                         ProjectionFunction projected_func;
                         if (clean_projected.size() > 0 && image::has_metadata_proj_cfg(clean_projected))
                             projected_func = satdump::reprojection::setupProjectionFunction(

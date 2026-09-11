@@ -16,6 +16,12 @@ namespace satdump
             bool save_minimal = true;
             bool save_editorial = true;
             bool save_legacy_alias = false;
+            // Machine-readable per-pass package consumed by the existing PHP
+            // meteo board. It contains clean imagery, derivatives and metadata.
+            bool prepare_online_board = true;
+            std::string online_board_directory = "online-board";
+            int online_board_max_width = 2300;
+            int online_board_max_height = 1294;
             bool north_up = true;
             std::string orientation_mode = "auto";
         };
@@ -25,9 +31,10 @@ namespace satdump
             bool minimal = false;
             bool editorial = false;
             bool legacy_alias = false;
+            bool online_board = false;
             image::presentation::OrientationInfo orientation;
 
-            bool any() const { return minimal || editorial || legacy_alias; }
+            bool any() const { return minimal || editorial || legacy_alias || online_board; }
         };
 
         OutputSettings resolve_output_settings(const nlohmann::json &composite_preset = nlohmann::json());

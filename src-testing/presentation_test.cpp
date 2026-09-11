@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <utility>
@@ -332,6 +333,70 @@ namespace
         image::save_img(output, path.string());
         return std::filesystem::exists(path) && std::filesystem::file_size(path) > 0;
     }
+
+    bool validate_online_board_package(const image::Image &source,
+                                       image::TextDrawer &drawer,
+                                       const std::filesystem::path &output_directory)
+    {
+        satdump::ImageProducts products;
+        products.instrument_name = "MSU-MR";
+        products.set_product_source("METEOR-M2-4");
+        products.set_product_timestamp(1788259404);
+        products.contents["pass_direction"] = "descending";
+
+        satdump::ImageCompositeCfg composite;
+        composite.equation = "ch5";
+        const nlohmann::json preset = {
+            {"presentation", {
+                {"outputs", {{"minimal", false}, {"presentation", false}, {"legacy_alias", false}}},
+                {"legend", {
+                    {"kind", "continuous"}, {"title", "Яркостная температура"}, {"unit", "°C"},
+                    {"colors", nlohmann::json::array({
+                        {{"position", 0.0}, {"color", "#1B1844"}},
+                        {{"position", 1.0}, {"color", "#FCE725"}}})},
+                    {"ticks", nlohmann::json::array({-90, -45, 0})}}},
+                {"online_board", {{"enabled", true}, {"max_width", 640}, {"max_height", 360}}}}}};
+
+        const std::filesystem::path base = output_directory / "board-pass" / "MSU-MR" / "cloudtop";
+        std::filesystem::create_directories(base.parent_path());
+        const satdump::product_presentation::OutputResult result =
+            satdump::product_presentation::save_outputs(
+                source, drawer, products, composite, preset, "CloudTopIR",
+                {1788259300.0, 1788259500.0}, nlohmann::json::object(),
+                "геокоррекция · чистый растр", base.string());
+        if (!result.online_board || result.minimal || result.editorial || result.legacy_alias)
+            return false;
+        const satdump::product_presentation::OutputResult second =
+            satdump::product_presentation::save_outputs(
+                source, drawer, products, composite, preset, "MCIR",
+                {1788259310.0, 1788259510.0}, nlohmann::json::object(),
+                "геокоррекция · города с русскими названиями",
+                (output_directory / "board-pass" / "MSU-MR" / "mcir").string());
+        if (!second.online_board)
+            return false;
+
+        const std::filesystem::path board = output_directory / "board-pass" / "online-board";
+        std::ifstream input((board / "manifest.json").string());
+        nlohmann::json manifest;
+        input >> manifest;
+        if (manifest.value("schema", "") != "satdump.meteoboard-pass/1" ||
+            !manifest.contains("frames") || manifest["frames"].size() != 2 ||
+            manifest["event"].value("start", "") != "2026-09-01T10:41:40Z" ||
+            manifest["event"].value("end", "") != "2026-09-01T10:45:10Z")
+            return false;
+        const nlohmann::json &frame = manifest["frames"][0];
+        if (frame.value("eventId", "") != manifest["event"].value("id", "") ||
+            frame["product"].value("code", "") != "CloudTopIR" ||
+            frame["image"].value("width", 0) > 640 ||
+            frame["image"].value("height", 0) > 360 || frame["image"].value("crop", true) ||
+            !frame["legend"].value("required", false))
+            return false;
+        const std::filesystem::path frame_root = board / "frames" / frame.value("id", "");
+        return std::filesystem::file_size(frame_root / "imagery.png") > 0 &&
+               std::filesystem::file_size(frame_root / "ambient.jpg") > 0 &&
+               std::filesystem::file_size(frame_root / "legend.png") > 0 &&
+               std::filesystem::file_size(frame_root / "metadata.json") > 0;
+    }
 }
 
 int main(int argc, char **argv)
@@ -425,6 +490,13 @@ int main(int argc, char **argv)
     if (!render_and_save(tiny_receiver_frame, text_drawer, composite_spec(), image::presentation::LayoutKind::Editorial,
                          output_directory / "tiny_receiver_editorial.png", "tiny receiver editorial"))
         return 21;
+
+    stage("prepare and validate per-pass online-board data");
+    if (!validate_online_board_package(portrait, text_drawer, output_directory))
+    {
+        std::cerr << "Online-board data package tests failed\n";
+        return 22;
+    }
 
     stage("all smoke tests passed");
     std::cout << "Presentation smoke tests passed; artifacts: " << output_directory << "\n";

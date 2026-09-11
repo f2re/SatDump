@@ -201,6 +201,24 @@
             "name": "Show Presentation Branding",
             "description": "Show the SatDump branding text on Presentation and Minimal images"
         },
+        "presentation": {
+            "enabled": true,
+            "outputs": {
+                "minimal": true,
+                "presentation": true,
+                "legacy_alias": false
+            },
+            "orientation": {
+                "mode": "auto",
+                "north_up": true
+            },
+            "online_board": {
+                "enabled": true,
+                "directory": "online-board",
+                "max_width": 2300,
+                "max_height": 1294
+            }
+        },
         "default_borders_color": {
             "type": "color",
             "value": [

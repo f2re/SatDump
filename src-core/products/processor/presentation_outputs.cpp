@@ -9,11 +9,16 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
+#include <cstdint>
 #include <cmath>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <set>
 #include <sstream>
+#include <stdexcept>
 
 namespace satdump
 {
@@ -212,6 +217,23 @@ namespace satdump
                     settings.save_editorial = json_bool(section["save_presentation"], settings.save_editorial);
                 if (section.contains("save_legacy_alias"))
                     settings.save_legacy_alias = json_bool(section["save_legacy_alias"], settings.save_legacy_alias);
+                if (section.contains("online_board"))
+                {
+                    const nlohmann::json &board = section["online_board"];
+                    if (board.is_boolean())
+                        settings.prepare_online_board = board.get<bool>();
+                    else if (board.is_object())
+                    {
+                        if (board.contains("enabled"))
+                            settings.prepare_online_board = json_bool(board["enabled"], settings.prepare_online_board);
+                        if (board.contains("directory"))
+                            settings.online_board_directory = json_string(board["directory"], settings.online_board_directory);
+                        if (board.contains("max_width") && board["max_width"].is_number_integer())
+                            settings.online_board_max_width = std::max(320, board["max_width"].get<int>());
+                        if (board.contains("max_height") && board["max_height"].is_number_integer())
+                            settings.online_board_max_height = std::max(240, board["max_height"].get<int>());
+                    }
+                }
                 if (section.contains("north_up"))
                     settings.north_up = json_bool(section["north_up"], settings.north_up);
                 if (section.contains("orientation_mode"))
@@ -617,6 +639,371 @@ namespace satdump
                 return "none";
             }
 
+            std::pair<double, double> board_timestamp_range(const std::vector<double> &timestamps,
+                                                            ImageProducts &products)
+            {
+                const double anchor = products.has_product_timestamp()
+                                          ? (double)products.get_product_timestamp()
+                                          : NAN;
+                constexpr double maximum_distance = 6.0 * 60.0 * 60.0;
+                std::vector<double> valid;
+                for (double timestamp : timestamps)
+                    if (std::isfinite(timestamp) && timestamp > 0.0 &&
+                        (!std::isfinite(anchor) || std::fabs(timestamp - anchor) <= maximum_distance))
+                        valid.push_back(timestamp);
+
+                if (!std::isfinite(anchor) && !valid.empty())
+                {
+                    std::sort(valid.begin(), valid.end());
+                    size_t best_begin = 0;
+                    size_t best_end = 0;
+                    size_t begin = 0;
+                    for (size_t end = 0; end < valid.size(); end++)
+                    {
+                        while (valid[end] - valid[begin] > maximum_distance)
+                            begin++;
+                        if (end - begin > best_end - best_begin)
+                        {
+                            best_begin = begin;
+                            best_end = end;
+                        }
+                    }
+                    valid = std::vector<double>(valid.begin() + best_begin,
+                                                valid.begin() + best_end + 1);
+                }
+
+                if (valid.empty())
+                {
+                    if (std::isfinite(anchor))
+                        return {anchor, anchor};
+                    return {(double)NAN, (double)NAN};
+                }
+                const auto bounds = std::minmax_element(valid.begin(), valid.end());
+                return {*bounds.first, *bounds.second};
+            }
+
+            std::string iso_utc(double timestamp)
+            {
+                if (!std::isfinite(timestamp) || timestamp <= 0.0)
+                    return "";
+                const time_t value = (time_t)std::llround(timestamp);
+                std::tm utc{};
+#ifdef _WIN32
+                gmtime_s(&utc, &value);
+#else
+                gmtime_r(&value, &utc);
+#endif
+                std::ostringstream stream;
+                stream << std::put_time(&utc, "%Y-%m-%dT%H:%M:%SZ");
+                return stream.str();
+            }
+
+            std::string utc_now()
+            {
+                return iso_utc((double)std::chrono::system_clock::to_time_t(
+                    std::chrono::system_clock::now()));
+            }
+
+            std::string slug(std::string value)
+            {
+                std::string result;
+                bool separator = false;
+                for (unsigned char character : value)
+                {
+                    if (std::isalnum(character))
+                    {
+                        result.push_back((char)std::tolower(character));
+                        separator = false;
+                    }
+                    else if (!result.empty() && !separator)
+                    {
+                        result.push_back('-');
+                        separator = true;
+                    }
+                }
+                while (!result.empty() && result.back() == '-')
+                    result.pop_back();
+                return result.empty() ? "frame" : result;
+            }
+
+            std::string short_hash(const std::string &value)
+            {
+                uint32_t hash = 2166136261u;
+                for (unsigned char character : value)
+                {
+                    hash ^= character;
+                    hash *= 16777619u;
+                }
+                std::ostringstream stream;
+                stream << std::hex << std::setfill('0') << std::setw(8) << hash;
+                return stream.str();
+            }
+
+            const std::string &generation_id()
+            {
+                static const std::string value = []()
+                {
+                    const auto ticks = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                           std::chrono::system_clock::now().time_since_epoch())
+                                           .count();
+                    return slug(utc_now()) + "_" + short_hash(std::to_string(ticks));
+                }();
+                return value;
+            }
+
+            image::Image display_derivative(const image::Image &source, int max_width, int max_height)
+            {
+                image::Image result = source;
+                result = result.to8bits();
+                result.to_rgb();
+                const double scale = std::min(1.0, std::min(
+                    (double)max_width / std::max<size_t>(1, result.width()),
+                    (double)max_height / std::max<size_t>(1, result.height())));
+                if (scale < 1.0)
+                    result.resize_bilinear(
+                        std::max(1, (int)std::floor(result.width() * scale)),
+                        std::max(1, (int)std::floor(result.height() * scale)));
+                return result;
+            }
+
+            std::string product_family(const std::string &raw_name,
+                                       const image::presentation::PresentationSpec &spec)
+            {
+                const std::string value = lowercase_ascii(raw_name + " " + spec.pass.product);
+                if (value.find("cloudtop") != std::string::npos ||
+                    value.find("brightness temperature") != std::string::npos ||
+                    value.find("температур") != std::string::npos)
+                    return "thermal-ir";
+                if (value.find("mcir") != std::string::npos ||
+                    value.find("cloud composite") != std::string::npos ||
+                    value.find("облачност") != std::string::npos)
+                    return "cloud-composite";
+                if (value.find("msa") != std::string::npos ||
+                    value.find("visible") != std::string::npos ||
+                    value.find("видим") != std::string::npos)
+                    return "visible";
+                if (spec.legend.kind == image::presentation::LegendKind::Continuous)
+                    return "quantitative";
+                return "other";
+            }
+
+            std::string board_product_title(const std::string &raw_name,
+                                            const image::presentation::PresentationSpec &spec)
+            {
+                if (!spec.pass.product.empty() && lowercase_ascii(spec.pass.product) != lowercase_ascii(raw_name))
+                    return spec.pass.product;
+                const std::string value = lowercase_ascii(raw_name);
+                if (value.find("cloudtop") != std::string::npos || value.find("cloud top") != std::string::npos)
+                    return "Температура верхней границы облаков";
+                if (value.find("mcir") != std::string::npos)
+                    return "Облачность в инфракрасном диапазоне";
+                if (value.find("msa") != std::string::npos)
+                    return "Облачность и поверхность в видимом диапазоне";
+                return raw_name.empty() ? "Спутниковый метеорологический продукт" : raw_name;
+            }
+
+            std::string board_product_description(const std::string &raw_name,
+                                                  const image::presentation::PresentationSpec &spec)
+            {
+                const std::string value = lowercase_ascii(raw_name);
+                if (value.find("cloudtop") != std::string::npos || value.find("cloud top") != std::string::npos)
+                    return "Яркостная температура излучающей облачной поверхности";
+                if (value.find("mcir") != std::string::npos)
+                    return "Инфракрасное выделение облачности на картографической подложке";
+                if (value.find("msa") != std::string::npos)
+                    return "Облака и поверхность в отражённом солнечном свете";
+                return spec.legend.subtitle;
+            }
+
+            int product_priority(const std::string &raw_name, const std::string &family)
+            {
+                const std::string value = lowercase_ascii(raw_name);
+                if (value.find("cloudtop") != std::string::npos || family == "thermal-ir")
+                    return 10;
+                if (value.find("mcir") != std::string::npos || family == "cloud-composite")
+                    return 20;
+                if (value.find("msa") != std::string::npos || family == "visible")
+                    return 30;
+                return 100;
+            }
+
+            void write_json(const std::filesystem::path &path, const nlohmann::json &value)
+            {
+                std::ofstream output(path.string());
+                if (!output)
+                    throw std::runtime_error("не удалось открыть " + path.string());
+                output << value.dump(4) << "\n";
+                if (!output)
+                    throw std::runtime_error("не удалось записать " + path.string());
+            }
+
+            void rebuild_pass_manifest(const std::filesystem::path &board_root,
+                                       const nlohmann::json &event,
+                                       const std::string &current_generation)
+            {
+                nlohmann::json manifest = {
+                    {"schema", "satdump.meteoboard-pass/1"},
+                    {"generatedAt", utc_now()},
+                    {"event", event},
+                    {"frames", nlohmann::json::array()}};
+                const std::filesystem::path frames_root = board_root / "frames";
+                if (std::filesystem::exists(frames_root))
+                {
+                    for (const auto &entry : std::filesystem::directory_iterator(frames_root))
+                    {
+                        const std::filesystem::path metadata_path = entry.path() / "metadata.json";
+                        if (!entry.is_directory() || !std::filesystem::exists(metadata_path))
+                            continue;
+                        try
+                        {
+                            std::ifstream input(metadata_path.string());
+                            nlohmann::json frame;
+                            input >> frame;
+                            if (frame.is_object() &&
+                                frame.value("eventId", "") == event.value("id", "") &&
+                                frame.value("generationId", "") == current_generation)
+                                manifest["frames"].push_back(frame);
+                        }
+                        catch (const std::exception &error)
+                        {
+                            logger->warn("Online-board: пропущен повреждённый паспорт %s: %s",
+                                         metadata_path.string().c_str(), error.what());
+                        }
+                    }
+                }
+                std::string first_start;
+                std::string last_end;
+                std::set<std::string> instruments;
+                for (const nlohmann::json &frame : manifest["frames"])
+                {
+                    if (frame.contains("start") && frame["start"].is_string())
+                    {
+                        const std::string value = frame["start"].get<std::string>();
+                        if (first_start.empty() || value < first_start)
+                            first_start = value;
+                    }
+                    if (frame.contains("end") && frame["end"].is_string())
+                    {
+                        const std::string value = frame["end"].get<std::string>();
+                        if (last_end.empty() || value > last_end)
+                            last_end = value;
+                    }
+                    const std::string instrument = frame.value("instrument", "");
+                    if (!instrument.empty())
+                        instruments.insert(instrument);
+                }
+                manifest["event"]["start"] = first_start.empty() ? nlohmann::json(nullptr) : nlohmann::json(first_start);
+                manifest["event"]["end"] = last_end.empty() ? nlohmann::json(nullptr) : nlohmann::json(last_end);
+                manifest["event"]["instruments"] = instruments;
+                std::sort(manifest["frames"].begin(), manifest["frames"].end(),
+                          [](const nlohmann::json &left, const nlohmann::json &right)
+                          {
+                              const int left_priority = left.value("priority", 100);
+                              const int right_priority = right.value("priority", 100);
+                              if (left_priority != right_priority)
+                                  return left_priority < right_priority;
+                              return left.value("id", "") < right.value("id", "");
+                          });
+                const std::filesystem::path temporary = board_root / "manifest.json.tmp";
+                const std::filesystem::path destination = board_root / "manifest.json";
+                write_json(temporary, manifest);
+                std::error_code error;
+                std::filesystem::rename(temporary, destination, error);
+                if (error)
+                {
+                    std::filesystem::remove(destination, error);
+                    error.clear();
+                    std::filesystem::rename(temporary, destination, error);
+                }
+                if (error)
+                    throw std::runtime_error("не удалось опубликовать manifest.json: " + error.message());
+            }
+
+            image::Image ambient_derivative(const image::Image &source)
+            {
+                image::Image result = source;
+                const double source_ratio = (double)result.width() / std::max<size_t>(1, result.height());
+                constexpr double target_ratio = 16.0 / 9.0;
+                if (source_ratio > target_ratio)
+                {
+                    const int width = std::max(1, (int)std::round(result.height() * target_ratio));
+                    const int left = std::max(0, ((int)result.width() - width) / 2);
+                    result.crop(left, 0, left + width, result.height());
+                }
+                else if (source_ratio < target_ratio)
+                {
+                    const int height = std::max(1, (int)std::round(result.width() / target_ratio));
+                    const int top = std::max(0, ((int)result.height() - height) / 2);
+                    result.crop(0, top, result.width(), top + height);
+                }
+                result.resize_bilinear(80, 45);
+                result.resize_bilinear(640, 360);
+                for (size_t pixel = 0; pixel < result.width() * result.height(); pixel++)
+                {
+                    const double r = result.getf(0, pixel);
+                    const double g = result.getf(1, pixel);
+                    const double b = result.getf(2, pixel);
+                    const double gray = r * 0.2126 + g * 0.7152 + b * 0.0722;
+                    for (int channel = 0; channel < 3; channel++)
+                    {
+                        const double original = channel == 0 ? r : (channel == 1 ? g : b);
+                        const double desaturated = gray * 0.72 + original * 0.28;
+                        result.setf(channel, pixel, std::max(0.0, std::min(1.0, 0.42 + (desaturated - 0.5) * 0.42)));
+                    }
+                }
+                return result;
+            }
+
+            image::Image legend_derivative(const image::presentation::LegendSpec &legend)
+            {
+                const int width = 1200;
+                const int height = 72;
+                image::Image result(8, width, height, 3);
+                result.fill(0);
+                if (legend.kind == image::presentation::LegendKind::Continuous && !legend.color_stops.empty())
+                {
+                    std::vector<image::presentation::ColorStop> stops = legend.color_stops;
+                    std::sort(stops.begin(), stops.end(), [](const auto &left, const auto &right)
+                              { return left.position < right.position; });
+                    for (int x = 0; x < width; x++)
+                    {
+                        const double position = (double)x / (double)(width - 1);
+                        size_t right = 0;
+                        while (right + 1 < stops.size() && stops[right + 1].position < position)
+                            right++;
+                        const size_t next = std::min(right + 1, stops.size() - 1);
+                        const double span = stops[next].position - stops[right].position;
+                        const double mix = span > 0.0 ? std::max(0.0, std::min(1.0, (position - stops[right].position) / span)) : 0.0;
+                        for (int channel = 0; channel < 3; channel++)
+                        {
+                            const double left_value = channel < (int)stops[right].color.size() ? stops[right].color[channel] : 0.0;
+                            const double right_value = channel < (int)stops[next].color.size() ? stops[next].color[channel] : left_value;
+                            for (int y = 0; y < height; y++)
+                                result.setf(channel, x, y, left_value + (right_value - left_value) * mix);
+                        }
+                    }
+                    return result;
+                }
+                if (legend.kind == image::presentation::LegendKind::Categorical && !legend.categories.empty())
+                {
+                    for (size_t index = 0; index < legend.categories.size(); index++)
+                    {
+                        const int begin = (int)(index * width / legend.categories.size());
+                        const int end = (int)((index + 1) * width / legend.categories.size());
+                        for (int channel = 0; channel < 3; channel++)
+                        {
+                            const double value = channel < (int)legend.categories[index].color.size()
+                                                     ? legend.categories[index].color[channel]
+                                                     : 0.0;
+                            for (int y = 0; y < height; y++)
+                                for (int x = begin; x < end; x++)
+                                    result.setf(channel, x, y, value);
+                        }
+                    }
+                }
+                return result;
+            }
+
             nlohmann::json make_sidecar(const image::presentation::PresentationSpec &spec,
                                         const OrientationInfo &orientation,
                                         const image::Image &source,
@@ -684,6 +1071,114 @@ namespace satdump
                         {"description", component.description}});
                 sidecar["branding"] = spec.branding;
                 return sidecar;
+            }
+
+            bool save_online_board_package(const image::Image &oriented,
+                                           ImageProducts &products,
+                                           const image::presentation::PresentationSpec &spec,
+                                           const OrientationInfo &orientation,
+                                           const std::vector<double> &timestamps,
+                                           const std::string &raw_product_name,
+                                           const std::string &source_variant,
+                                           const std::string &base_path,
+                                           const OutputSettings &settings)
+            {
+                if (!settings.prepare_online_board || oriented.size() == 0)
+                    return false;
+                try
+                {
+                    const std::pair<double, double> range = board_timestamp_range(timestamps, products);
+                    const std::string start = iso_utc(range.first);
+                    const std::string end = iso_utc(range.second);
+                    const std::filesystem::path product_file(base_path);
+                    std::filesystem::path pass_root = product_file.parent_path();
+                    if (pass_root.has_parent_path())
+                        pass_root = pass_root.parent_path();
+                    const std::string event_key = spec.pass.satellite + "|" + pass_root.filename().string();
+                    const std::string event_id = slug(pass_root.filename().string()) + "_" + short_hash(event_key);
+                    const std::string frame_key = event_key + "|" + products.instrument_name + "|" + raw_product_name;
+                    const std::string frame_id = event_id + "_" + slug(raw_product_name) + "_" + short_hash(frame_key);
+                    std::filesystem::path directory_name(settings.online_board_directory);
+                    directory_name = directory_name.filename();
+                    if (directory_name.empty() || directory_name == "." || directory_name == "..")
+                        directory_name = "online-board";
+                    const std::filesystem::path board_root = pass_root / directory_name;
+                    const std::filesystem::path frame_root = board_root / "frames" / frame_id;
+                    std::filesystem::create_directories(frame_root);
+
+                    image::Image display = display_derivative(
+                        oriented, settings.online_board_max_width, settings.online_board_max_height);
+                    image::save_img(display, (frame_root / "imagery.png").string());
+                    image::Image ambient = ambient_derivative(display);
+                    image::save_img(ambient, (frame_root / "ambient.jpg").string());
+
+                    const bool legend_required =
+                        (spec.legend.kind == image::presentation::LegendKind::Continuous && !spec.legend.color_stops.empty()) ||
+                        (spec.legend.kind == image::presentation::LegendKind::Categorical && !spec.legend.categories.empty());
+                    if (legend_required)
+                    {
+                        image::Image legend = legend_derivative(spec.legend);
+                        image::save_img(legend, (frame_root / "legend.png").string());
+                    }
+
+                    const std::string family = product_family(raw_product_name, spec);
+                    const std::string product_title = board_product_title(raw_product_name, spec);
+                    const std::string product_description = board_product_description(raw_product_name, spec);
+                    const double ratio = (double)display.width() / std::max<size_t>(1, display.height());
+                    nlohmann::json event = {
+                        {"id", event_id}, {"satellite", spec.pass.satellite}, {"instrument", spec.pass.instrument},
+                        {"start", start.empty() ? nlohmann::json(nullptr) : nlohmann::json(start)},
+                        {"end", end.empty() ? nlohmann::json(nullptr) : nlohmann::json(end)},
+                        {"passDirection", orientation.pass_direction.empty() ? nlohmann::json(nullptr) : nlohmann::json(orientation.pass_direction)},
+                        {"passDirectionTitle", localized_direction(orientation.pass_direction)}};
+
+                    nlohmann::json metadata = {
+                        {"schema", "satdump.meteoboard-frame/1"}, {"id", frame_id}, {"eventId", event_id},
+                        {"generationId", generation_id()}, {"satellite", spec.pass.satellite}, {"instrument", spec.pass.instrument},
+                        {"product", {{"code", raw_product_name}, {"title", product_title}, {"family", family}, {"description", product_description}}},
+                        {"start", start.empty() ? nlohmann::json(nullptr) : nlohmann::json(start)},
+                        {"end", end.empty() ? nlohmann::json(nullptr) : nlohmann::json(end)},
+                        {"acquisitionTitle", spec.pass.acquisition_time},
+                        {"pass", {{"direction", orientation.pass_direction.empty() ? nlohmann::json(nullptr) : nlohmann::json(orientation.pass_direction)},
+                                  {"directionTitle", localized_direction(orientation.pass_direction)}, {"summary", spec.pass.pass_summary}}},
+                        {"image", {{"width", display.width()}, {"height", display.height()}, {"aspectRatio", ratio},
+                                   {"composition", ratio >= 1.1 ? "landscape" : "portrait"},
+                                   {"maxWidth", settings.online_board_max_width}, {"maxHeight", settings.online_board_max_height},
+                                   {"scientificColorsPreserved", true}, {"crop", false}}},
+                        {"orientation", {{"northUpRequested", orientation.north_up_requested}, {"northUpVerified", orientation.north_up_verified},
+                                         {"transform", image::presentation::raster_transform_name(orientation.transform)}, {"description", orientation.description}}},
+                        {"legend", {{"required", legend_required}, {"kind", legend_kind_name(spec.legend.kind)}, {"title", spec.legend.title},
+                                    {"subtitle", spec.legend.subtitle}, {"unit", spec.legend.unit}, {"notes", spec.legend.notes}}},
+                        {"details", nlohmann::json::array()}, {"sourceVariant", source_variant},
+                        {"priority", product_priority(raw_product_name, family)},
+                        {"recommendedDisplaySeconds", (family == "thermal-ir" || spec.legend.kind == image::presentation::LegendKind::Continuous) ? 22 : 18},
+                        {"urls", {{"imagery", "frames/" + frame_id + "/imagery.png"}, {"ambient", "frames/" + frame_id + "/ambient.jpg"},
+                                  {"legend", legend_required ? nlohmann::json("frames/" + frame_id + "/legend.png") : nlohmann::json(nullptr)}}}};
+
+                    for (const image::presentation::MetadataField &field : spec.pass.details)
+                        metadata["details"].push_back({{"label", field.label}, {"value", field.value}});
+                    for (const image::presentation::ColorStop &stop : spec.legend.color_stops)
+                        metadata["legend"]["colorStops"].push_back({{"position", stop.position}, {"color", stop.color}});
+                    for (const image::presentation::LegendTick &tick : spec.legend.ticks)
+                        metadata["legend"]["ticks"].push_back({{"position", tick.position}, {"label", tick.label}});
+                    for (const image::presentation::CategoryEntry &category : spec.legend.categories)
+                        metadata["legend"]["categories"].push_back({{"color", category.color}, {"label", category.label}});
+                    for (const image::presentation::CompositeComponent &component : spec.legend.components)
+                        metadata["legend"]["components"].push_back({
+                            {"component", component.component}, {"color", component.marker_color}, {"channel", component.channel},
+                            {"spectralRange", component.spectral_range}, {"quantity", component.quantity},
+                            {"formula", component.formula}, {"description", component.description}});
+
+                    write_json(frame_root / "metadata.json", metadata);
+                    rebuild_pass_manifest(board_root, event, generation_id());
+                    logger->info("Prepared online-board data package %s", frame_root.string().c_str());
+                    return true;
+                }
+                catch (const std::exception &error)
+                {
+                    logger->error("Could not prepare online-board data for %s: %s", base_path.c_str(), error.what());
+                    return false;
+                }
             }
 
             bool save_variant(const image::Image &source,
@@ -782,7 +1277,8 @@ namespace satdump
             if (composite_preset.is_object() && composite_preset.contains("presentation"))
                 apply_output_section(settings, composite_preset["presentation"]);
 
-            if (!settings.save_minimal && !settings.save_editorial && !settings.save_legacy_alias)
+            if (!settings.save_minimal && !settings.save_editorial &&
+                !settings.save_legacy_alias && !settings.prepare_online_board)
                 settings.enabled = false;
             return settings;
         }
@@ -801,7 +1297,7 @@ namespace satdump
         {
             OutputResult result;
             const OutputSettings settings = resolve_output_settings(composite_preset);
-            if (!settings.enabled || source.size() == 0 || !text_drawer.font_ready())
+            if (!settings.enabled || source.size() == 0)
                 return result;
 
             result.orientation = analyze_orientation(source, products, timestamps, product_metadata, source_variant, settings);
@@ -828,9 +1324,13 @@ namespace satdump
                 base_spec.pass.pass_summary += direction;
             }
 
+            result.online_board = save_online_board_package(
+                oriented, products, base_spec, result.orientation, timestamps,
+                product_name, source_variant, base_path, settings);
+
             image::Image editorial_rendered;
             image::Image minimal_rendered;
-            if (settings.save_minimal)
+            if (settings.save_minimal && text_drawer.font_ready())
             {
                 image::presentation::PresentationSpec spec = base_spec;
                 apply_layout_overrides(spec, composite_preset, LayoutKind::Minimal);
@@ -842,7 +1342,7 @@ namespace satdump
                                               base_path + "_annotated_minimal.png",
                                               &minimal_rendered);
             }
-            if (settings.save_editorial)
+            if (settings.save_editorial && text_drawer.font_ready())
             {
                 image::presentation::PresentationSpec spec = base_spec;
                 apply_layout_overrides(spec, composite_preset, LayoutKind::Editorial);
@@ -855,7 +1355,7 @@ namespace satdump
                                                 &editorial_rendered);
             }
 
-            if (settings.save_legacy_alias)
+            if (settings.save_legacy_alias && text_drawer.font_ready())
             {
                 if (editorial_rendered.size() == 0 && minimal_rendered.size() == 0)
                 {
