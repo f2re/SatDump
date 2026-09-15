@@ -2,6 +2,8 @@
 
 [← Диагностика](TROUBLESHOOTING.md) · [Оглавление](README.md)
 
+UTC, синхронизация и интервалы повторов: [справочник](UTC_AND_SCHEDULER.md). Команда `satdump-station time-status` читает состояние часов без изменения системы.
+
 ## 1. Команды station.sh / satdump-station
 
 В исходниках и распакованном пакете используется `./station.sh`. После установки `/usr/local/bin/satdump-station` указывает на актуальную версию. Корневой `build.sh` — отдельный прежний сборщик движка.
@@ -9,6 +11,10 @@
 | Команда | Где применять | Результат / оговорки |
 |---|---|---|
 | `help` | Везде | Справка без изменения системы |
+| `time-status` | Станция | UTC и состояние синхронизации часов ОС |
+| `doctor` | Станция | Активная конфигурация, права, движок и отдельный отчёт `clock` |
+| `ui-deploy DIR` | Станция | Подключение дополнительного интерфейса |
+| `control` | Через systemd | Авторизованный API на loopback-адресе |
 | `build [--jobs N]` | Исходники | Полный пакет станции; нужны сборочные инструменты |
 | `pack --engine DIR --runtime DIR --output DIR --revision SHA` | Подготовленная сборочная среда | Упаковка существующих компонентов |
 | `test` | Исходники или пакет | Контрактные unittest; в пакете используется встроенный Python |
@@ -20,9 +26,9 @@
 | `check --config FILE` | Станция | Конфиг станции, Python/Pillow, запуск `satdump version` |
 | `status --config FILE` | Станция | Последние 30 заданий: ID, состояние, попытки, ошибка |
 | `retry --job ID --config FILE` | Станция | Только `failed` → `pending`, сброс попыток |
-| `logs` | Станция | `journalctl` для двух служб, последние 100 строк и наблюдение |
-| `restart` | Станция | Перезапуск двух служб, перечитывание настроек |
-| `rollback` | Станция | Предыдущий код, не откат данных |
+| `logs` | Станция | `journalctl --utc` для всех служб, последние 100 строк и наблюдение |
+| `restart` | Станция | Перезапуск обработчика, веб-службы, API и внутреннего BOARD при наличии |
+| `rollback` | Станция | Предыдущие код, конфигурация и службы; данные и очередь не откатываются |
 
 `status/retry`, вызванные через `sudo satdump-station`, передают работу служебному пользователю, чтобы root не менял владельцев рабочих SQLite-файлов. Не запускайте второй `worker` поверх systemd-процесса: блокировка должна это запретить.
 
@@ -47,7 +53,13 @@
 | `--port N` | Порт 1024..65535 |
 | `--dry-run` | План, не полный тест пакета и запуска |
 | `--no-start` | Размещение без обычного запуска/health-check |
-| `--rollback` | Вернуть предыдущую версию кода |
+| `--rollback` | Вернуть предыдущие код, конфигурацию и службы |
+| `--web-server builtin\|nginx` | Встроенный сервер либо уже установленный nginx |
+| `--control-port N`, `--backend-port N` | Порты API и внутреннего BOARD |
+| `--source-path DIR`, `--source-kind image\|product` | Источник мастера установки |
+| `--yes`, `--non-interactive` | Без вопросов |
+| `--interactive` | Диалог в терминале |
+| `--no-color`, `--no-animation` | Отключение оформления терминала |
 | `--allow-compatible` | Обойти проверку имени Astra только на испытательном стенде |
 | `--help` | Справка |
 
@@ -70,14 +82,16 @@
 | Схема / файл | Назначение |
 |---|---|
 | `satdump.station/1` | Конфигурация станции |
-| `satdump.gallery/1` | Каталог браузерной галереи |
+| `satdump.gallery/1` | Совместимый каталог галереи |
+| `satdump.board/1` | Публичный каталог с фильтрами видимости |
+| `satdump.station.control/1` | Настройки управляющего API |
 | `satdump.presentation/1` и `/2` | Принимаемые JSON-паспорта; renderer этой ветки выпускает `/2` |
 | `satdump.station.package/1` | Манифест бинарного пакета |
 | `SHA256SUMS` | Контрольные суммы файлов внутри пакета |
 | `*.tar.gz.sha256` | Сумма внешнего архива |
 | `worker.json` | Обезличенный статус воркера; отдельного поля schema сейчас нет |
 
-У карточки каталога есть `id`, `source`, `satellite`, `instrument`, `title`, `acquisition_time`, `file_mtime`, `published_at`, `width`, `height`, `native_presentation`, `preview`, `thumbnail`, `original`, `metadata`. Поле `native_presentation` определяется распознанным форматом паспорта, не криптографической аттестацией.
+У карточки каталога есть `id`, `source`, `satellite`, `instrument`, `title`, `acquisition_time`, `file_mtime`, `published_at`, `width`, `height`, `native_presentation`, `preview`, `thumbnail`, `original`, `metadata`. Нормализованные времена, состояние разбора и исходная подпись описаны в [контракте UTC](UTC_AND_SCHEDULER.md). Поле `native_presentation` определяется распознанным форматом паспорта, не криптографической аттестацией.
 
 `catalog.total` — общее число найденных карточек; `items` может быть короче из-за `max_items`. `updated_at` относится к формированию каталога. URL элементов указывает на опубликованный набор, а не на произвольный путь файловой системы.
 
@@ -106,6 +120,9 @@
 | Вопрос | Файл |
 |---|---|
 | Команды пользователя | [station.sh](../../../station.sh) |
+| UTC и синхронизация | [timebase.py](../../../services/station/timebase.py) |
+| Применение настроек и каталог BOARD | [board.py](../../../services/station/board.py) |
+| Авторизованный API | [control.py](../../../services/station/control.py) |
 | Обнаружение, очередь, публикация, HTTP | [station.py](../../../services/station/station.py) |
 | Фильтры и слайд-шоу | [app.js](../../../services/station/web/app.js) |
 | Сборка и комплектование окружения | [scripts/station](../../../scripts/station/README.md) |

@@ -3,7 +3,7 @@
   const $ = id => document.getElementById(id);
   let all = [], items = [], selected = '', index = 0, token = 0, limit = 60;
   let playing = false, timer = null, lastDigest = '';
-  const displayTime = epoch => new Date(epoch * 1000).toLocaleString('ru-RU', {timeZone: 'UTC'}) + ' UTC';
+  const displayTime = epoch => Number.isFinite(epoch) ? new Date(epoch * 1000).toLocaleString('ru-RU', {timeZone: 'UTC', hourCycle: 'h23'}) + ' UTC' : '—';
   const safeAsset = url => /^items\/[0-9a-f]{64}\/[0-9]{3}(?:-preview|-thumb)?\.(png|jpg|json)$/.test(url || '') ? url : '';
   const text = (id, value) => { $(id).textContent = value || ''; };
   const clear = element => { while (element.firstChild) element.removeChild(element.firstChild); };
@@ -58,7 +58,7 @@
   }
   function filter() {
     const query = $('search').value.toLowerCase(), date = $('date').value.toLowerCase();
-    items = all.filter(x => (!$('source').value || x.source === $('source').value) && (!$('satellite').value || x.satellite === $('satellite').value) && (x.title + ' ' + x.instrument).toLowerCase().includes(query) && (x.acquisition_time || '').toLowerCase().includes(date));
+    items = all.filter(x => (!$('source').value || x.source === $('source').value) && (!$('satellite').value || x.satellite === $('satellite').value) && (x.title + ' ' + x.instrument).toLowerCase().includes(query) && [x.acquisition_time, x.acquisition_start_utc, x.acquisition_end_utc].filter(Boolean).join(' ').toLowerCase().includes(date));
     renderGrid();
     if (!items.length) {
       ++token; clearTimeout(timer); $('hero').hidden = true; $('caption').hidden = true; $('loading').hidden = true; $('empty').hidden = false;
@@ -78,12 +78,13 @@
   }
   async function refresh() {
     try {
-      const response = await fetch('catalog.json', {cache: 'no-store'});
+      let response = await fetch('api/v1/board', {cache: 'no-store'});
+      if (response.status === 404) response = await fetch('catalog.json', {cache: 'no-store'});
       if (!response.ok) throw new Error('Каталог ещё не сформирован');
       const catalog = await response.json();
-      if (catalog.schema !== 'satdump.gallery/1') throw new Error('Неизвестная версия каталога');
+      if (!['satdump.gallery/1', 'satdump.board/1'].includes(catalog.schema)) throw new Error('Неизвестная версия каталога');
       text('siteTitle', catalog.title); text('updated', 'Каталог: ' + displayTime(catalog.updated_at));
-      const digest = catalog.items.map(x => x.id).join(',');
+      const digest = catalog.items.map(x => x.id + ':' + (x.acquisition_start_utc || '')).join(',');
       if (digest !== lastDigest || !all.length) {
         lastDigest = digest; all = catalog.items; options('source', 'source', 'Все источники'); options('satellite', 'satellite', 'Все спутники'); filter();
       }

@@ -135,7 +135,7 @@ def pack(args):
                 'services': ['satdump-worker', 'satdump-web', 'satdump-control'],
                 'optional_services': {'nginx': ['satdump-board']},
                 'board_schema': 'satdump.board/1', 'control_schema': 'satdump.station.control/1',
-                'control_loopback_only': True, 'new_frontend_included': False,
+                'control_loopback_only': True, 'bundled_gallery_included': True,
                 'operator_guide': 'BOARD_INFRASTRUCTURE.ru.md'}
     provenance_path = getattr(args, 'component_provenance', None)
     if provenance_path:

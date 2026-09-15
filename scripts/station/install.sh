@@ -141,7 +141,7 @@ ui_info "Код: $PREFIX/releases; конфигурация: $CONFIG"
 ui_info "Данные и BOARD: $DATA; WEB: $HOST:$PORT ($WEB_SERVER)"
 ui_info "API: 127.0.0.1:$CONTROL_PORT, отдельный токен и пользователь"
 ui_info "Автозапуск WEB + обработчик + API: $START; внешний источник: ${SOURCE_PATH:-без изменения}"
-ui_info 'Интернет/apt/pip не используются. Дизайн и новый веб-интерфейс не устанавливаются.'
+ui_info 'Пакет устанавливается без загрузок apt/pip. Встроенная галерея включена.'
 if (( DRY )); then ui_info 'План без изменений; это не тест бинарного пакета или systemd.'; exit 0; fi
 if [[ -t 0 && $INTERACTIVE != never && $YES == 0 ]]; then ui_confirm || { ui_info 'Отменено.'; exit 0; }; fi
 (( EUID == 0 )) || fail 'Запустите через sudo'

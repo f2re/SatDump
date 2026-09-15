@@ -14,6 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'services/station'))
 import control
+import timebase
 
 
 def provision(package, config, data, source_path='', source_kind='image'):
@@ -82,8 +83,8 @@ def unit_files(prefix, config, data, host, port, control_port, backend, web_serv
         control.number(number, 1024, 65535, True)
     control.require(len({port, control_port, backend}) == 3, 'Порты должны различаться')
     launcher = prefix + '/current/station.sh'
-    common = '\nRestart=on-failure\nRestartSec=5\nNoNewPrivileges=true\nPrivateTmp=true\nPrivateDevices=true\nProtectSystem=full\nReadOnlyDirectories=/\n'
-    def service(description, user, command, extras='', after='local-fs.target network.target'):
+    common = '\nEnvironment=TZ=UTC\nRestart=on-failure\nRestartSec=5\nNoNewPrivileges=true\nPrivateTmp=true\nPrivateDevices=true\nProtectSystem=full\nReadOnlyDirectories=/\n'
+    def service(description, user, command, extras='', after='local-fs.target network.target time-sync.target'):
         return ('[Unit]\nDescription=' + description + '\nAfter=' + after + '\nRequiresMountsFor=' + data + '\n'
                 '[Service]\nType=simple\nUser=' + user + '\nGroup=' + user + '\nExecStart=' + command + common + extras +
                 '\n[Install]\nWantedBy=multi-user.target\n')
@@ -166,7 +167,7 @@ def doctor(config):
         record('engine', os.access(engine, os.X_OK), 'Проверка исполняемого launcher; декодирование не запускалось')
     except (OSError, ValueError, KeyError, TypeError) as error:
         record('configuration', False, str(error))
-    return {'ok': all(c['ok'] for c in checks), 'checks': checks}
+    return {'ok': all(c['ok'] for c in checks), 'checks': checks, 'clock': timebase.clock_status()}
 
 
 def main():

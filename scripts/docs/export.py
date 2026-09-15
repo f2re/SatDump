@@ -81,7 +81,7 @@ def export(root, output, revision, package=False):
     for alias, original in aliases.items():
         text = rewrite((root / original).read_text(encoding='utf-8'), original, alias, root, available, revision)
         if alias == 'README.md' and not package:
-            text += '\n> [!NOTE]\n> Это отдельный пакет документации, не бинарный установщик. Примеры команд не выполняются автоматически. Ссылки на исходный код и внешние плашки требуют сети; главы справочника доступны локально.\n'
+            text += '\nЭто пакет документации без исполняемых файлов Station. Главы доступны локально; ссылки на внешний исходный код требуют сети.\n'
         (output / alias).write_text(text, encoding='utf-8')
     manifest['checked'] = sorted(set(manifest['checked']) | set(aliases))
     with open(str(output / 'docs/navigation.json'), 'w', encoding='utf-8') as stream:

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 ROOT="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+export TZ=UTC
 export PATH="/usr/local/sbin:/usr/sbin:/sbin:$PATH"
 PYTHON=python3
 [[ ! -x $ROOT/runtime/python ]] || PYTHON="$ROOT/runtime/python"
@@ -14,14 +15,15 @@ SatDump Station / BOARD — Astra 1.6, автономная обработка �
 Исходники:
   ./station.sh build --jobs 2          полный офлайн-пакет: движок + WEB + API
   ./station.sh pack --engine DIR --runtime DIR --output DIR --revision SHA
-  ./station.sh test                    прежние и новые тесты станции
+  ./station.sh test                    тесты обработки, очереди и сервера
 
 Установка и эксплуатация:
   sudo ./install.sh                    интерактивный мастер в терминале
   sudo ./install.sh --yes              установка без вопросов
   ./install.sh --help                  режимы WEB, пути и параметры мастера
-  sudo ./station.sh ui-deploy DIR      подключить будущие готовые файлы интерфейса
-  sudo ./station.sh doctor             read-only диагностика прав и конфигурации
+  sudo ./station.sh ui-deploy DIR      подключить дополнительный веб-интерфейс
+  sudo ./station.sh doctor             права, конфигурация и системное время
+  ./station.sh time-status             состояние синхронизации часов
   sudo ./station.sh status             последние задания
   sudo ./station.sh logs               журналы всех служб
   sudo ./station.sh restart            управляемый перезапуск
@@ -29,17 +31,18 @@ SatDump Station / BOARD — Astra 1.6, автономная обработка �
   sudo ./station.sh retry --job ID     повтор неуспешного задания
   ./station.sh deploy ARCHIVE USER@HOST -- --port 8090 --web-server builtin
 
-WEB: 127.0.0.1:8090/api/v1/board — изображения/паспорта, без нового интерфейса.
+WEB: 127.0.0.1:8090/ — галерея; /api/v1/board — каталог изображений.
 API: 127.0.0.1:8091/api/v1/control/config — токен + ревизии If-Match.
 Прямые команды: worker, once, serve, control, check; параметры: --help.
 EOF
         ;;
+    time-status) exec "$PYTHON" "$ROOT/services/station/timebase.py" "$@" ;;
     ui-deploy) exec bash "$ROOT/scripts/station/ui-deploy.sh" "$@" ;;
     build) exec bash "$ROOT/scripts/station/build.sh" "$@" ;;
     pack) exec "$PYTHON" "$ROOT/scripts/station/pack.py" "$@" ;;
     install|deploy) exec bash "$ROOT/scripts/station/$command.sh" "$@" ;;
     test) exec "$PYTHON" -m unittest discover -s "$ROOT/tests/station" -v ;;
-    logs) exec journalctl -u satdump-worker.service -u satdump-web.service -u satdump-control.service -u satdump-board.service -n 100 -f ;;
+    logs) exec journalctl --utc -u satdump-worker.service -u satdump-web.service -u satdump-control.service -u satdump-board.service -n 100 -f ;;
     restart)
         units=(satdump-worker.service satdump-control.service satdump-web.service)
         [[ ! -f /etc/systemd/system/satdump-board.service ]] || units+=(satdump-board.service)

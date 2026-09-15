@@ -387,7 +387,9 @@ class AdapterTests(Fixture):
         self.assertEqual(1, catalog['total'])
         entry = catalog['items'][0]
         self.assertEqual('minimal', entry['layout'])
-        self.assertEqual('2026-09-09T00:00:00Z', entry['acquisition_time'])
+        self.assertEqual('09.09.2026 · 00:00:00 UTC', entry['acquisition_time'])
+        self.assertEqual('2026-09-09T00:00:00Z', entry['acquisition_start_utc'])
+        self.assertEqual('2026-09-09T00:00:00Z', entry['acquisition_time_raw'])
         passport = control.read(self.data / 'public' / entry['metadata'])
         self.assertFalse(passport['orientation']['north_up_verified'])
         doc = self.store.current()
@@ -425,7 +427,7 @@ class AdapterTests(Fixture):
     def test_native_minimal_only_is_valid(self):
         self.assertEqual(['minimal'], [e['layout'] for e in self.native_fixture(True)])
 
-    def test_public_headless_and_private_paths(self):
+    def test_bundled_gallery_and_private_paths(self):
         server = self.Server(('127.0.0.1', 0), self.data / 'public')
         thread = threading.Thread(target=server.serve_forever)
         thread.daemon = True
@@ -433,10 +435,15 @@ class AdapterTests(Fixture):
         try:
             base = 'http://127.0.0.1:' + str(server.server_port)
             with urlopen(base + '/') as response:
-                self.assertFalse(json.loads(response.read().decode())['ui_installed'])
+                self.assertIn('text/html', response.headers['Content-Type'])
+                self.assertIn(b'<!doctype html>', response.read().lower())
             with urlopen(base + '/api/v1/board') as response:
                 self.assertEqual('satdump.board/1', json.loads(response.read().decode())['schema'])
-            for path in ('/api/v1/control/config', '/state/queue.sqlite3', '/app.js', '/items/../../control/active.json'):
+            for path in ('/app.js', '/style.css'):
+                with urlopen(base + path) as response:
+                    self.assertEqual(200, response.status)
+                    self.assertTrue(response.read())
+            for path in ('/api/v1/control/config', '/state/queue.sqlite3', '/items/../../control/active.json'):
                 with self.assertRaises(HTTPError) as caught:
                     urlopen(base + path)
                 self.assertEqual(404, caught.exception.code)

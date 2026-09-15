@@ -117,6 +117,3 @@ First time here? See the reference documents below to get started using SatDump.
 ### Special Thanks to
 - microp11 (Paul Maxan), for the reverse-engineering work & Scytale-C
 
-### GNU
-I'd just like to interject for a moment. What you're refering to as SatDump, is in fact, GNU/SatDump, or as I've recently taken to calling it, GNU plus SatDump...   
-*Reader falls asleep*

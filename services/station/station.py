@@ -24,12 +24,16 @@ import tempfile
 import threading
 import time
 import warnings
+import uuid
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 LOG = logging.getLogger("satdump-station")
 APP = Path(__file__).resolve().parent
+if str(APP) not in sys.path:
+    sys.path.insert(0, str(APP))
+import timebase
 STOP = threading.Event()
 IMAGE_EXT = (".png", ".jpg", ".jpeg")
 SCHEMAS = ("satdump.presentation/1", "satdump.presentation/2")
@@ -179,7 +183,7 @@ def source_files(path, kind):
             files.append(sidecar)
     else:
         files = []
-        for base, dirs, names in os.walk(str(path), followlinks=False):
+        for base, dirs, names in os.walk(str(path), followlinks=False, onerror=walk_error):
             for name in dirs + names:
                 if (Path(base) / name).is_symlink():
                     raise ValueError("Symlink in product tree")
@@ -230,6 +234,10 @@ def content_id(files, base, recipe, progress=None):
     return digest.hexdigest()
 
 
+def walk_error(error):
+    raise error
+
+
 def candidate_paths(source):
     root = Path(source["path"])
     if not root.is_dir():
@@ -240,7 +248,7 @@ def candidate_paths(source):
     else:
         patterns = source.get("patterns", ["*.png", "*.jpg", "*.jpeg"])
         paths = []
-        for base, dirs, names in os.walk(str(root), followlinks=False):
+        for base, dirs, names in os.walk(str(root), followlinks=False, onerror=walk_error):
             dirs[:] = sorted(d for d in dirs if not d.startswith(".") and not (Path(base) / d).is_symlink())
             paths.extend(Path(base) / n for n in sorted(names)
                          if not n.startswith(".") and any(fnmatch.fnmatch(n.lower(), pat.lower()) for pat in patterns)
@@ -269,6 +277,12 @@ class Worker:
             signature TEXT NOT NULL, state TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
             next_at REAL NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT '', created REAL NOT NULL,
             finished REAL)""")
+        columns = {row[1] for row in self.db.execute("PRAGMA table_info(jobs)")}
+        for name, definition in (("retry_boot", "TEXT NOT NULL DEFAULT ''"),
+                                 ("retry_at", "REAL NOT NULL DEFAULT 0")):
+            if name not in columns:
+                self.db.execute("ALTER TABLE jobs ADD COLUMN " + name + " " + definition)
+        self.boot_scope = timebase.boot_id() or uuid.uuid4().hex
         self.db.execute("CREATE INDEX IF NOT EXISTS jobs_input ON jobs(source,path,signature)")
         self.db.execute("CREATE INDEX IF NOT EXISTS jobs_ready ON jobs(state,next_at,created)")
         self.db.commit()
@@ -347,7 +361,7 @@ class Worker:
     def native(self, argv, work, log_path):
         env = os.environ.copy()
         env.update({"HOME": str(work / "home"), "XDG_CONFIG_HOME": str(work / "home/.config"),
-                    "OMP_NUM_THREADS": str(self.cfg.get("native_threads", 2))})
+                    "OMP_NUM_THREADS": str(self.cfg.get("native_threads", 2)), "TZ": "UTC"})
         # Do not leak the embedded Python loader into the independent SatDump runtime.
         for name in ("PYTHONHOME", "PYTHONPATH", "LD_LIBRARY_PATH"):
             env.pop(name, None)
@@ -411,6 +425,8 @@ class Worker:
                     if time.monotonic() - last > 5:
                         self.heartbeat("copying")
                         last = time.monotonic()
+            source_stat = original.stat()
+            os.utime(str(target), ns=(source_stat.st_atime_ns, source_stat.st_mtime_ns))
         if self.fingerprint(source, inventory(path, source["kind"], self.cfg["max_input_mb"] * 1024 ** 2)[0]) != sig:
             raise InputChanged("Input changed while copying")
         copied = [incoming / original.relative_to(base) for original in files]
@@ -505,7 +521,7 @@ class Worker:
                 view.save(str(dest / (stem + "-thumb.jpg")), "JPEG", quality=82)
         atomic_json(dest / (stem + ".json"), metadata)
         prefix = "items/" + job_id + "/"
-        return {"id": job_id + "-" + stem, "source": source["id"],
+        entry = {"id": job_id + "-" + stem, "source": source["id"],
                 "satellite": str(pass_info.get("satellite", source.get("satellite", "Источник не указан")))[:240],
                 "instrument": str(pass_info.get("instrument", source.get("instrument", "")))[:240],
                 "title": str(pass_info.get("product", source_path.stem))[:400],
@@ -514,30 +530,33 @@ class Worker:
                 "width": width, "height": height, "native_presentation": metadata.get("schema") in SCHEMAS,
                 "preview": prefix + stem + "-preview.jpg", "thumbnail": prefix + stem + "-thumb.jpg",
                 "original": prefix + original_name, "metadata": prefix + stem + ".json"}
+        return timebase.normalize_entry(entry)
 
     def catalog(self):
         entries = []
         for manifest in sorted((self.data / "public/items").glob("*/item.json")):
             try:
-                entries.extend(read_json(manifest)["entries"])
+                entries.extend(timebase.normalize_entry(e) for e in read_json(manifest)["entries"])
             except (OSError, ValueError, KeyError):
                 LOG.exception("Invalid publication %s", manifest)
-        entries.sort(key=lambda x: (x["published_at"], x["id"]), reverse=True)
+        entries.sort(key=timebase.catalog_order, reverse=True)
         atomic_json(self.data / "public/catalog.json",
                     {"schema": "satdump.gallery/1", "title": self.cfg.get("title", "Спутниковые наблюдения"),
-                     "updated_at": time.time(), "total": len(entries), "items": entries[:self.cfg["max_items"]]})
+                     "timezone": "UTC", "updated_at": time.time(), "total": len(entries), "items": entries[:self.cfg["max_items"]]})
 
     def heartbeat(self, phase="idle"):
         counts = dict(self.db.execute("SELECT state, count(*) FROM jobs GROUP BY state").fetchall())
-        atomic_json(self.data / "public/worker.json", {"updated_at": time.time(), "phase": phase,
-                    "queue": counts, "sources": self.source_errors,
-                    "stale_after": max(60, self.cfg["poll_seconds"] * 4)})
+        status = timebase.heartbeat_fields()
+        status.update(phase=phase, queue=counts, sources=self.source_errors,
+                      stale_after=max(60, self.cfg["poll_seconds"] * 4))
+        atomic_json(self.data / "public/worker.json", status)
 
     def tick(self):
         self.heartbeat("scanning")
         self.scan()
-        job = self.db.execute("SELECT * FROM jobs WHERE state='pending' AND next_at<=? ORDER BY created LIMIT 1",
-                              (time.time(),)).fetchone()
+        job = self.db.execute("SELECT * FROM jobs WHERE state='pending' AND "
+                              "(next_at=0 OR retry_boot<>? OR retry_at<=?) ORDER BY rowid LIMIT 1",
+                              (self.boot_scope, time.monotonic())).fetchone()
         if job:
             self.db.execute("UPDATE jobs SET state='running',attempts=attempts+1 WHERE id=?", (job["id"],))
             self.db.commit()
@@ -549,8 +568,10 @@ class Worker:
                 LOG.exception("Processing failed: %s", job["id"])
                 attempts = job["attempts"] + 1
                 state = "superseded" if isinstance(error, InputChanged) else ("failed" if attempts >= self.cfg["max_attempts"] else "pending")
-                self.db.execute("UPDATE jobs SET state=?,error=?,next_at=? WHERE id=?",
-                                (state, str(error)[:2000], time.time() + min(3600, 30 * 2 ** attempts), job["id"]))
+                delay = min(3600, 30 * 2 ** attempts)
+                self.db.execute("UPDATE jobs SET state=?,error=?,next_at=?,retry_boot=?,retry_at=? WHERE id=?",
+                                (state, str(error)[:2000], time.time() + delay, self.boot_scope,
+                                 time.monotonic() + delay, job["id"]))
             self.db.commit()
             self.catalog()
         self.heartbeat()
@@ -586,7 +607,7 @@ class GalleryHandler(BaseHTTPRequestHandler):
         if path == "/health.json":
             try:
                 health = read_json(self.server.public / "worker.json")
-                health["worker_alive"] = time.time() - health["updated_at"] < health["stale_after"]
+                health["worker_alive"] = timebase.heartbeat_alive(health)
             except (OSError, ValueError, KeyError):
                 health = {"worker_alive": False}
             health["web_alive"] = True
@@ -659,6 +680,7 @@ class GalleryServer(socketserver.ThreadingMixIn, HTTPServer):
 
 
 def main():
+    timebase.configure_utc()
     parser = argparse.ArgumentParser(description="SatDump: очередь, обработка и локальная галерея")
     parser.add_argument("command", choices=("worker", "once", "serve", "check", "status", "retry"))
     parser.add_argument("--config", default="/etc/satdump-station/station.json")
@@ -667,7 +689,7 @@ def main():
     parser.add_argument("--port", type=int, default=8090)
     parser.add_argument("--job", default="")
     args = parser.parse_args()
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s UTC %(levelname)s %(message)s")
     if args.command == "serve":
         if not 1 <= args.port <= 65535:
             parser.error("port must be 1..65535")

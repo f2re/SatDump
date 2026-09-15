@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""BOARD adapter; no new frontend. Uses the existing SatDump queue and renderer."""
+"""BOARD catalogue, configuration revisions and the bundled gallery."""
 from __future__ import print_function
 import argparse
 import copy
@@ -144,6 +144,8 @@ def install_adapter(station, ui_root=None):
                         if time.monotonic() - last > 5:
                             self.heartbeat('copying')
                             last = time.monotonic()
+                source_stat = original.stat()
+                os.utime(str(target), ns=(source_stat.st_atime_ns, source_stat.st_mtime_ns))
             current = station.inventory(path, source['kind'], self.cfg['max_input_mb'] * 1024 ** 2)[0]
             if self.fingerprint(source, current) != job['signature']:
                 raise station.InputChanged('Input changed while copying')
@@ -194,13 +196,13 @@ def install_adapter(station, ui_root=None):
             entries = []
             for manifest in sorted((self.data / 'public/items').glob('*/item.json')):
                 try:
-                    entries.extend(station.read_json(manifest)['entries'])
+                    entries.extend(station.timebase.normalize_entry(e) for e in station.read_json(manifest)['entries'])
                 except (OSError, ValueError, KeyError):
                     LOG.warning('Skipped invalid publication manifest')
             items = sorted([e for e in entries if visible(e, self.board_settings)],
-                           key=lambda e: (e['published_at'], e['id']), reverse=True)
+                           key=station.timebase.catalog_order, reverse=True)
             station.atomic_json(self.data / 'public/board.json', {
-                'schema': 'satdump.board/1', 'updated_at': time.time(), 'settings_revision': self.revision or None,
+                'schema': 'satdump.board/1', 'timezone': 'UTC', 'updated_at': time.time(), 'settings_revision': self.revision or None,
                 'title': self.cfg.get('title', 'Спутниковые наблюдения'), 'total': len(items),
                 'hidden': len(entries) - len(items), 'items': items[:self.board_settings.get('max_items', 1000)]})
 
@@ -212,9 +214,10 @@ def install_adapter(station, ui_root=None):
 
     class BoardHandler(station.GalleryHandler):
         def respond(self, body):
+            request_path = unquote(urlsplit(self.path).path)
             endpoints = {'/api/v1/board': 'board.json', '/api/v1/board/status': 'board-status.json'}
-            if self.path in endpoints:
-                path = self.server.public / endpoints[self.path]
+            if request_path in endpoints:
+                path = self.server.public / endpoints[request_path]
                 try:
                     self.send_bytes(control.canonical(station.read_json(path, limit=32 * 1024 * 1024)), 'application/json', body)
                 except (OSError, ValueError):
@@ -240,17 +243,10 @@ def install_adapter(station, ui_root=None):
                         if body:
                             shutil.copyfileobj(stream, self.wfile, 128 * 1024)
                     return
-            if path in ('/', '/index.html'):
-                self.send_bytes(control.canonical({'service': 'SatDump BOARD', 'ui_installed': False,
-                                'catalog': '/api/v1/board', 'status': '/api/v1/board/status'}), 'application/json', body)
-                return
-            if path in ('/app.js', '/style.css'):
-                self.send_error(404)
-                return
-            if self.path == '/health/ready':
+            if path == '/health/ready':
                 try:
                     status = station.read_json(self.server.public / 'worker.json')
-                    alive = time.time() - status['updated_at'] < status['stale_after']
+                    alive = station.timebase.heartbeat_alive(status)
                 except (OSError, ValueError, KeyError):
                     alive = False
                 if not alive:

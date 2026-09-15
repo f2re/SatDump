@@ -1,4 +1,4 @@
-# Dust/Ash RGB
+# Fire Temperature RGB
 
 This enhancement provides detection and monitoring of fires, assessment of fire intensity, detection of burnt areas during daytime.
 
