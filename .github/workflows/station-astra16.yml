@@ -8,8 +8,10 @@ on:
       - 'install.sh'
       - 'services/station/**'
       - 'scripts/station/**'
+      - 'scripts/docs/**'
       - 'config/station/**'
       - 'tests/station/**'
+      - 'tests/docs/**'
       - 'src-cli/**'
       - 'src-core/**'
       - 'plugins/**'
@@ -58,6 +60,8 @@ jobs:
       - name: Python and browser syntax and contracts
         run: |
           /usr/bin/python3 -m unittest discover -s tests/station -v
+          /usr/bin/python3 -m unittest discover -s tests/docs -v
+          /usr/bin/python3 scripts/docs/check.py
           /usr/bin/python3 - <<'PY'
           import ast, pathlib
           for root in ['services/station', 'scripts/station', 'tests/station']:
@@ -151,9 +155,11 @@ jobs:
           bundle=$(find check-package -mindepth 1 -maxdepth 1 -type d -print -quit)
           docker run --rm --network none -v "$(realpath "$bundle"):/opt/station:ro" debian:stretch-slim \
             /bin/bash -ec '
+              if command -v python3; then echo "Test image must not supply system Python" >&2; exit 1; fi
               /opt/station/runtime/python /opt/station/scripts/station/pack.py --verify /opt/station
               /opt/station/engine/satdump version
               /opt/station/runtime/python -m unittest discover -s /opt/station/tests/station -v
+              /opt/station/runtime/python /opt/station/scripts/docs/check.py --root /opt/station
               /opt/station/install.sh --allow-compatible --no-start
             '
       - name: Upload binary package
@@ -197,9 +203,13 @@ jobs:
         run: |
           set -o pipefail
           bundle=$(find unpacked -mindepth 1 -maxdepth 1 -type d -print -quit)
-          # The controller uses host Python; each service uses the bundled runtime.
           sudo env SATDUMP_DISPOSABLE_CI=1 /usr/bin/python3 scripts/station/acceptance.py \
             --package "$(realpath "$bundle")" --output "$GITHUB_WORKSPACE/STATION-ACCEPTANCE.json" 2>&1 | tee station-acceptance.log
+      - name: Verify installed UTC, gallery and restart contracts
+        run: |
+          set -o pipefail
+          sudo env SATDUMP_DISPOSABLE_CI=1 /usr/bin/python3 scripts/station/release-smoke.py \
+            --expected-sha "$GITHUB_SHA" --output "$GITHUB_WORKSPACE/RELEASE-SMOKE.json" 2>&1 | tee release-smoke.log
       - name: Upload acceptance evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -207,7 +217,9 @@ jobs:
           name: station-acceptance-${{ github.sha }}
           path: |
             STATION-ACCEPTANCE.json
+            RELEASE-SMOKE.json
             station-acceptance.log
+            release-smoke.log
           if-no-files-found: error
 
   publish:
@@ -220,6 +232,7 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: satdump-astra16-station-${{ github.sha }}
@@ -239,23 +252,16 @@ jobs:
           import json, os
           with open('evidence/STATION-ACCEPTANCE.json') as f:
               report = json.load(f)
-          assert report['success'] is True
-          assert report['package']['git_commit'] == os.environ['GITHUB_SHA']
+          with open('evidence/RELEASE-SMOKE.json') as f:
+              smoke = json.load(f)
+          assert report['success'] is True and smoke['success'] is True
+          assert report['package']['git_commit'] == smoke['git_commit'] == os.environ['GITHUB_SHA']
           PY
-          cp evidence/STATION-ACCEPTANCE.json release/
+          head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/release/1.2.2" --jq .object.sha)
+          test "$head" = "$GITHUB_SHA" || { echo 'Release branch changed during validation' >&2; exit 1; }
+          cp evidence/STATION-ACCEPTANCE.json evidence/RELEASE-SMOKE.json release/
           tag="v1.2.2-astra16-station.${GITHUB_RUN_NUMBER}"
-          cat > notes.md <<'EOF'
-          # SatDump Station / BOARD для Astra Linux 1.6
-          Полный бинарный пакет: движок glibc224, Python/Pillow, интерактивный установщик, обработчик, WEB и защищённый API настроек. Автоматическая публикация PNG/JSON presentation и minimal. Новый дизайн/веб-интерфейс в этот выпуск не входит.
-
-          Проверки: реальный Python 3.5/Pillow; независимый Debian Stretch без сети; установка этого архива на чистой Ubuntu VM с настоящим systemd, запуск WEB/API, PNG+паспорт через очередь, права пользователей, повторная установка, nginx, откат и отказ на занятом порту. Машиночитаемое подтверждение — STATION-ACCEPTANCE.json.
-
-          При неизменных исходных данных сборки движок и runtime могут повторно использоваться из закреплённого SHA-256 артефакта. Их исходная ревизия указана отдельно в component_provenance манифеста; код Station и установщик относятся к ревизии этого выпуска. Все проверки заново выполняются на итоговом архиве.
-
-          Это предварительный инженерный выпуск: приёмка на физической Astra 1.6, мандатные политики, контрольная радиозапись и полная перезагрузка целевой станции не подтверждены. Astra 1.5 этим пакетом не поддерживается. Никакого автоматического развёртывания на пользовательский узел не выполнялось.
-
-          Установка: проверьте файл .sha256, распакуйте архив, запустите sudo ./install.sh. WEB устанавливается автоматически. Руководство: BOARD_INFRASTRUCTURE.ru.md внутри пакета. nginx необязателен и используется только уже установленный; по умолчанию автономный сервер.
-          EOF
+          cp docs/ru/station/RELEASE_NOTES.md notes.md
           printf '\nИсходная ревизия: `%s`. Проверка: https://github.com/%s/actions/runs/%s\n' "$GITHUB_SHA" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> notes.md
           if gh release view "$tag" >/dev/null 2>&1; then
             echo 'Refusing to replace an existing release.' >&2

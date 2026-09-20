@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import sqlite3
 import subprocess
@@ -177,8 +178,8 @@ class PipelineIntegration(unittest.TestCase):
             original_ns = 1600000000123456789
             os.utime(str(raw), ns=(original_ns, original_ns))
             engine = tmp / 'engine'
-            engine.write_text('''#!/usr/bin/env python3
-import json,os,sys
+            fixture = tmp / 'fixture.py'
+            fixture.write_text('''import json,os,sys
 from pathlib import Path
 from PIL import Image
 out=Path(sys.argv[4]);out.mkdir(parents=True)
@@ -188,6 +189,13 @@ for kind in ['presentation','minimal']:
  Image.new('RGB',(8,8)).save(str(p))
  p.with_suffix('.json').write_text(json.dumps({'schema':'satdump.presentation/2','layout':kind,'pass':{'satellite':'Test fixture','acquisition_time':'2026-09-14T23:59:00Z'}}))
 ''')
+            # native() deliberately clears the caller's Python loader variables.
+            # The bundled launcher restores its own libraries; no system Python is required.
+            interpreter = ROOT / 'runtime/python'
+            if not interpreter.is_file():
+                interpreter = Path(sys.executable)
+            engine.write_text('#!/bin/sh\nexec ' + shlex.quote(str(interpreter)) + ' ' +
+                              shlex.quote(str(fixture)) + ' "$@"\n')
             os.chmod(str(engine), 0o755)
             cfg = {'schema': 'satdump.station/1', 'data_dir': str(tmp / 'data'), 'engine': str(engine),
                    'settle_seconds': 0, 'min_free_mb': 0,

@@ -115,13 +115,17 @@ def pack(args):
         shutil.copytree(str(ROOT / relative), str(bundle / relative),
                         ignore=shutil.ignore_patterns('__pycache__', '*.pyc', '*.pyo'))
     shutil.copyfile(str(ROOT / 'station.sh'), str(bundle / 'station.sh'))
-    # One canonical manual: export adjusts source-relative links for the package.
-    # It never downloads files or executes the documented example commands.
+    # Export adjusts source-relative links for the package.
     subprocess.check_call([sys.executable, str(ROOT / 'scripts/docs/export.py'),
                            '--root', str(ROOT), '--output', str(bundle),
                            '--revision', revision, '--package'])
-    shutil.copyfile(str(ROOT / 'docs/ru/station/BOARD_INFRASTRUCTURE.md'),
-                    str(bundle / 'BOARD_INFRASTRUCTURE.ru.md'))
+    # This entry point lives at the package root, not in docs/ru/station.
+    # Do not copy a source-relative chapter here with broken local links.
+    (bundle / 'BOARD_INFRASTRUCTURE.ru.md').write_text(
+        '# SatDump Station / BOARD\n\n'
+        '[Установка и API](docs/ru/station/BOARD_INFRASTRUCTURE.md) · '
+        '[UTC и планировщик](docs/ru/station/UTC_AND_SCHEDULER.md) · '
+        '[Руководство станции](docs/ru/station/README.md)\n', encoding='utf-8')
     shutil.copyfile(str(ROOT / 'LICENSE'), str(bundle / 'LICENSE'))
     with open(str(bundle / 'install.sh'), 'w') as stream:
         stream.write('#!/usr/bin/env bash\nset -Eeuo pipefail\nROOT="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"\nexec bash "$ROOT/scripts/station/install.sh" "$@"\n')
