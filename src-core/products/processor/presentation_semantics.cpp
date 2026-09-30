@@ -1021,6 +1021,36 @@ namespace satdump
                                                    product_metadata,
                                                    source_variant);
             apply_presentation_semantics(spec, products, composite, composite_preset, product_name);
+            if (products.instrument_name == "mtvza" &&
+                (!products.has_calibation() || composite.equation.find("cch") == std::string::npos))
+            {
+                // Old user profiles must not turn raw counts into physical classes.
+                auto raw = build_spec_raw(products, composite, nlohmann::json::object(),
+                    product_name, timestamps, product_metadata, source_variant);
+                spec.legend = raw.legend;
+                spec.legend.categories.clear();
+                spec.legend.color_stops.clear();
+                spec.legend.ticks.clear();
+                spec.legend.unit.clear();
+                spec.legend.kind = spec.legend.components.empty() ? LegendKind::None : LegendKind::Composite;
+                for (auto &component : spec.legend.components)
+                {
+                    component.spectral_range.clear();
+                    component.quantity = "цифровые отсчёты";
+                    component.description.clear();
+                }
+                spec.legend.title = "Компоненты изображения";
+                spec.legend.subtitle = "Экспериментальная комбинация некалиброванных каналов";
+                spec.legend.notes = {"Цвета не являются классами осадков, льда или растительности.",
+                    "Количественные характеристики поверхности и атмосферы не восстанавливаются."};
+                spec.pass.product = "МТВЗА-ГЯ · " + (composite.equation.empty() ? composite.channels : composite.equation);
+                spec.pass.quality = "Экспериментальный продукт";
+                spec.pass.quality_detail = "Радиометрическая калибровка не применена";
+                append_or_replace_detail(spec, "Назначение", "Просмотр структуры цифровых отсчётов");
+                append_or_replace_detail(spec, "Данные", "Некалиброванная комбинация каналов");
+                append_or_replace_detail(spec, "Физика", "Физические величины не восстановлены");
+                append_or_replace_detail(spec, "Нумерация", products.contents.value("channel_layout", "не установлена"));
+            }
             return spec;
         }
     }

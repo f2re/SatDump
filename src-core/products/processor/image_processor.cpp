@@ -1,4 +1,5 @@
 #include "processor.h"
+#include "../product_status.h"
 #include "presentation_processor.h"
 #include "presentation_outputs.h"
 
@@ -197,6 +198,24 @@ namespace satdump
     void process_image_products(Products *products, std::string product_path)
     {
         ImageProducts *img_products = (ImageProducts *)products;
+        nlohmann::json report = {{"schema", "satdump.processing-status/1"},
+            {"instrument", products->instrument_name},
+            {"input_errors", img_products->contents.value("load_errors", nlohmann::json::array())},
+            {"products", nlohmann::json::array()}};
+        size_t generated = 0, failures = 0;
+        auto finish_report = [&]() {
+            report["generated"] = generated;
+            report["status"] = generated == 0 ? "no_products" :
+                (failures || !report["input_errors"].empty() ? "partial" : "ok");
+            write_product_status(product_path + "/processing-status.json", report);
+            products->contents["processing_result"] = report;
+        };
+        if (img_products->images.empty() || std::none_of(img_products->images.begin(), img_products->images.end(),
+            [](const ImageProducts::ImageHolder &h) { return h.image.size() > 0; }))
+        {
+            finish_report();
+            throw std::runtime_error("No readable image channels: " + product_path);
+        }
 
         // One font cache is reused for every generated presentation in this product.
         image::TextDrawer presentation_text;
@@ -255,7 +274,9 @@ namespace satdump
                     ImageCompositeCfg cfg = composite_preset.get<ImageCompositeCfg>();
                     if (!check_composite_from_product_can_be_made(*img_products, cfg))
                     {
-                        logger->debug("Skipping " + compo.key() + " as it can't be made!");
+                        report["products"].push_back({{"name", compo.key()}, {"status", "skipped"},
+                            {"reason", "required_channels_or_calibration_unavailable"}});
+                        logger->warn("Skipping " + compo.key() + ": required channels or calibration unavailable");
                         continue;
                     }
 
@@ -265,7 +286,9 @@ namespace satdump
 
                     if (rgb_image.size() == 0)
                     {
-                        logger->debug("Empty image, skipping any further processing!");
+                        ++failures;
+                        report["products"].push_back({{"name", compo.key()}, {"status", "failed"}, {"reason", "empty_composite"}});
+                        logger->error("Empty image, skipping any further processing!");
                         continue;
                     }
 
@@ -329,7 +352,7 @@ namespace satdump
                                         product_path + "/" + name + "_corrected");
                     }
 
-                    image::save_img(rgb_image, product_path + "/" + name);
+                    save_checked_image(rgb_image, product_path + "/" + name);
                     image::Image clean_presentation_source;
                     if (presentation_settings.enabled)
                         clean_presentation_source = geo_correct ? rgb_image_corr : rgb_image;
@@ -339,6 +362,8 @@ namespace satdump
                     bool base_context_applied = false;
                     auto apply_base_context = [&](bool force_context) -> bool
                     {
+                        try
+                        {
                         if (!img_products->has_proj_cfg())
                         {
                             if (force_context)
@@ -433,6 +458,12 @@ namespace satdump
                                 product_path + "/" + name + "_corrected_map");
                         }
                         return true;
+                        }
+                        catch (const std::exception &e)
+                        {
+                            logger->warn("Geographic context unavailable: %s", e.what());
+                            return false;
+                        }
                     };
 
                     // Keep a clean raster for presentation. Its geographic context is
@@ -484,6 +515,8 @@ namespace satdump
 
                     if (has_project)
                     {
+                        try
+                        {
                         logger->debug("Reprojecting composite %s", name.c_str());
                         image::Image clean_projected;
                         image::Image retimg = projectImg(
@@ -521,6 +554,12 @@ namespace satdump
                         if (!base_context_applied)
                             base_context_applied =
                                 apply_base_context(presentation_settings.enabled);
+
+                        }
+                        catch (const std::exception &e)
+                        {
+                            logger->warn("Projection failed; retaining swath product: %s", e.what());
+                        }
                     }
 
                     // A malformed projection must not suppress the annotated products.
@@ -548,6 +587,9 @@ namespace satdump
                                 : std::function<void(image::Image &, image::presentation::RasterTransform)>());
                     }
 
+                    ++generated;
+                    report["products"].push_back({{"name", compo.key()}, {"status", "generated"},
+                        {"presentation", presentation_saved}});
                     // Free corrected image memory after all presentation fallbacks.
                     if (geo_correct)
                         rgb_image_corr.clear();
@@ -558,6 +600,8 @@ namespace satdump
                 }
                 catch (std::exception &e)
                 {
+                    ++failures;
+                    report["products"].push_back({{"name", compo.key()}, {"status", "failed"}, {"reason", e.what()}});
                     logger->error("Error making composites : %s!", e.what());
                 }
             }
@@ -620,10 +664,9 @@ namespace satdump
                     std::string fmt = "";
                     if (channel_preset.contains("img_format"))
                         fmt += channel_preset["img_format"].get<std::string>();
-                    image::save_img(
-                        retimg,
-                        product_path + "/channel_" + img.channel_name +
-                            "_projected" + fmt);
+                    save_checked_image(retimg, product_path + "/channel_" + img.channel_name + "_projected" + fmt);
+                    ++generated;
+                    report["products"].push_back({{"name", "channel_" + img.channel_name}, {"status", "generated"}});
 
                     if (output_settings.enabled &&
                         (output_settings.prepare_online_board || ensure_presentation_font()))
@@ -660,9 +703,11 @@ namespace satdump
                 }
                 catch (std::exception &e)
                 {
+                    ++failures;
                     logger->error("Error projecting channel : %s!", e.what());
                 }
             }
         }
+        finish_report();
     }
 }

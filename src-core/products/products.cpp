@@ -1,4 +1,5 @@
 #include "products.h"
+#include "product_status.h"
 #include <fstream>
 #include "logger.h"
 #include <filesystem>
@@ -24,9 +25,7 @@ namespace satdump
 
         // Write the file out
         std::vector<uint8_t> cbor_data = nlohmann::json::to_cbor(contents);
-        std::ofstream out_file(directory + "/product.cbor", std::ios::binary);
-        out_file.write((char *)cbor_data.data(), cbor_data.size());
-        out_file.close();
+        write_product_bytes(directory + "/product.cbor", cbor_data);
     }
 
     void Products::load(std::string file)
@@ -44,15 +43,15 @@ namespace satdump
         }
         else
         {
-            std::ifstream in_file(file, std::ios::binary);
-            while (!in_file.eof())
-            {
-                uint8_t b;
-                in_file.read((char *)&b, 1);
-                cbor_data.push_back(b);
-            }
-            in_file.close();
-            cbor_data.pop_back();
+            std::ifstream in_file(file, std::ios::binary | std::ios::ate);
+            if (!in_file) throw std::runtime_error("Cannot open product: " + file);
+            const auto size = in_file.tellg();
+            if (size <= 0 || size > 64 * 1024 * 1024)
+                throw std::runtime_error("Empty or oversized product metadata: " + file);
+            cbor_data.resize(static_cast<size_t>(size));
+            in_file.seekg(0);
+            if (!in_file.read(reinterpret_cast<char *>(cbor_data.data()), cbor_data.size()))
+                throw std::runtime_error("Incomplete product metadata: " + file);
         }
         contents = nlohmann::json::from_cbor(cbor_data);
 

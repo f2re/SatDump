@@ -6,6 +6,8 @@
 #include "common/utils.h"
 #include "meteor.h"
 #include "products/image_products.h"
+#include "products/product_status.h"
+#include <cmath>
 #include "common/simple_deframer.h"
 #include "common/tracking/tle.h"
 #include "products/dataset.h"
@@ -31,7 +33,8 @@ namespace meteor
             logger->info("Using input frames " + d_input_file);
 
             time_t lastTime = 0;
-            uint8_t cadu[1024];
+            uint8_t cadu[1024] = {};
+            if (!data_in) throw std::runtime_error("Cannot open HRPT input: " + d_input_file);
 
             mtvza_reader2.endian_mode = true;
 
@@ -47,10 +50,8 @@ namespace meteor
             nlohmann::json msu_mr_telemetry;
             nlohmann::json msu_mr_telemetry_calib;
 
-            while (!data_in.eof())
+            while (data_in.read((char *)cadu, sizeof(cadu)))
             {
-                // Read buffer
-                data_in.read((char *)&cadu, 1024);
 
                 std::vector<std::vector<uint8_t>> msumr_frames;
                 std::vector<std::vector<uint8_t>> mtvza_frames, mtvza_frames2;
@@ -128,7 +129,12 @@ namespace meteor
                 }
             }
 
+            const auto trailing_bytes = data_in.gcount();
+            if (data_in.bad()) throw std::runtime_error("HRPT input read failed");
+            if (trailing_bytes) logger->warn("Ignored incomplete HRPT frame: %d bytes", int(trailing_bytes));
             data_in.close();
+            mtvza_reader.finish();
+            mtvza_reader2.finish();
 
             // Identify satellite, and apply per-sat settings...
             int msumr_serial_number = most_common(msumr_ids.begin(), msumr_ids.end(), -1);
@@ -161,7 +167,11 @@ namespace meteor
             // Products dataset
             satdump::ProductDataSet dataset;
             dataset.satellite_name = sat_name;
-            dataset.timestamp = get_median(msumr_timestamps);
+            std::vector<double> valid_times;
+            for (double t : msumr_timestamps) if (std::isfinite(t) && t > 0) valid_times.push_back(t);
+            dataset.timestamp = valid_times.empty() ? -1 : get_median(valid_times);
+            nlohmann::json decode_status = {{"schema", "satdump.decode-status/1"},
+                {"trailing_bytes", trailing_bytes}, {"instruments", nlohmann::json::array()}};
 
             // Satellite ID
             {
@@ -170,7 +180,11 @@ namespace meteor
                 logger->info("Name  : " + sat_name);
             }
 
+            decode_status["instruments"].push_back({{"instrument", "msu_mr"},
+                {"lines", msumr_reader.lines}, {"status", msumr_reader.lines > 0 ? "ok" : "no_data"}});
+            if (msumr_reader.lines == 0) msumr_status = NO_DATA;
             // MSU-MR
+            if (msumr_reader.lines > 0)
             {
                 msumr_status = SAVING;
                 std::string directory = d_output_file_hint.substr(0, d_output_file_hint.rfind('/')) + "/MSU-MR";
@@ -267,6 +281,19 @@ namespace meteor
                                     ? mtvza_reader2
                                     : mtvza_reader;
 
+                decode_status["instruments"].push_back({{"instrument", "mtvza"},
+                    {"channel_layout", "hrpt30"}, {"lines", mreader.lines},
+                    {"incomplete_scans", mreader.sequence.incomplete_scans},
+                    {"rejected_frames", mreader.sequence.rejected_frames},
+                    {"status", mreader.lines == 0 ? "no_data" :
+                        (mreader.sequence.incomplete_scans ? "partial" : "ok")}});
+                if (mreader.lines == 0)
+                {
+                    mtvza_status = NO_DATA;
+                    logger->warn("MTVZA: no complete scans; product.cbor was not created");
+                }
+                else
+                {
                 mtvza_status = SAVING;
                 std::string directory = d_output_file_hint.substr(0, d_output_file_hint.rfind('/')) + "/MTVZA";
 
@@ -278,6 +305,8 @@ namespace meteor
 
                 satdump::ImageProducts mtvza_products;
                 mtvza_products.instrument_name = "mtvza";
+                mtvza_products.contents["channel_layout"] = "hrpt30";
+                mtvza_products.contents["decode_quality"] = decode_status["instruments"].back();
                 mtvza_products.has_timestamps = true;
                 mtvza_products.timestamp_type = satdump::ImageProducts::TIMESTAMP_LINE;
                 mtvza_products.set_tle(satdump::general_tle_registry.get_from_norad_time(norad, dataset.timestamp));
@@ -297,6 +326,7 @@ namespace meteor
                 dataset.products_list.push_back("MTVZA");
 
                 mtvza_status = DONE;
+                }
             }
 
             // BIS-M
@@ -316,7 +346,11 @@ namespace meteor
                 bism_status = DONE;
             }
 
-            dataset.save(d_output_file_hint.substr(0, d_output_file_hint.rfind('/')));
+            const std::string output_dir = d_output_file_hint.substr(0, d_output_file_hint.rfind('/'));
+            satdump::write_product_status(output_dir + "/decode-status.json", decode_status);
+            dataset.save(output_dir);
+            if (dataset.products_list.empty())
+                throw std::runtime_error("Meteor HRPT: no complete instrument scans; see decode-status.json");
         }
 
         void MeteorInstrumentsDecoderModule::drawUI(bool window)

@@ -6,6 +6,10 @@
 #include "common/utils.h"
 #include "meteor.h"
 #include "products/image_products.h"
+#include "products/product_status.h"
+#include "instruments/mtvza/scan_sequence.h"
+#include <algorithm>
+#include <cmath>
 #include "common/tracking/tle.h"
 #include "products/dataset.h"
 #include "resources.h"
@@ -115,6 +119,7 @@ namespace meteor
             filesize = getFilesize(d_input_file);
             std::ifstream data_in(d_input_file, std::ios::binary);
 
+            if (!data_in) throw std::runtime_error("Cannot open Meteor dump: " + d_input_file);
             logger->info("Using input frames " + d_input_file);
 
             std::string sat_name = "Unknown Meteor";
@@ -136,24 +141,29 @@ namespace meteor
             if (d_instrument_mode == DUMP_TYPE_MTVZA)
             {
 
-                uint8_t frame[380];
+                uint8_t frame[380] = {};
+                mtvza::ScanSequence sequence(1, 51);
+                std::vector<uint16_t> pending[46];
+                for (auto &channel : pending) channel.resize(200);
 
                 std::vector<uint16_t> mtvza_channels[46];
 
                 for (int i = 0; i < 46; i++)
                     mtvza_channels[i].resize(200);
 
-                double last_timestamp = 0;
+                double last_timestamp = -1;
                 std::vector<double> timestamps;
 
                 time_t lastTime = 0;
-                while (!data_in.eof())
+                while (data_in.read((char *)frame, sizeof(frame)))
                 {
-                    // Read buffer
-                    data_in.read((char *)&frame, 380);
 
                     {
                         int counter = frame[4];
+                        if (counter == 0) sequence.finish();
+                        else if (!sequence.accept(counter)) { last_timestamp = -1; continue; }
+                        if (counter == 1)
+                            for (auto &channel : pending) std::fill(channel.begin(), channel.end(), 0);
 
                         int pos = 10;
                         for (int c = 0; c < 46; c++)
@@ -163,17 +173,20 @@ namespace meteor
                                 uint16_t val = (frame[pos + p * 92 + c * 2 + 0] << 8 | frame[pos + p * 92 + c * 2 + 1]); //+ 32768;
                                 // int16_t val2 = *((int16_t *)&val);
                                 if (counter < 51 && counter > 0)
-                                    mtvza_channels[c][mtvza_lines * 200 + (counter - 1) * 4 + p] = val; // (int)val2; // + 32768;
+                                    pending[c][(counter - 1) * 4 + p] = val; // (int)val2; // + 32768;
                             }
                         }
 
                         if (counter == 51)
                         {
+                            for (int c = 0; c < 46; ++c)
+                                std::copy(pending[c].begin(), pending[c].end(), mtvza_channels[c].begin() + mtvza_lines * 200);
                             mtvza_lines++;
 
                             for (int i = 0; i < 46; i++)
                                 mtvza_channels[i].resize((mtvza_lines + 1) * 200);
                             timestamps.push_back(last_timestamp);
+                            last_timestamp = -1;
 
                             logger->info("Lines %d CNT %d", mtvza_lines, counter);
                         }
@@ -208,7 +221,24 @@ namespace meteor
                     }
                 }
 
+                const auto trailing_bytes = data_in.gcount();
+                if (data_in.bad()) throw std::runtime_error("MTVZA dump read failed");
+                if (trailing_bytes) logger->warn("Ignored incomplete MTVZA dump frame: %d bytes", int(trailing_bytes));
+                sequence.finish();
                 data_in.close();
+                const std::string output_dir = d_output_file_hint.substr(0, d_output_file_hint.rfind('/'));
+                nlohmann::json quality = {{"instrument", "mtvza"}, {"channel_layout", "dump46"},
+                    {"lines", mtvza_lines}, {"incomplete_scans", sequence.incomplete_scans},
+                    {"rejected_frames", sequence.rejected_frames},
+                    {"status", mtvza_lines == 0 ? "no_data" : (sequence.incomplete_scans ? "partial" : "ok")},
+                    {"timestamp_source", "legacy_onboard_counter_conversion"}};
+                satdump::write_product_status(output_dir + "/decode-status.json",
+                    {{"schema", "satdump.decode-status/1"}, {"trailing_bytes", trailing_bytes}, {"instruments", {quality}}});
+                if (mtvza_lines == 0)
+                {
+                    mtvza_status = NO_DATA;
+                    throw std::runtime_error("MTVZA dump: no complete scans; product.cbor was not created");
+                }
 
 #if 0
             // Identify satellite, and apply per-sat settings...
@@ -225,7 +255,9 @@ namespace meteor
                 // Products dataset
                 satdump::ProductDataSet dataset;
                 dataset.satellite_name = sat_name;
-                dataset.timestamp = time(0); // avg_overflowless(msumr_timestamps);
+                std::vector<double> valid_times;
+                for (double t : timestamps) if (std::isfinite(t) && t > 0) valid_times.push_back(t);
+                dataset.timestamp = valid_times.empty() ? -1 : get_median(valid_times);
 
                 // MTVZA
                 {
@@ -240,11 +272,18 @@ namespace meteor
 
                     satdump::ImageProducts mtvza_products;
                     mtvza_products.instrument_name = "mtvza";
+                    mtvza_products.contents["channel_layout"] = "dump46";
+                    mtvza_products.contents["decode_quality"] = quality;
                     mtvza_products.has_timestamps = true;
                     mtvza_products.timestamp_type = satdump::ImageProducts::TIMESTAMP_LINE;
-                    mtvza_products.set_tle(satdump::general_tle_registry.get_from_norad(norad));
+                    if (dataset.timestamp > 0) mtvza_products.set_tle(satdump::general_tle_registry.get_from_norad_time(norad, dataset.timestamp));
                     mtvza_products.set_timestamps(timestamps);
-                    mtvza_products.set_proj_cfg(loadJsonFile(resources::getResourcePath("projections_settings/meteor_m2-3_mtvza_dump.json")));
+                    std::string satellite = d_parameters["satellite_number"].get<std::string>();
+                    std::transform(satellite.begin(), satellite.end(), satellite.begin(), ::tolower);
+                    const std::string projection = "projections_settings/meteor_" + satellite + "_mtvza_dump.json";
+                    if (dataset.timestamp > 0 && resources::resourceExists(projection))
+                        mtvza_products.set_proj_cfg(loadJsonFile(resources::getResourcePath(projection)));
+                    else logger->warn("MTVZA dump: matching geolocation unavailable; keeping unprojected channels");
 
                     for (int i = 0; i < 46; i++)
                         mtvza_products.images.push_back({"MTVZA-" + std::to_string(i + 1), std::to_string(i + 1), image::Image(mtvza_channels[i].data(), 16, 200, mtvza_lines, 1)});

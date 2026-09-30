@@ -1,18 +1,11 @@
-# Microwave Airmass
+# МТВЗА-ГЯ · комбинация 30/29/28
 
-This enhancement uses the two 183 GHz channels (±1 GHz and  ±3 GHz) as well as the 190 GHz channels to show an image of the airmass in the atmosphere.
+Экспериментальная визуализация цифровых отсчётов. Формула компонентов: `ch30, ch29, ch28`. После синтеза выполняется поканальная эквализация контраста.
 
-This enhancement is most useful to detect and analyze air circulation patterns in the troposphere.
+## Вход
 
-### Appearance
+Непустые каналы из `product.cbor` и связанные с ним растры. Идентификаторы `chN` относятся к нумерации конкретного набора, не к универсальной таблице частот. Раскладка записывается как `hrpt30` или `dump46`; для старых наборов она может быть неизвестна.
 
-Darker shades of black indicate precipitation.
-Brown indicates high levels of water vapor, blue medium levels, and white low levels
+## Ограничения
 
-### Intended usage
-
-All-weather meteorology.
-
-### Limitations
-
-Hard to interpret.
+Радиометрическая калибровка и восстановление физических величин не реализованы. Из оттенков нельзя получать интенсивность осадков, наличие града, сплочённость или толщину льда, влажность почвы и биомассу. Старое имя рецепта сохранено для совместимости, не как название измеряемой величины.

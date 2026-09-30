@@ -46,6 +46,8 @@ inline int main_reprocess(int argc, char *argv[])
         if (satdump::products_loaders.count(products->type) == 0)
             throw std::runtime_error("No product processor for " + products->type);
         satdump::products_loaders[products->type].processProducts(products.get(), directory.string());
+        if (products->type == "image" && products->contents.at("processing_result").at("status") != "ok")
+            throw std::runtime_error("Incomplete image processing; see processing-status.json");
         // Caller also verifies a fresh presentation PNG and its machine-readable passport.
         return 0;
     }

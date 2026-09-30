@@ -141,3 +141,5 @@ JSON, пришедший после публикации картинки, со�
 **Основание:** [candidate_paths, inventory, content_id, Worker.process](../../../services/station/station.py), [пример источников](../../../config/station/station.json), [reprocess](../../../src-cli/reprocess.h).
 
 [← Архитектура](DATAFLOW.md) · [Оглавление](README.md) · [Настройки →](CONFIGURATION.md)
+
+Контроль МТВЗА, обязательных приборов и неполных наборов: [обработка МТВЗА-ГЯ](MTVZA_PROCESSING.md).

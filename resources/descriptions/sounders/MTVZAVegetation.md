@@ -1,16 +1,11 @@
-# Vegetation
+# МТВЗА-ГЯ · комбинация 16/15/17
 
-This enhancement uses the MTVZA channels 16, 15 and 17 (53.3 GHz, 52.8 GHz and 53.8 GHz) to detect vegetation and snow.
+Экспериментальная визуализация цифровых отсчётов. Формула компонентов: `ch16, ch15, ch17`. После синтеза выполняется поканальная эквализация контраста.
 
-### Appearance
+## Вход
 
-High soil moisture appears as bluish green, low vegetation appears red, sea or lakes appear white with a yellowish tinge, snow appears bluish white.
+Непустые каналы из `product.cbor` и связанные с ним растры. Идентификаторы `chN` относятся к нумерации конкретного набора, не к универсальной таблице частот. Раскладка записывается как `hrpt30` или `dump46`; для старых наборов она может быть неизвестна.
 
-### Intended usage
+## Ограничения
 
-Agriculture, geology, soil nature analysis, desertification monitoring.
-
-### Limitations
-
-Uncalibrated.
-Relative, qualitative analysis only.
+Радиометрическая калибровка и восстановление физических величин не реализованы. Из оттенков нельзя получать интенсивность осадков, наличие града, сплочённость или толщину льда, влажность почвы и биомассу. Старое имя рецепта сохранено для совместимости, не как название измеряемой величины.

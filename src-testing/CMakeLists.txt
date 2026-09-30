@@ -31,3 +31,8 @@ target_link_libraries(satdump-city-names-runtime-test PUBLIC satdump_core)
 if(ENABLE_INSTALL)
     install(TARGETS satdump-city-names-runtime-test RUNTIME DESTINATION bin)
 endif()
+
+add_executable(satdump-mtvza-reader-test mtvza_reader_test.cpp
+    ../plugins/meteor_support/meteor/instruments/mtvza/mtvza_reader.cpp)
+target_include_directories(satdump-mtvza-reader-test PRIVATE src-core)
+target_link_libraries(satdump-mtvza-reader-test PRIVATE satdump_core)

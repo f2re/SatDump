@@ -8,8 +8,9 @@ namespace image
     void load_img(Image &img, std::string file)
     {
         std::ifstream file_sigature_src(file, std::ios::binary);
-        uint8_t signature[10];
+        uint8_t signature[10] = {};
         file_sigature_src.read((char *)signature, 10);
+        if (file_sigature_src.gcount() < 4) return;
         if (signature[0] == 0xFF && signature[1] == 0xD8)
             load_jpeg(img, file);
         else if (signature[0] == 0x89 && signature[1] == 0x50 && signature[2] == 0x4E && signature[3] == 0x47)
@@ -26,6 +27,7 @@ namespace image
 
     void load_img(Image &img, uint8_t *buffer, int size)
     {
+        if (!buffer || size < 4) return;
         if (buffer[0] == 0xFF && buffer[1] == 0xD8)
             load_jpeg(img, buffer, size);
         else if (buffer[0] == 0x89 && buffer[1] == 0x50 && buffer[2] == 0x4E && buffer[3] == 0x47)

@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 import control
+import product_quality
 
 LOG = logging.getLogger('satdump-board')
 
@@ -64,6 +65,7 @@ def install_adapter(station, ui_root=None):
                 new_patch = copy.deepcopy(settings['processing'])
                 new_patch.setdefault('satdump_general', {})['tle_update_interval'] = {'value': 'Never'}
                 new_patch['satdump_general']['log_to_file'] = {'value': False}
+                new_patch['satdump_general']['auto_process_products'] = {'value': True}
                 applied = self.data / 'state/applied-control.json'
                 previous_key = control.read(applied).get('processing_key') if applied.is_file() else control.Store.processing_key(self.managed.initial())
                 next_key = control.Store.processing_key(settings)
@@ -113,7 +115,7 @@ def install_adapter(station, ui_root=None):
             """
             job_id = job['id']
             final = self.data / 'public/items' / job_id
-            if (final / 'item.json').is_file() and station.read_json(final / 'item.json')['job_id'] == job_id:
+            if self.publication_ready(job_id):
                 return
             source = self.sources[job['source']]
             path = Path(job['path'])
@@ -160,30 +162,46 @@ def install_adapter(station, ui_root=None):
             log_path = self.data / 'logs' / (job_id + '.log')
             if log_path.exists():
                 os.replace(str(log_path), str(log_path) + '.previous')
+            native_errors = []
             if source['kind'] == 'product':
+                for old_report in incoming.rglob('processing-status.json'):
+                    old_report.unlink()
                 for product in sorted(incoming.rglob('product.cbor')):
                     for old in product.parent.glob('*_annotated*'):
                         if old.is_file():
                             old.unlink()
-                    self.native([self.engine, 'reprocess', str(product.parent), str(patch_path)], work, log_path)
+                    try:
+                        self.native([self.engine, 'reprocess', str(product.parent), str(patch_path)], work, log_path)
+                    except station.NativeProcessError as error:
+                        if station.STOP.is_set(): raise
+                        native_errors.append(str(error))
             elif source['kind'] == 'pipeline':
                 result = work / 'decoded'
                 argv = [self.engine, source['pipeline'], source['input_level'], str(incoming / path.name), str(result)]
-                self.native(argv + source.get('options', []) + ['--offline', '--processing_config', str(patch_path)], work, log_path)
+                try:
+                    self.native(argv + source.get('options', []) + ['--offline', '--processing_config', str(patch_path)], work, log_path)
+                except station.NativeProcessError as error:
+                    if station.STOP.is_set(): raise
+                    native_errors.append(str(error))
             if source['kind'] == 'image':
                 images = [incoming / path.name]
             else:
                 images = sorted(p for p in result.rglob('*.png') if p.is_file() and
                                 p.name.endswith(('_annotated_presentation.png', '_annotated_minimal.png')))
-            if not images:
-                raise RuntimeError('No native presentation PNG/JSON; inspect recipe and native log')
+            quality = product_quality.assess(result, source, images, station.read_json, native_errors)
+            station.atomic_json(self.data / 'logs' / (job_id + '.quality.json'), quality)
+            if not images or quality['missing_required']:
+                missing = ', '.join(quality['missing_required'])
+                raise RuntimeError('No required native presentation PNG/JSON: ' + (missing or 'all products') + '; inspect quality report')
             if len(images) > 1000:
                 raise ValueError('More than 1000 presentation products in one pass')
             publication = work / 'publication'
             publication.mkdir()
             entries = [self.prepare_image(p, publication, job_id, i, source, file_time, source['kind'] != 'image')
                        for i, p in enumerate(images)]
-            station.atomic_json(publication / 'item.json', {'job_id': job_id, 'entries': entries})
+            for entry in entries:
+                entry['processing_quality'] = quality
+            station.atomic_json(publication / 'item.json', {'job_id': job_id, 'entries': entries, 'quality': quality})
             archive = self.data / 'archive' / job_id
             if self.cfg.get('archive_science', True) and not archive.exists():
                 station.move_tree(result, archive, lambda: self.heartbeat('archiving'))

@@ -7,6 +7,7 @@ The root-owned base configuration/policy remain the privilege boundary.
 """
 from __future__ import print_function
 import argparse
+import product_quality
 import copy
 import fcntl
 import hashlib
@@ -37,7 +38,7 @@ MODES = ('auto', 'keep', 'none', 'source', 'flip_vertical', 'vertical',
 COLORS = ('panel', 'panel_secondary', 'border', 'text', 'muted_text', 'accent',
           'warning', 'error', 'red_component', 'green_component', 'blue_component')
 SOURCE_KEYS = ('id', 'kind', 'path', 'enabled', 'patterns', 'require_ready',
-               'satellite', 'instrument', 'pipeline', 'input_level', 'options')
+               'satellite', 'instrument', 'pipeline', 'input_level', 'options', 'required_instruments')
 PIPE_OPTIONS = {'--samplerate': r'[0-9]{1,10}', '--baseband_format': r'(cs8|cs16|cf32|cu8|s8|s16|f32|u8)',
                 '--dc_block': r'(true|false)', '--iq_swap': r'(true|false)',
                 '--freq_shift': r'-?[0-9]{1,10}'}
@@ -263,6 +264,7 @@ class Store:
         seen, paths = set(), []
         for source in s['sources']:
             keys(source, SOURCE_KEYS, 'source')
+            product_quality.validate_required(source)
             require(all(k in source for k in ('id', 'kind', 'path')), 'Нужны id, kind и path')
             require(isinstance(source['id'], str) and re.match(r'^[A-Za-z0-9_-]{1,64}$', source['id']) and source['id'] not in seen, 'Неуникальный/небезопасный id')
             seen.add(source['id'])

@@ -1,16 +1,11 @@
-# Soil Moisture
+# МТВЗА-ГЯ · комбинация 14/13/12
 
-This enhancement uses the MTVZA channels 14, 13 and 12 (48 GHz horizontal and vertical, and 42 GHz horizontal) to detect changes in soil moisture.
+Экспериментальная визуализация цифровых отсчётов. Формула компонентов: `ch14, ch13, ch12`. После синтеза выполняется поканальная эквализация контраста.
 
-### Appearance
+## Вход
 
-High vegetation appears as green, low soil moisture as purple, sea or lakes appear white.
+Непустые каналы из `product.cbor` и связанные с ним растры. Идентификаторы `chN` относятся к нумерации конкретного набора, не к универсальной таблице частот. Раскладка записывается как `hrpt30` или `dump46`; для старых наборов она может быть неизвестна.
 
-### Intended usage
+## Ограничения
 
-Agriculture, geology, soil nature analysis, desertification monitoring.
-
-### Limitations
-
-Uncalibrated.
-Relative, qualitative analysis only.
+Радиометрическая калибровка и восстановление физических величин не реализованы. Из оттенков нельзя получать интенсивность осадков, наличие града, сплочённость или толщину льда, влажность почвы и биомассу. Старое имя рецепта сохранено для совместимости, не как название измеряемой величины.

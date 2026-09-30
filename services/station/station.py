@@ -34,9 +34,15 @@ APP = Path(__file__).resolve().parent
 if str(APP) not in sys.path:
     sys.path.insert(0, str(APP))
 import timebase
+import product_quality
 STOP = threading.Event()
 IMAGE_EXT = (".png", ".jpg", ".jpeg")
 SCHEMAS = ("satdump.presentation/1", "satdump.presentation/2")
+
+
+class NativeProcessError(RuntimeError):
+    """A finished process returned an error; unlike a timeout it may have valid outputs."""
+    pass
 
 
 class InputChanged(ValueError):
@@ -152,6 +158,7 @@ def load_config(path):
         if not re.match(r"^[a-zA-Z0-9_-]+$", source["id"]) or source["id"] in ids:
             raise ValueError("Source ids must be unique safe identifiers")
         ids.add(source["id"])
+        product_quality.validate_required(source)
         if source["kind"] not in ("image", "product", "pipeline"):
             raise ValueError("Unknown source kind")
         root = Path(source["path"])
@@ -288,11 +295,16 @@ class Worker:
         self.db.commit()
         self.seen = {}
         self.source_errors = {}
+        try:
+            self.last_result = read_json(self.data / "state/last-result.json")
+        except (OSError, ValueError):
+            self.last_result = {}
         self.sources = {s["id"]: s for s in cfg["sources"] if s.get("enabled", True)}
         patch_path = Path(cfg["_config_dir"]) / cfg.get("processing_config", "processing.json")
         self.patch = read_json(patch_path)
         self.patch.setdefault("satdump_general", {})["tle_update_interval"] = {"value": "Never"}
         self.patch["satdump_general"]["log_to_file"] = {"value": False}
+        self.patch["satdump_general"]["auto_process_products"] = {"value": True}
         self.engine = str(Path(cfg.get("engine", "/opt/satdump-station/current/engine/satdump")).resolve())
 
     def fingerprint(self, source, signature):
@@ -303,9 +315,32 @@ class Worker:
     def close(self):
         self.db.close()
 
+    def publication_complete(self, job_id):
+        return product_quality.publication_complete(self.data / "public", job_id, read_json)
+
+    def publication_ready(self, job_id):
+        if self.publication_complete(job_id):
+            return True
+        final = self.data / "public/items" / job_id
+        if final.exists():
+            quarantine = self.data / "work" / ("quarantine-" + job_id + "-" + uuid.uuid4().hex)
+            move_tree(final, quarantine)
+        return False
+
+    def remember_result(self, job, state, quality=None):
+        result = {"job_id": job["id"], "source": job["source"], "state": state}
+        if quality:
+            result.update(quality=quality["status"], instruments=quality["instruments"],
+                          warning_count=len(quality["warnings"]))
+        self.last_result = result
+        atomic_json(self.data / "state/last-result.json", result)
+
     def recover(self):
         # Called only after the process lock has been acquired by main().
         self.db.execute("UPDATE jobs SET state='pending', next_at=0 WHERE state='running'")
+        for row in self.db.execute("SELECT id FROM jobs WHERE state='done'").fetchall():
+            if not self.publication_complete(row['id']):
+                self.db.execute("UPDATE jobs SET state='pending',attempts=0,next_at=0,error='publication_missing' WHERE id=?", (row['id'],))
         self.db.commit()
         self.catalog()
 
@@ -378,8 +413,10 @@ class Worker:
                     if log_path.stat().st_size > self.cfg["max_log_mb"] * 1024 ** 2:
                         raise RuntimeError("Processing log exceeded limit")
                     STOP.wait(1)
+                if proc.returncode < 0:
+                    raise RuntimeError("SatDump terminated by signal " + str(-proc.returncode))
                 if proc.returncode:
-                    raise RuntimeError("SatDump exit code " + str(proc.returncode))
+                    raise NativeProcessError("SatDump exit code " + str(proc.returncode))
             finally:
                 if proc.poll() is None:
                     os.killpg(proc.pid, signal.SIGTERM)
@@ -392,9 +429,8 @@ class Worker:
     def process(self, job):
         job_id = job["id"]
         final = self.data / "public/items" / job_id
-        if (final / "item.json").is_file():
-            if read_json(final / "item.json")["job_id"] == job_id:
-                return  # Recovery after atomic publication but before DB commit.
+        if self.publication_ready(job_id):
+            return  # Fully written publication before a missing SQLite commit.
         source = self.sources[job["source"]]
         path = Path(job["path"])
         ready = path / ".ready" if source["kind"] == "product" else Path(str(path) + ".ready")
@@ -548,7 +584,7 @@ class Worker:
         counts = dict(self.db.execute("SELECT state, count(*) FROM jobs GROUP BY state").fetchall())
         status = timebase.heartbeat_fields()
         status.update(phase=phase, queue=counts, sources=self.source_errors,
-                      stale_after=max(60, self.cfg["poll_seconds"] * 4))
+                      stale_after=max(60, self.cfg["poll_seconds"] * 4), last_result=self.last_result)
         atomic_json(self.data / "public/worker.json", status)
 
     def tick(self):
@@ -563,6 +599,8 @@ class Worker:
             try:
                 self.process(job)
                 self.db.execute("UPDATE jobs SET state='done',error='',finished=? WHERE id=?", (time.time(), job["id"]))
+                quality = read_json(self.data / "public/items" / job["id"] / "item.json").get("quality") if self.publication_complete(job["id"]) else None
+                self.remember_result(job, "done", quality)
                 LOG.info("Published %s", job["id"])
             except Exception as error:
                 LOG.exception("Processing failed: %s", job["id"])
@@ -572,6 +610,11 @@ class Worker:
                 self.db.execute("UPDATE jobs SET state=?,error=?,next_at=?,retry_boot=?,retry_at=? WHERE id=?",
                                 (state, str(error)[:2000], time.time() + delay, self.boot_scope,
                                  time.monotonic() + delay, job["id"]))
+                if STOP.is_set():
+                    self.db.execute("UPDATE jobs SET state='pending',attempts=?,next_at=0 WHERE id=?",
+                                    (job["attempts"], job["id"]))
+                    state = "pending"
+                self.remember_result(job, state)
             self.db.commit()
             self.catalog()
         self.heartbeat()

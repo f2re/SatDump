@@ -86,6 +86,7 @@ enum instrument_status_t
     PROCESSING,
     SAVING,
     DONE,
+    NO_DATA,
 };
 
 void drawStatus(instrument_status_t status);

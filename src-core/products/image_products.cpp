@@ -1,4 +1,6 @@
 #include "image_products.h"
+#include "product_status.h"
+#include <exception>
 #include "logger.h"
 #include "core/config.h"
 #include "common/image/composite.h"
@@ -28,6 +30,13 @@ namespace satdump
 {
     void ImageProducts::save(std::string directory)
     {
+        if (instrument_name == "mtvza" && !d_no_not_save_images)
+        {
+            if (images.empty()) throw std::runtime_error("No image channels to save");
+            for (const auto &holder : images)
+                if (!holder.image.size() || !holder.image.width() || !holder.image.height())
+                    throw std::runtime_error("Empty channel: " + instrument_name + "/" + holder.channel_name);
+        }
         type = "image";
         contents["has_timestamps"] = has_timestamps;
         if (has_timestamps)
@@ -50,10 +59,13 @@ namespace satdump
         }
 
         std::mutex savemtx;
+        std::exception_ptr save_error;
 #pragma omp parallel for
         for (int64_t c = 0; c < (int64_t)images.size(); c++)
         {
-            savemtx.lock();
+            try
+            {
+            std::unique_lock<std::mutex> guard(savemtx);
             if (images[c].filename.find(".png") == std::string::npos &&
                 images[c].filename.find(".jpeg") == std::string::npos &&
                 images[c].filename.find(".jpg") == std::string::npos &&
@@ -81,10 +93,21 @@ namespace satdump
             if (images[c].abs_index != -1)
                 contents["images"][c]["abs_index"] = images[c].abs_index;
 
-            savemtx.unlock();
+            guard.unlock();
             if (!save_as_matrix && !d_no_not_save_images)
-                image::save_img(images[c].image, directory + "/" + images[c].filename);
+            {
+                if (images[c].image.size())
+                    save_checked_image(images[c].image, directory + "/" + images[c].filename);
+                else image::save_img(images[c].image, directory + "/" + images[c].filename);
+            }
+            }
+            catch (...)
+            {
+                std::lock_guard<std::mutex> guard(savemtx);
+                if (!save_error) save_error = std::current_exception();
+            }
         }
+        if (save_error) std::rethrow_exception(save_error);
 
         if (save_as_matrix && !images.empty())
         {
@@ -92,7 +115,7 @@ namespace satdump
             logger->debug("Using size %d", size);
             image::Image image_all = image::make_manyimg_composite(size, size, images.size(), [this](int c)
                                                                    { return images[c].image; });
-            image::save_img(image_all, directory + "/" + images[0].filename);
+            save_checked_image(image_all, directory + "/" + images[0].filename);
             savemtx.lock();
             contents["img_matrix_size"] = size;
             savemtx.unlock();
@@ -146,6 +169,8 @@ namespace satdump
         std::string tmp_path = std::filesystem::temp_directory_path().string();
 #endif
 
+        images.clear();
+        contents["load_errors"] = nlohmann::json::array();
         image::Image img_matrix;
         if (save_as_matrix)
         {
@@ -196,6 +221,9 @@ namespace satdump
             else
             {
                 int m_size = contents["img_matrix_size"].get<int>();
+                if (m_size <= 0 || (!d_no_not_load_images &&
+                    (img_matrix.width() < size_t(m_size) || img_matrix.height() < size_t(m_size))))
+                    throw std::runtime_error("Missing or invalid channel matrix: " + file);
                 int img_width = img_matrix.width() / m_size;
                 int img_height = img_matrix.height() / m_size;
                 int pos_x = c % m_size;
@@ -219,6 +247,11 @@ namespace satdump
             if (contents["images"][c].contains("abs_index"))
                 img_holder.abs_index = contents["images"][c]["abs_index"].get<int>();
 
+            if (!d_no_not_load_images && !img_holder.image.size())
+            {
+                logger->error("Missing or empty channel: %s", img_holder.filename.c_str());
+                contents["load_errors"].push_back(img_holder.filename);
+            }
             images.push_back(img_holder);
         }
     }
@@ -456,7 +489,7 @@ namespace satdump
 
         for (size_t i = 0; i < str_to_find_channels.size() - 1; i++)
         {
-            if (str_to_find_channels[i + 0] == 'c' && str_to_find_channels[i + 1] == 'c' && str_to_find_channels[i + 2] == 'h')
+            if (i + 2 < str_to_find_channels.size() && str_to_find_channels[i + 0] == 'c' && str_to_find_channels[i + 1] == 'c' && str_to_find_channels[i + 2] == 'h')
             {
                 std::string final_ch;
                 int fpos = i;
@@ -515,6 +548,7 @@ namespace satdump
         for (int i = 0; i < (int)product.images.size(); i++)
         {
             auto &img = product.images[i];
+            if (!product.d_no_not_load_images && !img.image.size()) continue;
             std::string equ_str = "ch" + img.channel_name;
             std::string equ_str_calib = "cch" + img.channel_name;
 
@@ -572,6 +606,7 @@ namespace satdump
         for (int i = 0; i < (int)product.images.size(); i++)
         {
             auto &img = product.images[i];
+            if (!product.d_no_not_load_images && !img.image.size()) continue;
             std::string equ_str = "ch" + img.channel_name;
             std::string equ_str_calib = "cch" + img.channel_name;
 

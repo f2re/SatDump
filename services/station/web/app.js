@@ -26,6 +26,9 @@
       $('hero').hidden = false; $('empty').hidden = true; $('caption').hidden = false; $('loading').hidden = true;
       text('title', item.title); text('instrument', [item.satellite, item.instrument].filter(Boolean).join(' / '));
       text('time', item.acquisition_time ? 'Наблюдение: ' + item.acquisition_time : 'Время наблюдения не указано · файл изменён ' + displayTime(item.file_mtime));
+      const quality = item.processing_quality;
+      text('quality', quality && quality.status === 'partial' ?
+        'Неполный набор продукции · подробности в паспорте' : '');
       text('counter', (index + 1) + ' / ' + items.length);
       $('original').href = safeAsset(item.original); $('passport').href = safeAsset(item.metadata);
       text('metadata', 'Чтение паспорта…');
@@ -36,7 +39,7 @@
         const response = await fetch(safeAsset(item.metadata), {cache: 'force-cache'});
         if (!response.ok) throw new Error('Паспорт недоступен');
         const passport = await response.json();
-        if (own === token) text('metadata', (item.native_presentation ? '' : 'Готовое изображение: спектральные каналы и физический смысл цветов не подтверждены.\n\n') + JSON.stringify(passport, null, 2));
+        if (own === token) text('metadata', (item.native_presentation ? '' : 'Готовое изображение: спектральные каналы и физический смысл цветов не подтверждены.\n\n') + (item.processing_quality ? JSON.stringify(item.processing_quality, null, 2) + '\n\n' : '') + JSON.stringify(passport, null, 2));
       } catch (error) { if (own === token) text('metadata', error.message); }
     };
     image.onerror = function () { if (own === token) { $('loading').hidden = false; text('loading', 'Не удалось загрузить снимок. Предыдущий кадр сохранён.'); schedule(); } };
@@ -93,6 +96,8 @@
       const response = await fetch('health.json', {cache: 'no-store'});
       const health = await response.json();
       text('health', !health.worker_alive ? 'Воркер не отвечает · архив доступен' : Object.keys(health.sources || {}).length ? 'Источник недоступен или недостаточно места' : 'Воркер работает · ошибок: ' + ((health.queue || {}).failed || 0));
+      if (health.worker_alive && health.last_result && health.last_result.quality === 'partial')
+        text('health', 'Последний набор продукции неполный · проверьте приборы и журнал задания');
     } catch (error) { text('health', 'Нет связи с сервером · показ сохранён'); }
     setTimeout(refresh, 15000);
   }

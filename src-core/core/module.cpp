@@ -125,6 +125,8 @@ void drawStatus(instrument_status_t status)
         ImGui::TextColored(style::theme.light_green, "Saving...");
     else if (status == DONE)
         ImGui::TextColored(style::theme.green, "Done");
+    else if (status == NO_DATA)
+        ImGui::TextColored(style::theme.yellow, "No data");
     else
         ImGui::TextColored(style::theme.red, "Invalid!");
 };

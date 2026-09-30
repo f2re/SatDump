@@ -240,10 +240,10 @@ namespace
         PresentationSpec spec = make_spec(source, composite, nlohmann::json::object(), "Experimental classifier");
         return spec.pass.instrument == "МТВЗА-ГЯ" &&
                spec.legend.kind == LegendKind::None &&
-               spec.legend.title == "Как читать продукт" &&
-               has_note(spec, "алгоритмом C++") &&
+               spec.legend.title == "Компоненты изображения" &&
+               has_note(spec, "не являются классами") &&
                has_detail(spec, "Обработка", "C++") &&
-               has_detail(spec, "Данные", "C++");
+               has_detail(spec, "Данные", "Некалиброванная");
     }
 }
 
