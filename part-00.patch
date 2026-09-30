@@ -1,0 +1,353 @@
+diff --git a/docs/navigation.json b/docs/navigation.json
+index d314de9b9fa83325aa862b1ff2771e751125b1be..ccd7ef162bc9b9d73dd2096a7c65843760e92372 100644
+--- a/docs/navigation.json
++++ b/docs/navigation.json
+@@ -22,6 +22,7 @@
+     "docs/ru/station/INFRASTRUCTURE_PLAN.md",
+     "docs/ru/station/INPUTS.md",
+     "docs/ru/station/INSTALL.md",
++    "docs/ru/station/MTVZA_PROCESSING.md",
+     "docs/ru/station/OPERATIONS.md",
+     "docs/ru/station/PRODUCTS.md",
+     "docs/ru/station/README.md",
+diff --git a/docs/ru/station/INPUTS.md b/docs/ru/station/INPUTS.md
+index b8d9fca44433bac1dc911ded38e889de88ff261d..4ce1c9a90d2d9d53594f8f79ecbf6bcf4d51b837 100644
+--- a/docs/ru/station/INPUTS.md
++++ b/docs/ru/station/INPUTS.md
+@@ -141,3 +141,5 @@ JSON, пришедший после публикации картинки, со
+ **Основание:** [candidate_paths, inventory, content_id, Worker.process](../../../services/station/station.py), [пример источников](../../../config/station/station.json), [reprocess](../../../src-cli/reprocess.h).
+ 
+ [← Архитектура](DATAFLOW.md) · [Оглавление](README.md) · [Настройки →](CONFIGURATION.md)
++
++Контроль МТВЗА, обязательных приборов и неполных наборов: [обработка МТВЗА-ГЯ](MTVZA_PROCESSING.md).
+diff --git a/docs/ru/station/MTVZA_PROCESSING.md b/docs/ru/station/MTVZA_PROCESSING.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f1e89cca3cdb2422170f208e4b2e603ea808a3b8
+--- /dev/null
++++ b/docs/ru/station/MTVZA_PROCESSING.md
+@@ -0,0 +1,58 @@
++# МТВЗА-ГЯ: обработка и диагностика
++
++[Источники](INPUTS.md) · [Конфигурация](CONFIGURATION.md) · [UTC](UTC_AND_SCHEDULER.md)
++
++## Вход и выход
++
++Для микроволнового радиометра используется тракт `meteor_hrpt` либо `meteor_m_mtvza_dump` для соответствующего формата выгрузки. LRPT МСУ-МР не содержит обязательного набора МТВЗА. Сохранённый продукт передаётся целиком: `product.cbor` и растры каналов, на которые он ссылается.
++
++В HRPT принимаются только полные последовательности счётчиков 2–26. Пропуск, повтор или перестановка кадра отбрасывают незавершённую строку; следующая полная строка принимается. Промежуточные 200 отсчётов накапливаются отдельно, поэтому они не перезаписывают соседнюю выходную строку. Сохранено прежнее 100-пиксельное окно и существующая геометрия HRPT. Расширение окна до 200 пикселей требует отдельной проверки геопривязки.
++
++В выгрузке X-диапазона принимаются полные последовательности 1–51. Повтор завершающего кадра не создаёт новую строку. Неполный последний кадр файла не обрабатывается повторно из оставшихся байтов буфера. Результаты двух трактов помечаются `channel_layout=hrpt30` и `dump46`; номера каналов нельзя считать общей таблицей частот.
++
++При отсутствии полных строк МТВЗА его `product.cbor` не создаётся, состояние прибора — `no_data`. При отсутствии данных всех приборов команда завершается с ошибкой. При повреждении части записи сохраняются полные строки с предупреждением о пропусках.
++
++## Отчёты
++
++`decode-status.json` рядом с `dataset.json` содержит число полных строк, пропущенных сканов, отвергнутых кадров и остаточных байтов. `processing-status.json` в каталоге прибора содержит созданные, пропущенные и неуспешные композиции. `dataset-processing.json` сохраняет исход обработки каждого продукта; отказ одного прибора не препятствует обработке остальных.
++
++CBOR не считается доказательством готовности изображений. Пустые/нечитаемые каналы отмечаются отдельно. `satdump reprocess` возвращает ненулевой код при отсутствии продукции или частичной ошибке. Уже полученные пригодные файлы сохраняются. Метаданные и непустые растры записываются через временный файл; ошибка записи не превращается в успешный паспорт. Это защита от незавершённой записи, не замена резервированию при потере питания.
++
++## Контроль полноты на станции
++
++В элемент источника `sources` можно добавить:
++
++```json
++{
++  "id": "meteor_channels",
++  "kind": "product",
++  "path": "/var/lib/satdump-station/inbox/products",
++  "require_ready": true,
++  "required_instruments": ["mtvza"]
++}
++```
++
++Используются машинные идентификаторы, например `mtvza` и `msu_mr`, а не подписи карточек. Список задаётся в центральной конфигурации, включая активную ревизию API. Если обязательный прибор не дал проверяемых презентационных изображений, задание повторяется с существующими ограничениями очереди, затем переходит в `failed`. Изображения другого прибора не скрывают это отсутствие. После исправления причины доступен обычный `retry`.
++
++При пустом списке обязательных приборов пригодная часть набора публикуется с `processing_quality.status=partial` и предупреждением в галерее. Для старого движка без отчётов полнота обозначается как непроверенная. Самостоятельная подмена прибора по имени каталога не выполняется.
++
++Подробный отчёт станции: `logs/<job_id>.quality.json`. Краткое состояние последнего задания доступно в `worker.json` и `/health.json` как `last_result`; абсолютные пути и текст внутренних исключений в него не включаются.
++
++Истечение тайм-аута и превышение лимита журнала не превращаются в успешную частичную публикацию. При штатной остановке службы задание возвращается в очередь без расходования попытки. При восстановлении очереди проверяется существование всех файлов опубликованного набора. Неполный набор переносится в приватный `work/quarantine-*`, затем восстанавливается из доступного источника; запись задания и его идентификатор сохраняются. Если источник удалён, восстановить потерянные данные автоматически невозможно. Карантин очищается администратором после проверки.
++
++## Время и научная интерпретация
++
++В выгрузке МТВЗА время набора вычисляется из доступных бортовых отметок, а не из `time(0)`. Если отметки отсутствуют, сохраняется неизвестное время. Имеющиеся преобразования бортового счётчика для М2-3/М2-4 помечены как `legacy_onboard_counter_conversion`: их точность требует проверки на реальной записи. Проекция выбирается только для указанного аппарата и только при наличии соответствующего файла; неподходящая проекция другого аппарата не подставляется.
++
++Пять рецептов с прежними именами Soil Moisture, Vegetation, Microwave Airmass, Rainfall и Sea Ice сохранены для совместимости. Они выполняют комбинацию цифровых отсчётов и эквализацию контраста. Радиометрическая калибровка и алгоритмы восстановления физических величин не реализованы. Оформление показывает формулы и экспериментальный статус, а не классы осадков, града, сплочённость льда, влажность или биомассу. Защита действует и при старой пользовательской категорической легенде.
++
++## Проверки
++
++Из корня исходников:
++
++```bash
++python3 -m unittest discover -s tests/station -v
++python3 scripts/docs/check.py
++```
++
++После сборки с `BUILD_TESTING=ON` выполняются `satdump-mtvza-reader-test` и `tests/meteor/test_native_products.py`. Они проверяют оба порядка байтов, два разных соседних скана, пропуски, дубли, восстановление, отсутствие каналов, HRPT и выгрузку X-диапазона. Данные синтетические: эти тесты не подтверждают калибровку, физическую интерпретацию цветов и точность геопривязки реальных наблюдений.
+diff --git a/plugins/meteor_support/meteor/instruments/mtvza/mtvza_reader.cpp b/plugins/meteor_support/meteor/instruments/mtvza/mtvza_reader.cpp
+index 4ef07888307214344dd9af14c6e4fc0ed5535c3e..2d2f1cae31152dc281871d6d2b7c5a918e473eb3 100644
+--- a/plugins/meteor_support/meteor/instruments/mtvza/mtvza_reader.cpp
++++ b/plugins/meteor_support/meteor/instruments/mtvza/mtvza_reader.cpp
+@@ -1,70 +1,52 @@
+ #include "mtvza_reader.h"
++#include <stdexcept>
+ 
+-namespace meteor
++namespace meteor { namespace mtvza {
++void MTVZAReader::parse_samples(uint8_t *data, int ch_start, int offset, int ch_cnt, int nsamples, int counter)
+ {
+-    namespace mtvza
+-    {
+-        MTVZAReader::MTVZAReader()
+-        {
+-            for (int i = 0; i < 30; i++)
+-                channels[i].resize(100 * 2);
+-            lines = 0;
+-        }
+-
+-        MTVZAReader::~MTVZAReader()
++    for (int ch = 0; ch < ch_cnt; ++ch)
++        for (int i = 0; i < 4; ++i)
+         {
+-            for (int i = 0; i < 30; i++)
+-                channels[i].clear();
++            const int sample = ch * nsamples + offset + (nsamples == 2 ? i / 2 : nsamples == 4 ? i : 0);
++            pending[ch_start + ch][counter * 8 + i] =
++                (data[8 + sample * 2 + (endian_mode ? 0 : 1)] << 8 |
++                 data[8 + sample * 2 + (endian_mode ? 1 : 0)]) - 32768;
++            pending[ch_start + ch][counter * 8 + 4 + i] =
++                (data[128 + sample * 2 + (endian_mode ? 0 : 1)] << 8 |
++                 data[128 + sample * 2 + (endian_mode ? 1 : 0)]) - 32768;
+         }
++}
+ 
+-        void MTVZAReader::parse_samples(uint8_t *data, int ch_start, int offset, int ch_cnt, int nsamples, int counter)
+-        {
+-            for (int ch = 0; ch < ch_cnt; ch++)
+-            {
+-                for (int i = 0; i < 4; i++)
+-                {
+-                    int sample_position = ch * nsamples + offset;
+-                    if (nsamples == 2)
+-                        sample_position += i / 2;
+-                    else if (nsamples == 4)
+-                        sample_position += i;
+-
+-                    channels[ch_start + ch][lines * 100 + counter * 8 + 0 + i] = (data[8 + sample_position * 2 + (endian_mode ? 0 : 1)] << 8 | data[8 + sample_position * 2 + (endian_mode ? 1 : 0)]) - 32768;
+-                    channels[ch_start + ch][lines * 100 + counter * 8 + 4 + i] = (data[128 + sample_position * 2 + (endian_mode ? 0 : 1)] << 8 | data[128 + sample_position * 2 + (endian_mode ? 1 : 0)]) - 32768;
+-                }
+-            }
+-        }
+-
+-        void MTVZAReader::work(uint8_t *data)
+-        {
+-            if (data[endian_mode ? 5 : 4] != 255)
+-                return;
+-
+-            int counter = data[endian_mode ? 4 : 5]; // Counter, scan position
+-
+-            if (counter > 26 || counter < 2)
+-                return;
+-
+-            parse_samples(data, 0, 0, 5, 1, counter - 2);   // Parse 5 low-resolution channels
+-            parse_samples(data, 5, 5, 2, 4, counter - 2);   // Parse 2 full-resolution channels
+-            parse_samples(data, 7, 13, 23, 2, counter - 2); // Parse 23 medium-resolution channels
+-
+-            // printf("%d\n", counter);
+-
+-            // Frame counter
+-            if (counter == 26)
+-            {
+-                timestamps.push_back(latest_msumr_timestamp);
+-                lines++;
+-            }
+-
+-            for (int channel = 0; channel < 30; channel++)
+-                channels[channel].resize((lines + 2) * 200);
+-        }
+-
+-        image::Image MTVZAReader::getChannel(int channel)
+-        {
+-            return image::Image(channels[channel].data(), 16, 100, lines, 1);
+-        }
++void MTVZAReader::work(uint8_t *data)
++{
++    if (data[endian_mode ? 5 : 4] != 255)
++    {
++        ++sequence.rejected_frames;
++        sequence.finish();
++        return;
++    }
++    const int counter = data[endian_mode ? 4 : 5];
++    if (!sequence.accept(counter)) return;
++    if (counter == 2)
++        for (auto &channel : pending) channel.fill(0);
++    parse_samples(data, 0, 0, 5, 1, counter - 2);
++    parse_samples(data, 5, 5, 2, 4, counter - 2);
++    parse_samples(data, 7, 13, 23, 2, counter - 2);
++    if (counter == 26)
++    {
++        // Preserve the historical 100-pixel HRPT window and its projection.
++        // Never write the 200-sample pending scan over an adjacent output row.
++        for (int ch = 0; ch < 30; ++ch)
++            channels[ch].insert(channels[ch].end(), pending[ch].begin(), pending[ch].begin() + 100);
++        timestamps.push_back(latest_msumr_timestamp);
++        ++lines;
+     }
+-}
+\ No newline at end of file
++}
++
++image::Image MTVZAReader::getChannel(int channel)
++{
++    if (channel < 0 || channel >= 30) throw std::out_of_range("MTVZA channel");
++    if (!lines) return image::Image();
++    return image::Image(channels[channel].data(), 16, 100, lines, 1);
++}
++} }
+diff --git a/plugins/meteor_support/meteor/instruments/mtvza/mtvza_reader.h b/plugins/meteor_support/meteor/instruments/mtvza/mtvza_reader.h
+index f9cd6749958069469da9d5de325fc53bc3a72976..2fd46b84796f4232d68c0bbf0779b86777185883 100644
+--- a/plugins/meteor_support/meteor/instruments/mtvza/mtvza_reader.h
++++ b/plugins/meteor_support/meteor/instruments/mtvza/mtvza_reader.h
+@@ -1,32 +1,26 @@
+ #pragma once
+-
++#include <array>
+ #include <cstdint>
+ #include <vector>
+ #include "common/image/image.h"
++#include "scan_sequence.h"
+ 
+-namespace meteor
++namespace meteor { namespace mtvza {
++class MTVZAReader
+ {
+-    namespace mtvza
+-    {
+-        class MTVZAReader
+-        {
+-        private:
+-            std::vector<uint16_t> channels[30];
+-            void parse_samples(uint8_t *data, int ch_start, int offset, int ch_cnt, int nsamples, int counter);
+-
+-        public:
+-            MTVZAReader();
+-            ~MTVZAReader();
+-
+-            int lines;
+-            std::vector<double> timestamps;
+-
+-            double latest_msumr_timestamp = -1;
+-
+-            void work(uint8_t *data);
+-            image::Image getChannel(int channel);
+-
+-            bool endian_mode = false;
+-        };
+-    }
+-}
+\ No newline at end of file
++    std::vector<uint16_t> channels[30];
++    std::array<std::array<uint16_t, 200>, 30> pending{};
++    void parse_samples(uint8_t *, int, int, int, int, int);
++public:
++    MTVZAReader() = default;
++    ~MTVZAReader() = default;
++    int lines = 0;
++    std::vector<double> timestamps;
++    ScanSequence sequence{2, 26};
++    double latest_msumr_timestamp = -1;
++    void work(uint8_t *data);
++    void finish() { sequence.finish(); }
++    image::Image getChannel(int channel);
++    bool endian_mode = false;
++};
++} }
+diff --git a/plugins/meteor_support/meteor/instruments/mtvza/scan_sequence.h b/plugins/meteor_support/meteor/instruments/mtvza/scan_sequence.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..4c280c21d1ee74fe0903910e0b0e993487ba8903
+--- /dev/null
++++ b/plugins/meteor_support/meteor/instruments/mtvza/scan_sequence.h
+@@ -0,0 +1,33 @@
++#pragma once
++#include <cstddef>
++
++namespace meteor { namespace mtvza {
++// Commit only an ordered, complete scan. Losing one scan never corrupts its neighbours.
++class ScanSequence
++{
++    int first_, last_, next_;
++    bool active_ = false;
++public:
++    size_t rejected_frames = 0, incomplete_scans = 0;
++    ScanSequence(int first, int last) : first_(first), last_(last), next_(first) {}
++    void finish()
++    {
++        if (active_) ++incomplete_scans;
++        active_ = false;
++        next_ = first_;
++    }
++    bool accept(int counter)
++    {
++        if (counter == first_) { finish(); active_ = true; }
++        if (!active_ || counter != next_ || counter > last_)
++        {
++            ++rejected_frames;
++            finish();
++            return false;
++        }
++        ++next_;
++        if (counter == last_) { active_ = false; next_ = first_; }
++        return true;
++    }
++};
++} }
+diff --git a/plugins/meteor_support/meteor/module_meteor_instruments.cpp b/plugins/meteor_support/meteor/module_meteor_instruments.cpp
+index 5b860c691330ff83ca5320023622d55e52673472..66dc340bd0e35178b8dcd3073aad92b6df26fb18 100644
+--- a/plugins/meteor_support/meteor/module_meteor_instruments.cpp
++++ b/plugins/meteor_support/meteor/module_meteor_instruments.cpp
+@@ -6,6 +6,8 @@
+ #include "common/utils.h"
+ #include "meteor.h"
+ #include "products/image_products.h"
++#include "products/product_status.h"
++#include <cmath>
+ #include "common/simple_deframer.h"
+ #include "common/tracking/tle.h"
+ #include "products/dataset.h"
+@@ -31,7 +33,8 @@ namespace meteor
+             logger->info("Using input frames " + d_input_file);
+ 
+             time_t lastTime = 0;
+-            uint8_t cadu[1024];
++            uint8_t cadu[1024] = {};
++            if (!data_in) throw std::runtime_error("Cannot open HRPT input: " + d_input_file);
+ 
+             mtvza_reader2.endian_mode = true;
+ 
+@@ -47,10 +50,8 @@ namespace meteor
+             nlohmann::json msu_mr_telemetry;
+             nlohmann::json msu_mr_telemetry_calib;
+ 
+-            while (!data_in.eof())
++            while (data_in.read((char *)cadu, sizeof(cadu)))
+             {
+-                // Read buffer
+-                data_in.read((char *)&cadu, 1024);
+ 
+                 std::vector<std::vector<uint8_t>> msumr_frames;
+                 std::vector<std::vector<uint8_t>> mtvza_frames, mtvza_frames2;
+@@ -128,7 +129,12 @@ namespace meteor
+                 }
+             }
+ 
++            const auto trailing_bytes = data_in.gcount();
++            if (data_in.bad()) throw std::runtime_error("HRPT input read failed");
++            if (trailing_bytes) logger->warn("Ignored incomplete HRPT frame: %d bytes", int(trailing_bytes));
+             data_in.close();
++            mtvza_reader.finish();
++            mtvza_reader2.finish();
+ 
+             // Identify satellite, and apply per-sat settings...
+             int msumr_serial_number = most_common(msumr_ids.begin(), msumr_ids.end(), -1);
+@@ -161,7 +167,11 @@ namespace meteor

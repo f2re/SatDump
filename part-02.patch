@@ -1,0 +1,323 @@
+-High vegetation appears as green, low soil moisture as purple, sea or lakes appear white.
++Непустые каналы из `product.cbor` и связанные с ним растры. Идентификаторы `chN` относятся к нумерации конкретного набора, не к универсальной таблице частот. Раскладка записывается как `hrpt30` или `dump46`; для старых наборов она может быть неизвестна.
+ 
+-### Intended usage
++## Ограничения
+ 
+-Agriculture, geology, soil nature analysis, desertification monitoring.
+-
+-### Limitations
+-
+-Uncalibrated.
+-Relative, qualitative analysis only.
+\ No newline at end of file
++Радиометрическая калибровка и восстановление физических величин не реализованы. Из оттенков нельзя получать интенсивность осадков, наличие града, сплочённость или толщину льда, влажность почвы и биомассу. Старое имя рецепта сохранено для совместимости, не как название измеряемой величины.
+diff --git a/resources/descriptions/sounders/MTVZAVegetation.md b/resources/descriptions/sounders/MTVZAVegetation.md
+index 3a1811088d8dcfff2a0af9205cb0f018a24ff59f..af0ddc5917c4fac6ab2c2bd2a99a70c608db2eca 100644
+--- a/resources/descriptions/sounders/MTVZAVegetation.md
++++ b/resources/descriptions/sounders/MTVZAVegetation.md
+@@ -1,16 +1,11 @@
+-# Vegetation
++# МТВЗА-ГЯ · комбинация 16/15/17
+ 
+-This enhancement uses the MTVZA channels 16, 15 and 17 (53.3 GHz, 52.8 GHz and 53.8 GHz) to detect vegetation and snow.
++Экспериментальная визуализация цифровых отсчётов. Формула компонентов: `ch16, ch15, ch17`. После синтеза выполняется поканальная эквализация контраста.
+ 
+-### Appearance
++## Вход
+ 
+-High soil moisture appears as bluish green, low vegetation appears red, sea or lakes appear white with a yellowish tinge, snow appears bluish white.
++Непустые каналы из `product.cbor` и связанные с ним растры. Идентификаторы `chN` относятся к нумерации конкретного набора, не к универсальной таблице частот. Раскладка записывается как `hrpt30` или `dump46`; для старых наборов она может быть неизвестна.
+ 
+-### Intended usage
++## Ограничения
+ 
+-Agriculture, geology, soil nature analysis, desertification monitoring.
+-
+-### Limitations
+-
+-Uncalibrated.
+-Relative, qualitative analysis only.
+\ No newline at end of file
++Радиометрическая калибровка и восстановление физических величин не реализованы. Из оттенков нельзя получать интенсивность осадков, наличие града, сплочённость или толщину льда, влажность почвы и биомассу. Старое имя рецепта сохранено для совместимости, не как название измеряемой величины.
+diff --git a/resources/descriptions/sounders/MicrowaveAirmass.md b/resources/descriptions/sounders/MicrowaveAirmass.md
+index af4e250032e7b4e49d4b857dd82ce61f121674f6..b6620e769d872584c708357da0c71599b8d68569 100644
+--- a/resources/descriptions/sounders/MicrowaveAirmass.md
++++ b/resources/descriptions/sounders/MicrowaveAirmass.md
+@@ -1,18 +1,11 @@
+-# Microwave Airmass
++# МТВЗА-ГЯ · комбинация 30/29/28
+ 
+-This enhancement uses the two 183 GHz channels (±1 GHz and  ±3 GHz) as well as the 190 GHz channels to show an image of the airmass in the atmosphere.
++Экспериментальная визуализация цифровых отсчётов. Формула компонентов: `ch30, ch29, ch28`. После синтеза выполняется поканальная эквализация контраста.
+ 
+-This enhancement is most useful to detect and analyze air circulation patterns in the troposphere.
++## Вход
+ 
+-### Appearance
++Непустые каналы из `product.cbor` и связанные с ним растры. Идентификаторы `chN` относятся к нумерации конкретного набора, не к универсальной таблице частот. Раскладка записывается как `hrpt30` или `dump46`; для старых наборов она может быть неизвестна.
+ 
+-Darker shades of black indicate precipitation.
+-Brown indicates high levels of water vapor, blue medium levels, and white low levels
++## Ограничения
+ 
+-### Intended usage
+-
+-All-weather meteorology.
+-
+-### Limitations
+-
+-Hard to interpret.
+\ No newline at end of file
++Радиометрическая калибровка и восстановление физических величин не реализованы. Из оттенков нельзя получать интенсивность осадков, наличие града, сплочённость или толщину льда, влажность почвы и биомассу. Старое имя рецепта сохранено для совместимости, не как название измеряемой величины.
+diff --git a/resources/presentation/composite_profiles_ru.json b/resources/presentation/composite_profiles_ru.json
+index 7e8bf9e301e8e4fd33217f337b1698a615d4fc38..4da6d8820bb4f56bf416375122dd497090d7016a 100644
+--- a/resources/presentation/composite_profiles_ru.json
++++ b/resources/presentation/composite_profiles_ru.json
+@@ -631,125 +631,134 @@
+     {
+       "id": "mtvza_soil_moisture",
+       "match": {
+-        "name_contains": ["soil moisture", "влажность почвы"],
+-        "description_contains": ["mtvzasoilmoisture.md"]
++        "name_contains": [
++          "soil moisture",
++          "влажность почвы"
++        ],
++        "description_contains": [
++          "mtvzasoilmoisture.md"
++        ]
+       },
+-      "title": "Влажность почвы (МТВЗА-ГЯ)",
+-      "purpose": "Всепогодная оценка увлажнённости верхнего слоя почвы по данным микроволнового зондирования 42–48 ГГц",
+-      "mode": "круглосуточно (сквозь облака)",
+-      "data_kind": "микроволновый СВЧ-композит",
++      "title": "МТВЗА-ГЯ · комбинация 14/13/12",
++      "purpose": "Просмотр пространственной структуры цифровых отсчётов выбранных каналов",
++      "mode": "день и ночь",
++      "data_kind": "экспериментальный некалиброванный RGB",
+       "legend": {
+-        "kind": "categorical",
+-        "title": "Ориентиры влажности",
+-        "subtitle": "Излучательная способность резко падает при насыщении грунта водой из-за высокой диэлектрической проницаемости.",
+-        "categories": [
+-          {"color": "#1BB5B5", "label": "Бирюзовый / сине-зелёный: высокая влажность почвы, поймы, увлажнённый грунт"},
+-          {"color": "#9E3C8E", "label": "Пурпурный / красно-фиолетовый: сухая почва, низкая влажность, пески"},
+-          {"color": "#3D8B4D", "label": "Зелёный: плотная растительность"},
+-          {"color": "#E5EEF5", "label": "Светло-голубой / белый: открытые водоёмы"}
+-        ],
++        "kind": "composite",
++        "title": "Компоненты изображения",
++        "subtitle": "ch14, ch13, ch12",
+         "notes": [
+-          "Микроволновый диапазон проникает сквозь облачность; сильные ливни могут давать локальный вклад в сигнал.",
+-          "Для количественной калибровки в проценты влажности требуются априорные модели подстилающей поверхности."
++          "Номера каналов относятся к конкретному продукту; раскладки HRPT и X-диапазона различаются.",
++          "Контраст изменён поканальной эквализацией. Цвета не являются классами осадков, льда или растительности.",
++          "Количественные характеристики поверхности и атмосферы этим рецептом не восстанавливаются."
+         ]
+       }
+     },
+     {
+       "id": "mtvza_vegetation",
+       "match": {
+-        "name_contains": ["vegetation", "растительность"],
+-        "description_contains": ["mtvzavegetation.md"]
++        "name_contains": [
++          "vegetation",
++          "растительность"
++        ],
++        "description_contains": [
++          "mtvzavegetation.md"
++        ]
+       },
+-      "title": "СВЧ-растительность и биомасса (МТВЗА-ГЯ)",
+-      "purpose": "Всепогодная оценка растительной биомассы и влагозапаса полога леса в СВЧ-диапазоне 52–54 ГГц",
+-      "mode": "круглосуточно (сквозь облака)",
+-      "data_kind": "микроволновый СВЧ-композит",
++      "title": "МТВЗА-ГЯ · комбинация 16/15/17",
++      "purpose": "Просмотр пространственной структуры цифровых отсчётов выбранных каналов",
++      "mode": "день и ночь",
++      "data_kind": "экспериментальный некалиброванный RGB",
+       "legend": {
+-        "kind": "categorical",
+-        "title": "Ориентиры биомассы",
+-        "subtitle": "Микроволновое излучение в полосе поглощения кислорода рассеивается и поглощается биомассой полога леса.",
+-        "categories": [
+-          {"color": "#A84332", "label": "Красно-коричневый: густая развитая растительность, сомкнутый лесной полог"},
+-          {"color": "#3A9B9B", "label": "Бирюзовый / сине-зелёный: открытая местность, низкая травянистая растительность"},
+-          {"color": "#BCE3F5", "label": "Сине-белый: снежный покров"},
+-          {"color": "#F3F0D1", "label": "Бледно-жёлтый / белый: морская и озёрная вода"}
+-        ],
++        "kind": "composite",
++        "title": "Компоненты изображения",
++        "subtitle": "ch16, ch15, ch17",
+         "notes": [
+-          "Продукт всепогодный, не маскируется слоистой облачностью, эффективен для мониторинга засух и обезлесения."
++          "Номера каналов относятся к конкретному продукту; раскладки HRPT и X-диапазона различаются.",
++          "Контраст изменён поканальной эквализацией. Цвета не являются классами осадков, льда или растительности.",
++          "Количественные характеристики поверхности и атмосферы этим рецептом не восстанавливаются."
+         ]
+       }
+     },
+     {
+       "id": "mtvza_airmass",
+       "match": {
+-        "name_contains": ["microwave airmass", "свч воздушные массы"],
+-        "description_contains": ["microwaveairmass.md"]
++        "name_contains": [
++          "microwave airmass",
++          "свч воздушные массы"
++        ],
++        "description_contains": [
++          "microwaveairmass.md"
++        ]
+       },
+-      "title": "Воздушные массы в СВЧ (МТВЗА-ГЯ)",
+-      "purpose": "Отображение высотной тропосферной циркуляции и границ воздушных масс по линии водяного пара 183 ГГц",
+-      "mode": "круглосуточно",
+-      "data_kind": "тропосферный водяной пар СВЧ",
++      "title": "МТВЗА-ГЯ · комбинация 30/29/28",
++      "purpose": "Просмотр пространственной структуры цифровых отсчётов выбранных каналов",
++      "mode": "день и ночь",
++      "data_kind": "экспериментальный некалиброванный RGB",
+       "legend": {
+-        "kind": "categorical",
+-        "title": "Структура воздушных масс",
+-        "subtitle": "Каналы 183.31 ГГц с разной расстройкой зондируют верхнюю, среднюю и нижнюю тропосферу.",
+-        "categories": [
+-          {"color": "#2D7DA8", "label": "Сине-голубой: влажные умеренные и тёплые воздушные массы"},
+-          {"color": "#C45B38", "label": "Коричнево-красный / охристый: сухое стратосферное вторжение, холодный воздух"},
+-          {"color": "#202022", "label": "Тёмный / почти чёрный: мощные конвективные системы и осадки"}
+-        ],
++        "kind": "composite",
++        "title": "Компоненты изображения",
++        "subtitle": "ch30, ch29, ch28",
+         "notes": [
+-          "Показывает крупномасштабную циркуляцию и струйные течения вне зависимости от солнечной освещённости."
++          "Номера каналов относятся к конкретному продукту; раскладки HRPT и X-диапазона различаются.",
++          "Контраст изменён поканальной эквализацией. Цвета не являются классами осадков, льда или растительности.",
++          "Количественные характеристики поверхности и атмосферы этим рецептом не восстанавливаются."
+         ]
+       }
+     },
+     {
+       "id": "mtvza_rainfall",
+       "match": {
+-        "name_contains": ["rainfall", "mtvza rainfall", "осадки"],
+-        "description_contains": ["mtvzarainfall.md", "rainfall.md"]
++        "name_contains": [
++          "rainfall",
++          "mtvza rainfall",
++          "осадки"
++        ],
++        "description_contains": [
++          "mtvzarainfall.md",
++          "rainfall.md"
++        ]
+       },
+-      "title": "Зоны интенсивных осадков и конвекции (МТВЗА-ГЯ)",
+-      "purpose": "Обнаружение ливневых осадков, грозовых очагов и града по рассеянию излучения 89–91 ГГц",
+-      "mode": "круглосуточно (всепогодно)",
+-      "data_kind": "штормовой индикатор осадков",
++      "title": "МТВЗА-ГЯ · комбинация 24/27/8",
++      "purpose": "Просмотр пространственной структуры цифровых отсчётов выбранных каналов",
++      "mode": "день и ночь",
++      "data_kind": "экспериментальный некалиброванный RGB",
+       "legend": {
+-        "kind": "categorical",
+-        "title": "Интенсивность осадков",
+-        "subtitle": "Крупные гидрометеоры (град, снежная крупа) вызывают сильное радиометрическое рассеяние излучения.",
+-        "categories": [
+-          {"color": "#E62A2A", "label": "Красный / оранжевый: интенсивные ливни, грозовые конвективные ячейки, град"},
+-          {"color": "#E6BE2A", "label": "Жёлтый: умеренный обложной дождь, развитая облачность"},
+-          {"color": "#3FB85B", "label": "Зелёный: моросящие осадки, капельные облака высокой водности"},
+-          {"color": "#1C3666", "label": "Тёмно-синий: отсутствие осадков"}
+-        ],
++        "kind": "composite",
++        "title": "Компоненты изображения",
++        "subtitle": "1 - ch24, 1 - ch27, ch8",
+         "notes": [
+-          "Осадки фиксируются в толще облака; в засушливых приземных слоях часть осадков может испаряться (вирга)."
++          "Номера каналов относятся к конкретному продукту; раскладки HRPT и X-диапазона различаются.",
++          "Контраст изменён поканальной эквализацией. Цвета не являются классами осадков, льда или растительности.",
++          "Количественные характеристики поверхности и атмосферы этим рецептом не восстанавливаются."
+         ]
+       }
+     },
+     {
+       "id": "mtvza_sea_ice",
+       "match": {
+-        "name_contains": ["sea ice", "морской лед", "морской лёд", "ice"],
+-        "description_contains": ["mtvzaseaice.md"]
++        "name_contains": [
++          "sea ice",
++          "морской лед",
++          "морской лёд",
++          "ice"
++        ],
++        "description_contains": [
++          "mtvzaseaice.md"
++        ]
+       },
+-      "title": "Ледовая обстановка в Арктике (МТВЗА-ГЯ)",
+-      "purpose": "Всепогодное картирование морского льда, полыней и сплочённости ледового покрова по каналам 18 и 36 ГГц",
+-      "mode": "круглосуточно (полярный мониторинг)",
+-      "data_kind": "ледовый СВЧ-композит",
++      "title": "МТВЗА-ГЯ · комбинация 7/8/4",
++      "purpose": "Просмотр пространственной структуры цифровых отсчётов выбранных каналов",
++      "mode": "день и ночь",
++      "data_kind": "экспериментальный некалиброванный RGB",
+       "legend": {
+-        "kind": "categorical",
+-        "title": "Классы ледового покрова",
+-        "subtitle": "Морской лёд на частотах 18–37 ГГц излучает вдвое сильнее соленой морской воды из-за падения диэлектрической проницаемости.",
+-        "categories": [
+-          {"color": "#FFFFFF", "label": "Ярко-белый: сплошной и многолетний морской лёд (9–10 баллов)"},
+-          {"color": "#63C5D6", "label": "Бирюзовый / голубой: молодой лёд, нилас, разреженный лёд (4–8 баллов)"},
+-          {"color": "#0B1D45", "label": "Тёмно-синий / чёрный: свободная ото льда морская вода, полыньи"},
+-          {"color": "#8C6A49", "label": "Коричневый / охристый: суша и побережье"}
+-        ],
++        "kind": "composite",
++        "title": "Компоненты изображения",
++        "subtitle": "ch7, ch8, ch4",
+         "notes": [
+-          "Позволяет отслеживать навигационные каналы и полыньи на трассе СМП в полярную ночь сквозь облака."
++          "Номера каналов относятся к конкретному продукту; раскладки HRPT и X-диапазона различаются.",
++          "Контраст изменён поканальной эквализацией. Цвета не являются классами осадков, льда или растительности.",
++          "Количественные характеристики поверхности и атмосферы этим рецептом не восстанавливаются."
+         ]
+       }
+     }
+diff --git a/services/station/board.py b/services/station/board.py
+index 38828d4ac56cc67fb6c41c87b2295528a1f2b321..f77ae0135b4769c0fccc90d35caf68a2e45aeeaa 100644
+--- a/services/station/board.py
++++ b/services/station/board.py
+@@ -14,6 +14,7 @@ import time
+ from pathlib import Path
+ from urllib.parse import unquote, urlsplit
+ import control
++import product_quality
+ 
+ LOG = logging.getLogger('satdump-board')
+ 
+@@ -64,6 +65,7 @@ def install_adapter(station, ui_root=None):
+                 new_patch = copy.deepcopy(settings['processing'])
+                 new_patch.setdefault('satdump_general', {})['tle_update_interval'] = {'value': 'Never'}
+                 new_patch['satdump_general']['log_to_file'] = {'value': False}
++                new_patch['satdump_general']['auto_process_products'] = {'value': True}
+                 applied = self.data / 'state/applied-control.json'
+                 previous_key = control.read(applied).get('processing_key') if applied.is_file() else control.Store.processing_key(self.managed.initial())
+                 next_key = control.Store.processing_key(settings)
+@@ -113,7 +115,7 @@ def install_adapter(station, ui_root=None):
+             """
+             job_id = job['id']
+             final = self.data / 'public/items' / job_id
+-            if (final / 'item.json').is_file() and station.read_json(final / 'item.json')['job_id'] == job_id:
++            if self.publication_ready(job_id):
+                 return
+             source = self.sources[job['source']]
+             path = Path(job['path'])
+@@ -160,30 +162,46 @@ def install_adapter(station, ui_root=None):
+             log_path = self.data / 'logs' / (job_id + '.log')
+             if log_path.exists():

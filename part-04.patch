@@ -1,0 +1,306 @@
++                    state = "pending"
++                self.remember_result(job, state)
+             self.db.commit()
+             self.catalog()
+         self.heartbeat()
+diff --git a/services/station/web/app.js b/services/station/web/app.js
+index 67264a8b93bfdd2b8a9afc373ff0fda0acc9da9d..2c55fe7b7aa861587ecb459ad680c5ae950a6e10 100644
+--- a/services/station/web/app.js
++++ b/services/station/web/app.js
+@@ -26,6 +26,9 @@
+       $('hero').hidden = false; $('empty').hidden = true; $('caption').hidden = false; $('loading').hidden = true;
+       text('title', item.title); text('instrument', [item.satellite, item.instrument].filter(Boolean).join(' / '));
+       text('time', item.acquisition_time ? 'Наблюдение: ' + item.acquisition_time : 'Время наблюдения не указано · файл изменён ' + displayTime(item.file_mtime));
++      const quality = item.processing_quality;
++      text('quality', quality && quality.status === 'partial' ?
++        'Неполный набор продукции · подробности в паспорте' : '');
+       text('counter', (index + 1) + ' / ' + items.length);
+       $('original').href = safeAsset(item.original); $('passport').href = safeAsset(item.metadata);
+       text('metadata', 'Чтение паспорта…');
+@@ -36,7 +39,7 @@
+         const response = await fetch(safeAsset(item.metadata), {cache: 'force-cache'});
+         if (!response.ok) throw new Error('Паспорт недоступен');
+         const passport = await response.json();
+-        if (own === token) text('metadata', (item.native_presentation ? '' : 'Готовое изображение: спектральные каналы и физический смысл цветов не подтверждены.\n\n') + JSON.stringify(passport, null, 2));
++        if (own === token) text('metadata', (item.native_presentation ? '' : 'Готовое изображение: спектральные каналы и физический смысл цветов не подтверждены.\n\n') + (item.processing_quality ? JSON.stringify(item.processing_quality, null, 2) + '\n\n' : '') + JSON.stringify(passport, null, 2));
+       } catch (error) { if (own === token) text('metadata', error.message); }
+     };
+     image.onerror = function () { if (own === token) { $('loading').hidden = false; text('loading', 'Не удалось загрузить снимок. Предыдущий кадр сохранён.'); schedule(); } };
+@@ -93,6 +96,8 @@
+       const response = await fetch('health.json', {cache: 'no-store'});
+       const health = await response.json();
+       text('health', !health.worker_alive ? 'Воркер не отвечает · архив доступен' : Object.keys(health.sources || {}).length ? 'Источник недоступен или недостаточно места' : 'Воркер работает · ошибок: ' + ((health.queue || {}).failed || 0));
++      if (health.worker_alive && health.last_result && health.last_result.quality === 'partial')
++        text('health', 'Последний набор продукции неполный · проверьте приборы и журнал задания');
+     } catch (error) { text('health', 'Нет связи с сервером · показ сохранён'); }
+     setTimeout(refresh, 15000);
+   }
+diff --git a/services/station/web/index.html b/services/station/web/index.html
+index 2f018b3a4956719fb9cdcfa5c29dca88bc9b3113..9e7859cfd01231a1a417437f3e966655806271cb 100644
+--- a/services/station/web/index.html
++++ b/services/station/web/index.html
+@@ -11,7 +11,7 @@
+ <section class="stage" aria-label="Просмотр снимка">
+ <div id="empty"><h2 id="emptyTitle">Архив пока пуст</h2><p id="emptyText">Завершённые снимки появятся здесь автоматически. Исходные записи не публикуются.</p></div>
+ <img id="hero" alt="" hidden><p id="loading" role="status" hidden>Загрузка снимка…</p>
+-<div id="caption" hidden><div><span id="instrument" class="eyebrow"></span><h2 id="title"></h2><p id="time"></p></div><div class="actions"><button id="prev" type="button" aria-label="Предыдущий снимок">←</button><span id="counter"></span><button id="next" type="button" aria-label="Следующий снимок">→</button><a id="original" target="_blank" rel="noopener">Оригинал</a><a id="passport" target="_blank" rel="noopener">Паспорт JSON</a></div></div>
++<div id="caption" hidden><div><span id="instrument" class="eyebrow"></span><h2 id="title"></h2><p id="time"></p><p id="quality" role="status"></p></div><div class="actions"><button id="prev" type="button" aria-label="Предыдущий снимок">←</button><span id="counter"></span><button id="next" type="button" aria-label="Следующий снимок">→</button><a id="original" target="_blank" rel="noopener">Оригинал</a><a id="passport" target="_blank" rel="noopener">Паспорт JSON</a></div></div>
+ </section>
+ <details id="details"><summary>Паспорт продукта и ограничения интерпретации</summary><pre id="metadata">Выберите снимок.</pre></details>
+ <section><div class="sectionHead"><h2>Лента продуктов</h2><span id="count"></span></div><div id="grid" class="grid"></div><button id="more" type="button" hidden>Показать ещё</button></section>
+diff --git a/src-cli/reprocess.h b/src-cli/reprocess.h
+index 8070e39b6dcf30437102685041e59b9ce8db4689..926880136cd994b0b3e58aac5fe6df5c193ee4fc 100644
+--- a/src-cli/reprocess.h
++++ b/src-cli/reprocess.h
+@@ -46,6 +46,8 @@ inline int main_reprocess(int argc, char *argv[])
+         if (satdump::products_loaders.count(products->type) == 0)
+             throw std::runtime_error("No product processor for " + products->type);
+         satdump::products_loaders[products->type].processProducts(products.get(), directory.string());
++        if (products->type == "image" && products->contents.at("processing_result").at("status") != "ok")
++            throw std::runtime_error("Incomplete image processing; see processing-status.json");
+         // Caller also verifies a fresh presentation PNG and its machine-readable passport.
+         return 0;
+     }
+diff --git a/src-core/common/image/io.cpp b/src-core/common/image/io.cpp
+index ab287a8a91430bb0cad01d552efebbecc8001dfd..3c15e29e714578485026530cf35b868e4cabd2be 100644
+--- a/src-core/common/image/io.cpp
++++ b/src-core/common/image/io.cpp
+@@ -8,8 +8,9 @@ namespace image
+     void load_img(Image &img, std::string file)
+     {
+         std::ifstream file_sigature_src(file, std::ios::binary);
+-        uint8_t signature[10];
++        uint8_t signature[10] = {};
+         file_sigature_src.read((char *)signature, 10);
++        if (file_sigature_src.gcount() < 4) return;
+         if (signature[0] == 0xFF && signature[1] == 0xD8)
+             load_jpeg(img, file);
+         else if (signature[0] == 0x89 && signature[1] == 0x50 && signature[2] == 0x4E && signature[3] == 0x47)
+@@ -26,6 +27,7 @@ namespace image
+ 
+     void load_img(Image &img, uint8_t *buffer, int size)
+     {
++        if (!buffer || size < 4) return;
+         if (buffer[0] == 0xFF && buffer[1] == 0xD8)
+             load_jpeg(img, buffer, size);
+         else if (buffer[0] == 0x89 && buffer[1] == 0x50 && buffer[2] == 0x4E && buffer[3] == 0x47)
+diff --git a/src-core/core/module.cpp b/src-core/core/module.cpp
+index 996b5f35d979b7fc6f425a6997f447180d47bdb7..64d35c15dc6867c2298f21a68fb9124de8738ca9 100644
+--- a/src-core/core/module.cpp
++++ b/src-core/core/module.cpp
+@@ -125,6 +125,8 @@ void drawStatus(instrument_status_t status)
+         ImGui::TextColored(style::theme.light_green, "Saving...");
+     else if (status == DONE)
+         ImGui::TextColored(style::theme.green, "Done");
++    else if (status == NO_DATA)
++        ImGui::TextColored(style::theme.yellow, "No data");
+     else
+         ImGui::TextColored(style::theme.red, "Invalid!");
+ };
+\ No newline at end of file
+diff --git a/src-core/core/module.h b/src-core/core/module.h
+index ee93f09c9283cbcec647d1dca19194082c9dcf66..299c944b8e40d9ed231e4b71e3f1358d5af5802b 100644
+--- a/src-core/core/module.h
++++ b/src-core/core/module.h
+@@ -86,6 +86,7 @@ enum instrument_status_t
+     PROCESSING,
+     SAVING,
+     DONE,
++    NO_DATA,
+ };
+ 
+ void drawStatus(instrument_status_t status);
+\ No newline at end of file
+diff --git a/src-core/products/image_products.cpp b/src-core/products/image_products.cpp
+index 74752fadcb3d51d4e0ac028b9dadde3bfab1ee35..365e00067e8879fb6f6f9d79843fa2d878ef48f9 100644
+--- a/src-core/products/image_products.cpp
++++ b/src-core/products/image_products.cpp
+@@ -1,4 +1,6 @@
+ #include "image_products.h"
++#include "product_status.h"
++#include <exception>
+ #include "logger.h"
+ #include "core/config.h"
+ #include "common/image/composite.h"
+@@ -28,6 +30,13 @@ namespace satdump
+ {
+     void ImageProducts::save(std::string directory)
+     {
++        if (instrument_name == "mtvza" && !d_no_not_save_images)
++        {
++            if (images.empty()) throw std::runtime_error("No image channels to save");
++            for (const auto &holder : images)
++                if (!holder.image.size() || !holder.image.width() || !holder.image.height())
++                    throw std::runtime_error("Empty channel: " + instrument_name + "/" + holder.channel_name);
++        }
+         type = "image";
+         contents["has_timestamps"] = has_timestamps;
+         if (has_timestamps)
+@@ -50,10 +59,13 @@ namespace satdump
+         }
+ 
+         std::mutex savemtx;
++        std::exception_ptr save_error;
+ #pragma omp parallel for
+         for (int64_t c = 0; c < (int64_t)images.size(); c++)
+         {
+-            savemtx.lock();
++            try
++            {
++            std::unique_lock<std::mutex> guard(savemtx);
+             if (images[c].filename.find(".png") == std::string::npos &&
+                 images[c].filename.find(".jpeg") == std::string::npos &&
+                 images[c].filename.find(".jpg") == std::string::npos &&
+@@ -81,10 +93,21 @@ namespace satdump
+             if (images[c].abs_index != -1)
+                 contents["images"][c]["abs_index"] = images[c].abs_index;
+ 
+-            savemtx.unlock();
++            guard.unlock();
+             if (!save_as_matrix && !d_no_not_save_images)
+-                image::save_img(images[c].image, directory + "/" + images[c].filename);
++            {
++                if (images[c].image.size())
++                    save_checked_image(images[c].image, directory + "/" + images[c].filename);
++                else image::save_img(images[c].image, directory + "/" + images[c].filename);
++            }
++            }
++            catch (...)
++            {
++                std::lock_guard<std::mutex> guard(savemtx);
++                if (!save_error) save_error = std::current_exception();
++            }
+         }
++        if (save_error) std::rethrow_exception(save_error);
+ 
+         if (save_as_matrix && !images.empty())
+         {
+@@ -92,7 +115,7 @@ namespace satdump
+             logger->debug("Using size %d", size);
+             image::Image image_all = image::make_manyimg_composite(size, size, images.size(), [this](int c)
+                                                                    { return images[c].image; });
+-            image::save_img(image_all, directory + "/" + images[0].filename);
++            save_checked_image(image_all, directory + "/" + images[0].filename);
+             savemtx.lock();
+             contents["img_matrix_size"] = size;
+             savemtx.unlock();
+@@ -146,6 +169,8 @@ namespace satdump
+         std::string tmp_path = std::filesystem::temp_directory_path().string();
+ #endif
+ 
++        images.clear();
++        contents["load_errors"] = nlohmann::json::array();
+         image::Image img_matrix;
+         if (save_as_matrix)
+         {
+@@ -196,6 +221,9 @@ namespace satdump
+             else
+             {
+                 int m_size = contents["img_matrix_size"].get<int>();
++                if (m_size <= 0 || (!d_no_not_load_images &&
++                    (img_matrix.width() < size_t(m_size) || img_matrix.height() < size_t(m_size))))
++                    throw std::runtime_error("Missing or invalid channel matrix: " + file);
+                 int img_width = img_matrix.width() / m_size;
+                 int img_height = img_matrix.height() / m_size;
+                 int pos_x = c % m_size;
+@@ -219,6 +247,11 @@ namespace satdump
+             if (contents["images"][c].contains("abs_index"))
+                 img_holder.abs_index = contents["images"][c]["abs_index"].get<int>();
+ 
++            if (!d_no_not_load_images && !img_holder.image.size())
++            {
++                logger->error("Missing or empty channel: %s", img_holder.filename.c_str());
++                contents["load_errors"].push_back(img_holder.filename);
++            }
+             images.push_back(img_holder);
+         }
+     }
+@@ -456,7 +489,7 @@ namespace satdump
+ 
+         for (size_t i = 0; i < str_to_find_channels.size() - 1; i++)
+         {
+-            if (str_to_find_channels[i + 0] == 'c' && str_to_find_channels[i + 1] == 'c' && str_to_find_channels[i + 2] == 'h')
++            if (i + 2 < str_to_find_channels.size() && str_to_find_channels[i + 0] == 'c' && str_to_find_channels[i + 1] == 'c' && str_to_find_channels[i + 2] == 'h')
+             {
+                 std::string final_ch;
+                 int fpos = i;
+@@ -515,6 +548,7 @@ namespace satdump
+         for (int i = 0; i < (int)product.images.size(); i++)
+         {
+             auto &img = product.images[i];
++            if (!product.d_no_not_load_images && !img.image.size()) continue;
+             std::string equ_str = "ch" + img.channel_name;
+             std::string equ_str_calib = "cch" + img.channel_name;
+ 
+@@ -572,6 +606,7 @@ namespace satdump
+         for (int i = 0; i < (int)product.images.size(); i++)
+         {
+             auto &img = product.images[i];
++            if (!product.d_no_not_load_images && !img.image.size()) continue;
+             std::string equ_str = "ch" + img.channel_name;
+             std::string equ_str_calib = "cch" + img.channel_name;
+ 
+diff --git a/src-core/products/processor/image_processor.cpp b/src-core/products/processor/image_processor.cpp
+index c826cbab1188ab1de8ec34f183d3863c4301f29a..247bf0ed0e21929ee90687544d894d572858a461 100644
+--- a/src-core/products/processor/image_processor.cpp
++++ b/src-core/products/processor/image_processor.cpp
+@@ -1,4 +1,5 @@
+ #include "processor.h"
++#include "../product_status.h"
+ #include "presentation_processor.h"
+ #include "presentation_outputs.h"
+ 
+@@ -197,6 +198,24 @@ namespace satdump
+     void process_image_products(Products *products, std::string product_path)
+     {
+         ImageProducts *img_products = (ImageProducts *)products;
++        nlohmann::json report = {{"schema", "satdump.processing-status/1"},
++            {"instrument", products->instrument_name},
++            {"input_errors", img_products->contents.value("load_errors", nlohmann::json::array())},
++            {"products", nlohmann::json::array()}};
++        size_t generated = 0, failures = 0;
++        auto finish_report = [&]() {
++            report["generated"] = generated;
++            report["status"] = generated == 0 ? "no_products" :
++                (failures || !report["input_errors"].empty() ? "partial" : "ok");
++            write_product_status(product_path + "/processing-status.json", report);
++            products->contents["processing_result"] = report;
++        };
++        if (img_products->images.empty() || std::none_of(img_products->images.begin(), img_products->images.end(),
++            [](const ImageProducts::ImageHolder &h) { return h.image.size() > 0; }))
++        {
++            finish_report();
++            throw std::runtime_error("No readable image channels: " + product_path);
++        }
+ 
+         // One font cache is reused for every generated presentation in this product.
+         image::TextDrawer presentation_text;
+@@ -255,7 +274,9 @@ namespace satdump
+                     ImageCompositeCfg cfg = composite_preset.get<ImageCompositeCfg>();
+                     if (!check_composite_from_product_can_be_made(*img_products, cfg))
+                     {
+-                        logger->debug("Skipping " + compo.key() + " as it can't be made!");
++                        report["products"].push_back({{"name", compo.key()}, {"status", "skipped"},
++                            {"reason", "required_channels_or_calibration_unavailable"}});
++                        logger->warn("Skipping " + compo.key() + ": required channels or calibration unavailable");
+                         continue;
+                     }
+ 
+@@ -265,7 +286,9 @@ namespace satdump
+ 
+                     if (rgb_image.size() == 0)
+                     {
+-                        logger->debug("Empty image, skipping any further processing!");
++                        ++failures;
++                        report["products"].push_back({{"name", compo.key()}, {"status", "failed"}, {"reason", "empty_composite"}});
++                        logger->error("Empty image, skipping any further processing!");
+                         continue;
+                     }
+ 
+@@ -329,7 +352,7 @@ namespace satdump
+                                         product_path + "/" + name + "_corrected");
+                     }
+ 
+-                    image::save_img(rgb_image, product_path + "/" + name);
++                    save_checked_image(rgb_image, product_path + "/" + name);
+                     image::Image clean_presentation_source;

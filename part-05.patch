@@ -1,0 +1,370 @@
+                     if (presentation_settings.enabled)
+                         clean_presentation_source = geo_correct ? rgb_image_corr : rgb_image;
+@@ -339,6 +362,8 @@ namespace satdump
+                     bool base_context_applied = false;
+                     auto apply_base_context = [&](bool force_context) -> bool
+                     {
++                        try
++                        {
+                         if (!img_products->has_proj_cfg())
+                         {
+                             if (force_context)
+@@ -433,6 +458,12 @@ namespace satdump
+                                 product_path + "/" + name + "_corrected_map");
+                         }
+                         return true;
++                        }
++                        catch (const std::exception &e)
++                        {
++                            logger->warn("Geographic context unavailable: %s", e.what());
++                            return false;
++                        }
+                     };
+ 
+                     // Keep a clean raster for presentation. Its geographic context is
+@@ -484,6 +515,8 @@ namespace satdump
+ 
+                     if (has_project)
+                     {
++                        try
++                        {
+                         logger->debug("Reprojecting composite %s", name.c_str());
+                         image::Image clean_projected;
+                         image::Image retimg = projectImg(
+@@ -521,6 +554,12 @@ namespace satdump
+                         if (!base_context_applied)
+                             base_context_applied =
+                                 apply_base_context(presentation_settings.enabled);
++
++                        }
++                        catch (const std::exception &e)
++                        {
++                            logger->warn("Projection failed; retaining swath product: %s", e.what());
++                        }
+                     }
+ 
+                     // A malformed projection must not suppress the annotated products.
+@@ -548,6 +587,9 @@ namespace satdump
+                                 : std::function<void(image::Image &, image::presentation::RasterTransform)>());
+                     }
+ 
++                    ++generated;
++                    report["products"].push_back({{"name", compo.key()}, {"status", "generated"},
++                        {"presentation", presentation_saved}});
+                     // Free corrected image memory after all presentation fallbacks.
+                     if (geo_correct)
+                         rgb_image_corr.clear();
+@@ -558,6 +600,8 @@ namespace satdump
+                 }
+                 catch (std::exception &e)
+                 {
++                    ++failures;
++                    report["products"].push_back({{"name", compo.key()}, {"status", "failed"}, {"reason", e.what()}});
+                     logger->error("Error making composites : %s!", e.what());
+                 }
+             }
+@@ -620,10 +664,9 @@ namespace satdump
+                     std::string fmt = "";
+                     if (channel_preset.contains("img_format"))
+                         fmt += channel_preset["img_format"].get<std::string>();
+-                    image::save_img(
+-                        retimg,
+-                        product_path + "/channel_" + img.channel_name +
+-                            "_projected" + fmt);
++                    save_checked_image(retimg, product_path + "/channel_" + img.channel_name + "_projected" + fmt);
++                    ++generated;
++                    report["products"].push_back({{"name", "channel_" + img.channel_name}, {"status", "generated"}});
+ 
+                     if (output_settings.enabled &&
+                         (output_settings.prepare_online_board || ensure_presentation_font()))
+@@ -660,9 +703,11 @@ namespace satdump
+                 }
+                 catch (std::exception &e)
+                 {
++                    ++failures;
+                     logger->error("Error projecting channel : %s!", e.what());
+                 }
+             }
+         }
++        finish_report();
+     }
+ }
+diff --git a/src-core/products/processor/presentation_semantics.cpp b/src-core/products/processor/presentation_semantics.cpp
+index 032e854b421a9b1ba7c4239815049b4fd310e925..5bf563a17567d81dae3da5e8dbac5b52348780a4 100644
+--- a/src-core/products/processor/presentation_semantics.cpp
++++ b/src-core/products/processor/presentation_semantics.cpp
+@@ -1021,6 +1021,36 @@ namespace satdump
+                                                    product_metadata,
+                                                    source_variant);
+             apply_presentation_semantics(spec, products, composite, composite_preset, product_name);
++            if (products.instrument_name == "mtvza" &&
++                (!products.has_calibation() || composite.equation.find("cch") == std::string::npos))
++            {
++                // Old user profiles must not turn raw counts into physical classes.
++                auto raw = build_spec_raw(products, composite, nlohmann::json::object(),
++                    product_name, timestamps, product_metadata, source_variant);
++                spec.legend = raw.legend;
++                spec.legend.categories.clear();
++                spec.legend.color_stops.clear();
++                spec.legend.ticks.clear();
++                spec.legend.unit.clear();
++                spec.legend.kind = spec.legend.components.empty() ? LegendKind::None : LegendKind::Composite;
++                for (auto &component : spec.legend.components)
++                {
++                    component.spectral_range.clear();
++                    component.quantity = "цифровые отсчёты";
++                    component.description.clear();
++                }
++                spec.legend.title = "Компоненты изображения";
++                spec.legend.subtitle = "Экспериментальная комбинация некалиброванных каналов";
++                spec.legend.notes = {"Цвета не являются классами осадков, льда или растительности.",
++                    "Количественные характеристики поверхности и атмосферы не восстанавливаются."};
++                spec.pass.product = "МТВЗА-ГЯ · " + (composite.equation.empty() ? composite.channels : composite.equation);
++                spec.pass.quality = "Экспериментальный продукт";
++                spec.pass.quality_detail = "Радиометрическая калибровка не применена";
++                append_or_replace_detail(spec, "Назначение", "Просмотр структуры цифровых отсчётов");
++                append_or_replace_detail(spec, "Данные", "Некалиброванная комбинация каналов");
++                append_or_replace_detail(spec, "Физика", "Физические величины не восстановлены");
++                append_or_replace_detail(spec, "Нумерация", products.contents.value("channel_layout", "не установлена"));
++            }
+             return spec;
+         }
+     }
+diff --git a/src-core/products/processor/processor.cpp b/src-core/products/processor/processor.cpp
+index ccaa20612b168e7e7007372f30f6472056246b05..87f526af9011a1e2af77b14fdfad8db5e923c414 100644
+--- a/src-core/products/processor/processor.cpp
++++ b/src-core/products/processor/processor.cpp
+@@ -1,4 +1,5 @@
+ #include "processor.h"
++#include "../product_status.h"
+ #include "logger.h"
+ #include "../dataset.h"
+ #include "../image_products.h"
+@@ -24,9 +25,24 @@ namespace satdump
+         dataset.load(dataset_path);
+ 
+         std::string pro_directory = std::filesystem::path(dataset_path).parent_path().string();
++        nlohmann::json results = nlohmann::json::array();
++        size_t completed = 0;
+         for (std::string pro_path : dataset.products_list)
+         {
+-            process_product(pro_directory + "/" + pro_path);
++            try
++            {
++                process_product(pro_directory + "/" + pro_path);
++                results.push_back({{"product", pro_path}, {"status", "processed"}});
++                ++completed;
++            }
++            catch (const std::exception &e)
++            {
++                logger->error("Product %s failed: %s", pro_path.c_str(), e.what());
++                results.push_back({{"product", pro_path}, {"status", "failed"}, {"reason", e.what()}});
++            }
+         }
++        write_product_status(pro_directory + "/dataset-processing.json",
++            {{"schema", "satdump.dataset-processing/1"}, {"products", results}});
++        if (completed == 0) throw std::runtime_error("No products processed; see dataset-processing.json");
+     }
+ }
+\ No newline at end of file
+diff --git a/src-core/products/product_status.h b/src-core/products/product_status.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..39de2d032b9730255a4a1cc4067afa061b7f7f91
+--- /dev/null
++++ b/src-core/products/product_status.h
+@@ -0,0 +1,56 @@
++#pragma once
++#include "nlohmann/json.hpp"
++#include "common/image/io.h"
++#include <filesystem>
++#include <fstream>
++#include <stdexcept>
++#include <vector>
++
++namespace satdump {
++// The temporary file is promoted only after its writer closes successfully.
++inline void write_product_bytes(const std::string &path, const std::vector<uint8_t> &bytes)
++{
++    const std::string temp = path + ".partial";
++    try
++    {
++        std::ofstream out;
++        out.exceptions(std::ios::badbit | std::ios::failbit);
++        out.open(temp, std::ios::binary | std::ios::trunc);
++        out.write(reinterpret_cast<const char *>(bytes.data()), bytes.size());
++        out.flush();
++        out.close();
++        std::filesystem::rename(temp, path);
++    }
++    catch (...)
++    {
++        std::error_code ec;
++        std::filesystem::remove(temp, ec);
++        throw;
++    }
++}
++inline void write_product_status(const std::string &path, const nlohmann::json &status)
++{
++    const std::string text = status.dump(2) + "\n";
++    write_product_bytes(path, std::vector<uint8_t>(text.begin(), text.end()));
++}
++inline std::string save_checked_image(image::Image &img, std::string path)
++{
++    if (!img.size() || !img.width() || !img.height()) throw std::runtime_error("Empty image: " + path);
++    if (!image::append_ext(&path)) throw std::runtime_error("Unsupported image format: " + path);
++    const std::string temp = path + ".partial";
++    try
++    {
++        image::save_img(img, temp);
++        if (!std::filesystem::is_regular_file(temp) || !std::filesystem::file_size(temp))
++            throw std::runtime_error("Image encoder did not write: " + path);
++        std::filesystem::rename(temp, path);
++    }
++    catch (...)
++    {
++        std::error_code ec;
++        std::filesystem::remove(temp, ec);
++        throw;
++    }
++    return path;
++}
++}
+diff --git a/src-core/products/products.cpp b/src-core/products/products.cpp
+index 313ff6202dc9ffd9afe3ff7d3e169ec51ad4151d..6a19b85c4e04ff55b1ac4cc514f67cc4386587c0 100644
+--- a/src-core/products/products.cpp
++++ b/src-core/products/products.cpp
+@@ -1,4 +1,5 @@
+ #include "products.h"
++#include "product_status.h"
+ #include <fstream>
+ #include "logger.h"
+ #include <filesystem>
+@@ -24,9 +25,7 @@ namespace satdump
+ 
+         // Write the file out
+         std::vector<uint8_t> cbor_data = nlohmann::json::to_cbor(contents);
+-        std::ofstream out_file(directory + "/product.cbor", std::ios::binary);
+-        out_file.write((char *)cbor_data.data(), cbor_data.size());
+-        out_file.close();
++        write_product_bytes(directory + "/product.cbor", cbor_data);
+     }
+ 
+     void Products::load(std::string file)
+@@ -44,15 +43,15 @@ namespace satdump
+         }
+         else
+         {
+-            std::ifstream in_file(file, std::ios::binary);
+-            while (!in_file.eof())
+-            {
+-                uint8_t b;
+-                in_file.read((char *)&b, 1);
+-                cbor_data.push_back(b);
+-            }
+-            in_file.close();
+-            cbor_data.pop_back();
++            std::ifstream in_file(file, std::ios::binary | std::ios::ate);
++            if (!in_file) throw std::runtime_error("Cannot open product: " + file);
++            const auto size = in_file.tellg();
++            if (size <= 0 || size > 64 * 1024 * 1024)
++                throw std::runtime_error("Empty or oversized product metadata: " + file);
++            cbor_data.resize(static_cast<size_t>(size));
++            in_file.seekg(0);
++            if (!in_file.read(reinterpret_cast<char *>(cbor_data.data()), cbor_data.size()))
++                throw std::runtime_error("Incomplete product metadata: " + file);
+         }
+         contents = nlohmann::json::from_cbor(cbor_data);
+ 
+diff --git a/src-testing/CMakeLists.txt b/src-testing/CMakeLists.txt
+index bf6e3d2e6adf2766c37bc5977b0db1ec132cbbca..d6760cf0389a145bcac46734ca2393cc1167c6b2 100644
+--- a/src-testing/CMakeLists.txt
++++ b/src-testing/CMakeLists.txt
+@@ -31,3 +31,8 @@ target_link_libraries(satdump-city-names-runtime-test PUBLIC satdump_core)
+ if(ENABLE_INSTALL)
+     install(TARGETS satdump-city-names-runtime-test RUNTIME DESTINATION bin)
+ endif()
++
++add_executable(satdump-mtvza-reader-test mtvza_reader_test.cpp
++    ../plugins/meteor_support/meteor/instruments/mtvza/mtvza_reader.cpp)
++target_include_directories(satdump-mtvza-reader-test PRIVATE src-core)
++target_link_libraries(satdump-mtvza-reader-test PRIVATE satdump_core)
+diff --git a/src-testing/mtvza_reader_test.cpp b/src-testing/mtvza_reader_test.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..5840af2fb1a0c499bde8b5e7b07cb3e3385d5e76
+--- /dev/null
++++ b/src-testing/mtvza_reader_test.cpp
+@@ -0,0 +1,82 @@
++#include "../plugins/meteor_support/meteor/instruments/mtvza/mtvza_reader.h"
++#include "products/product_status.h"
++#include "logger.h"
++#include <array>
++#include <filesystem>
++#include <iostream>
++#include <stdexcept>
++
++static void require(bool value, const char *message)
++{
++    if (!value) throw std::runtime_error(message);
++}
++
++static void frame(meteor::mtvza::MTVZAReader &reader, int counter, int value)
++{
++    std::array<uint8_t, 248> data{};
++    data[reader.endian_mode ? 5 : 4] = 255;
++    data[reader.endian_mode ? 4 : 5] = counter;
++    for (int base : {8, 128})
++        for (int i = 0; i < 59; ++i)
++        {
++            const unsigned sample = 32768 + value;
++            data[base + 2 * i + (reader.endian_mode ? 0 : 1)] = sample >> 8;
++            data[base + 2 * i + (reader.endian_mode ? 1 : 0)] = sample & 255;
++        }
++    reader.work(data.data());
++}
++
++int main(int argc, char **argv)
++{
++    try
++    {
++        for (bool endian : {false, true})
++        {
++            meteor::mtvza::MTVZAReader r;
++            r.endian_mode = endian;
++            frame(r, 26, 900); // no start: never a complete row
++            require(r.lines == 0, "terminal frame alone created a row");
++            for (int i = 2; i <= 26; ++i) frame(r, i, 111);
++            for (int i = 2; i <= 26; ++i) if (i != 13) frame(r, i, 999);
++            for (int i = 2; i <= 26; ++i) frame(r, i, 222);
++            require(r.lines == 2, "lost scan was not discarded/recovery failed");
++            for (int ch = 0; ch < 30; ++ch)
++            {
++                auto image = r.getChannel(ch);
++                require(image.width() == 100 && image.height() == 2, "HRPT geometry changed");
++                for (size_t x = 0; x < 100; ++x)
++                {
++                    require(image.get(x) == 111, "previous row overwritten");
++                    require(image.get(100 + x) == 222, "pending scan contaminated next row");
++                }
++            }
++            frame(r, 2, 333); frame(r, 3, 333); r.finish();
++            require(r.lines == 2 && r.sequence.incomplete_scans == 2, "incomplete end not reported");
++            require(r.timestamps.size() == 2, "timestamp/line count mismatch");
++        }
++        meteor::mtvza::ScanSequence sequence(1, 51);
++        for (int i = 1; i <= 51; ++i) require(sequence.accept(i), "complete dump scan rejected");
++        require(!sequence.accept(51), "duplicate dump terminator accepted");
++        sequence.accept(1); sequence.accept(2);
++        require(!sequence.accept(2), "duplicate data frame accepted");
++        for (int i = 1; i <= 51; ++i) require(sequence.accept(i), "dump resynchronization failed");
++        if (argc == 2)
++        {
++            const auto root = std::filesystem::path(argv[1]);
++            std::filesystem::create_directories(root);
++            satdump::write_product_status((root / "status.json").string(), {{"ok", true}});
++            require(std::filesystem::file_size(root / "status.json") > 0, "status was not saved");
++            bool failed = false;
++            try { satdump::write_product_status((root / "missing/status.json").string(), {{"ok", true}}); }
++            catch (const std::exception &) { failed = true; }
++            require(failed, "I/O failure silently accepted");
++        }
++        std::cout << "MTVZA: both byte orders, gaps, duplicates, recovery, row isolation and checked status writes OK\n";

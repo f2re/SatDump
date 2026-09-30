@@ -1,0 +1,335 @@
++        return 0;
++    }
++    catch (const std::exception &e)
++    {
++        std::cerr << e.what() << '\n';
++        return 1;
++    }
++}
+diff --git a/src-testing/presentation_semantics_test.cpp b/src-testing/presentation_semantics_test.cpp
+index a546fccc8a3a5e0840625a0279263edfd3853942..e31d5593770c1f1f2f2c0c9e2f9f62280c23e01f 100644
+--- a/src-testing/presentation_semantics_test.cpp
++++ b/src-testing/presentation_semantics_test.cpp
+@@ -240,10 +240,10 @@ namespace
+         PresentationSpec spec = make_spec(source, composite, nlohmann::json::object(), "Experimental classifier");
+         return spec.pass.instrument == "МТВЗА-ГЯ" &&
+                spec.legend.kind == LegendKind::None &&
+-               spec.legend.title == "Как читать продукт" &&
+-               has_note(spec, "алгоритмом C++") &&
++               spec.legend.title == "Компоненты изображения" &&
++               has_note(spec, "не являются классами") &&
+                has_detail(spec, "Обработка", "C++") &&
+-               has_detail(spec, "Данные", "C++");
++               has_detail(spec, "Данные", "Некалиброванная");
+     }
+ }
+ 
+diff --git a/tests/meteor/test_native_products.py b/tests/meteor/test_native_products.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..62d4119b83b58d26ad24cfdf61e2b0650d659593
+--- /dev/null
++++ b/tests/meteor/test_native_products.py
+@@ -0,0 +1,131 @@
++#!/usr/bin/env python3
++# -*- coding: utf-8 -*-
++"""Synthetic transport/product regressions using the real built SatDump CLI."""
++import argparse
++import json
++import os
++from pathlib import Path
++import struct
++import subprocess
++import tempfile
++from PIL import Image
++
++
++def cbor(value):
++    def head(kind, size):
++        if size < 24:
++            return bytes([(kind << 5) | size])
++        if size < 256:
++            return bytes([(kind << 5) | 24, size])
++        if size < 65536:
++            return bytes([(kind << 5) | 25]) + struct.pack('>H', size)
++        return bytes([(kind << 5) | 26]) + struct.pack('>I', size)
++    if value is False: return b'\xf4'
++    if value is True: return b'\xf5'
++    if isinstance(value, int): return head(0, value) if value >= 0 else head(1, -1 - value)
++    if isinstance(value, str):
++        data = value.encode('utf-8'); return head(3, len(data)) + data
++    if isinstance(value, list): return head(4, len(value)) + b''.join(cbor(v) for v in value)
++    if isinstance(value, dict): return head(5, len(value)) + b''.join(cbor(k) + cbor(v) for k, v in value.items())
++    raise TypeError(type(value))
++
++
++def hrpt(scans):
++    data = bytearray()
++    for value, skipped in scans:
++        for counter in range(2, 27):
++            if counter == skipped: continue
++            frame = bytearray(248)
++            frame[:4] = bytes.fromhex('fb386a45')
++            frame[4], frame[5] = 255, counter
++            for offset in (8, 128):
++                for n in range(59):
++                    sample = 32768 + value + counter * 9 + n
++                    frame[offset + n * 2:offset + n * 2 + 2] = struct.pack('<H', sample)
++            data.extend(frame)
++    data.extend(bytes(256))
++    result = bytearray()
++    for start in range(0, len(data), 32):
++        fragment = data[start:start + 32]; fragment.extend(bytes(32 - len(fragment)))
++        frame = bytearray(1024)
++        for i, offset in enumerate((14, 270, 526, 782)):
++            frame[offset:offset + 8] = fragment[i * 8:i * 8 + 8]
++        result.extend(frame)
++    return result
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument('--engine', required=True)
++    parser.add_argument('--output', required=True)
++    args = parser.parse_args()
++    engine = str(Path(args.engine).resolve())
++    root = Path(args.output).resolve(); root.mkdir(parents=True, exist_ok=True)
++    env = os.environ.copy(); env.update(HOME=str(root / 'home'), XDG_CONFIG_HOME=str(root / 'home/.config'), TZ='UTC', OMP_NUM_THREADS='1')
++    patch = root / 'processing.json'
++    patch.write_text(json.dumps({'satdump_general': {'tle_update_interval': {'value': 'Never'},
++        'log_to_file': {'value': False}, 'auto_process_products': {'value': True},
++        'image_format': {'value': 'png'}, 'product_format': {'value': 'png'},
++        'presentation_enabled': {'value': True}, 'presentation': {'enabled': True,
++            'save_presentation': True, 'save_minimal': True, 'north_up': False}}}))
++    results = []
++    def run(name, argv, success):
++        with (root / (name + '.log')).open('wb') as out:
++            process = subprocess.run([engine] + argv, cwd=str(root), env=env,
++                stdout=out, stderr=subprocess.STDOUT, timeout=120)
++        assert (process.returncode == 0) == success, (name, process.returncode)
++        results.append({'case': name, 'exit_code': process.returncode})
++    def decode(name, payload, success, pipeline='meteor_hrpt', level='cadu', options=None):
++        raw = root / (name + '.bin'); raw.write_bytes(payload)
++        output = root / name
++        run(name, [pipeline, level, str(raw), str(output)] + (options or []) +
++            ['--offline', '--processing_config', str(patch)], success)
++        return output
++    empty = decode('no-data', bytes(4 * 1024) + b'partial', False)
++    assert not list(empty.rglob('product.cbor'))
++    assert json.loads((empty / 'decode-status.json').read_text())['trailing_bytes'] == 7
++    valid = decode('recovered-scans', hrpt([(111, 0), (999, 13), (222, 0)]), True)
++    product = valid / 'MTVZA'
++    assert len(list(product.glob('MTVZA-*.png'))) == 30
++    with Image.open(str(product / 'MTVZA-1.png')) as image:
++        assert image.size == (100, 2), image.size
++    presentations = list(product.glob('*_annotated_presentation.png'))
++    assert len(presentations) >= 5, len(presentations)
++    report = json.loads((product / 'processing-status.json').read_text())
++    assert report['generated'] >= 5 and report['instrument'] == 'mtvza', report
++    decoded = json.loads((valid / 'decode-status.json').read_text())
++    microwave = next(v for v in decoded['instruments'] if v['instrument'] == 'mtvza')
++    assert microwave['lines'] == 2 and microwave['incomplete_scans'] == 1, microwave
++    for name in ('Rainfall', 'Sea_Ice', 'Vegetation', 'Soil_Moisture', 'Microwave_Airmass'):
++        files = list(product.glob('*' + name + '*_annotated_presentation.json'))
++        assert files, name
++        passport = json.loads(files[0].read_text())
++        assert not passport['legend'].get('categories'), passport
++        assert 'Эксперимент' in json.dumps(passport, ensure_ascii=False), passport
++    # Incomplete product and absent files must yield non-zero, not false success.
++    missing = root / 'missing-channels'; missing.mkdir()
++    metadata = {'instrument': 'mtvza', 'type': 'image', 'bit_depth': 16,
++        'has_timestamps': False, 'needs_correlation': False,
++        'images': [{'file': 'MTVZA-1.png', 'name': '1', 'ifov_x': -1, 'ifov_y': -1}]}
++    (missing / 'product.cbor').write_bytes(cbor(metadata))
++    run('missing-channels', ['reprocess', str(missing), str(patch)], False)
++    assert json.loads((missing / 'processing-status.json').read_text())['status'] == 'no_products'
++    # A repeated terminator cannot create an X-band line, including at EOF.
++    terminator = bytearray(380); terminator[4] = 51
++    dump = decode('dump-no-data', bytes(terminator) * 2 + b'tail', False,
++        'meteor_m_mtvza_dump', 'frm', ['--satellite_number', 'M2-4'])
++    assert not list(dump.rglob('product.cbor'))
++    dump_data = bytearray()
++    for counter in range(52):
++        frame = bytearray(380); frame[4] = counter
++        for n in range(184): frame[10 + 2 * n:12 + 2 * n] = struct.pack('>H', 12000 + n)
++        dump_data.extend(frame)
++    full_dump = decode('dump-valid', dump_data, True, 'meteor_m_mtvza_dump', 'frm', ['--satellite_number', 'M2-2'])
++    assert len(list((full_dump / 'MTVZA').glob('MTVZA-*.png'))) == 46
++    assert json.loads((full_dump / 'dataset.json').read_text())['timestamp'] == -1
++    (root / 'MTVZA-TEST.json').write_text(json.dumps({'success': True, 'data': 'synthetic', 'cases': results}, indent=2))
++    print('MTVZA native regressions passed:', len(results))
++
++
++if __name__ == '__main__':
++    main()
+diff --git a/tests/station/test_product_quality.py b/tests/station/test_product_quality.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..70ee084a077cc39d4ba6b313c121afbea7c9cbdf
+--- /dev/null
++++ b/tests/station/test_product_quality.py
+@@ -0,0 +1,166 @@
++# -*- coding: utf-8 -*-
++import json
++import sys
++import tempfile
++import unittest
++from pathlib import Path
++from unittest import mock
++
++ROOT = Path(__file__).resolve().parents[2]
++sys.path.insert(0, str(ROOT / 'services/station'))
++import station
++import board
++import product_quality as quality
++from PIL import Image
++
++
++class QualityTests(unittest.TestCase):
++    def setUp(self):
++        self.temp = tempfile.TemporaryDirectory()
++        self.root = Path(self.temp.name)
++        self.source = {'id': 'test', 'kind': 'product', 'path': str(self.root)}
++
++    def tearDown(self):
++        self.temp.cleanup()
++
++    def report(self, name, value):
++        p = self.root / name
++        station.atomic_json(p, value)
++        return p
++
++    def processing(self, instrument, status='ok', generated=1):
++        return self.report(instrument + '/processing-status.json', {
++            'schema': 'satdump.processing-status/1', 'instrument': instrument,
++            'status': status, 'generated': generated})
++
++    def image(self, instrument):
++        p = self.root / instrument / 'fixture_annotated_presentation.png'
++        p.parent.mkdir(exist_ok=True)
++        Image.new('RGB', (8, 8)).save(str(p))
++        return p
++
++    def test_optional_missing_instrument_is_visible(self):
++        self.report('decode-status.json', {'schema': 'satdump.decode-status/1', 'instruments': [
++            {'instrument': 'mtvza', 'status': 'no_data', 'lines': 0}]})
++        self.processing('msu_mr')
++        result = quality.assess(self.root, self.source, [self.image('msu_mr')], station.read_json)
++        self.assertEqual('partial', result['status'])
++        self.assertIn('mtvza:no_data', result['warnings'])
++        self.assertEqual([], result['missing_required'])
++
++    def test_required_missing_is_not_masked_by_other_images(self):
++        self.source['required_instruments'] = ['mtvza']
++        self.processing('msu_mr')
++        result = quality.assess(self.root, self.source, [self.image('msu_mr')], station.read_json)
++        self.assertEqual(['mtvza'], result['missing_required'])
++
++    def test_report_without_actual_presentation_does_not_satisfy_required(self):
++        self.source['required_instruments'] = ['mtvza']
++        self.processing('mtvza')
++        self.assertEqual(['mtvza'], quality.assess(self.root, self.source, [], station.read_json)['missing_required'])
++
++    def test_good_required_instrument(self):
++        self.source['required_instruments'] = ['mtvza']
++        self.processing('mtvza')
++        result = quality.assess(self.root, self.source, [self.image('mtvza')], station.read_json)
++        self.assertEqual('ok', result['status'])
++
++    def test_partial_native_error_is_not_silent(self):
++        self.processing('mtvza', 'partial')
++        result = quality.assess(self.root, self.source, [self.image('mtvza')], station.read_json, ['native exit 1'])
++        self.assertEqual('partial', result['status'])
++        self.assertIn('native_processing_error', result['warnings'])
++
++    def test_old_engine_reports_unverified_not_complete(self):
++        result = quality.assess(self.root, self.source, [self.image('mtvza')], station.read_json)
++        self.assertEqual('partial', result['status'])
++        self.assertIn('instrument_completeness_unverified', result['warnings'])
++
++    def test_invalid_receipt_is_rejected(self):
++        self.report('processing-status.json', {'schema': 'unknown'})
++        with self.assertRaises(ValueError):
++            quality.assess(self.root, self.source, [], station.read_json)
++
++    def test_required_configuration(self):
++        for value in ['mtvza', ['mtvza', 'mtvza'], ['../private'], [True], [None]]:
++            self.source['required_instruments'] = value
++            with self.assertRaises(ValueError):
++                quality.validate_required(self.source)
++        self.source.update(kind='image', required_instruments=['mtvza'])
++        with self.assertRaises(ValueError):
++            quality.validate_required(self.source)
++
++
++class RecoveryTests(unittest.TestCase):
++    def setUp(self):
++        self.temp = tempfile.TemporaryDirectory()
++        self.root = Path(self.temp.name)
++        self.inbox = self.root / 'input'
++        self.inbox.mkdir()
++        station.STOP.clear()
++        cfg = {'schema': 'satdump.station/1', 'data_dir': str(self.root / 'data'),
++               'settle_seconds': 0, 'min_free_mb': 0, 'engine': sys.executable,
++               'sources': [{'id': 'images', 'kind': 'image', 'path': str(self.inbox)}]}
++        station.atomic_json(self.root / 'station.json', cfg)
++        station.atomic_json(self.root / 'processing.json', {})
++        self.cls, unused = board.install_adapter(station)
++        self.worker = self.cls(station.load_config(self.root / 'station.json'))
++        Image.new('RGB', (8, 8)).save(str(self.inbox / 'fixture.png'))
++
++    def tearDown(self):
++        self.worker.close()
++        station.STOP.clear()
++        self.temp.cleanup()
++
++    def ingest(self):
++        self.worker.tick(); self.worker.tick()
++        return self.worker.db.execute('SELECT * FROM jobs').fetchone()
++
++    def test_missing_asset_recovered_without_duplicate_job(self):
++        job = self.ingest()
++        final = self.root / 'data/public/items' / job['id']
++        original = next(final.glob('*.png'))
++        original.unlink()
++        self.worker.close()
++        self.worker = self.cls(station.load_config(self.root / 'station.json'))
++        self.worker.recover()
++        self.assertEqual('pending', self.worker.db.execute('SELECT state FROM jobs').fetchone()[0])
++        self.worker.tick()
++        self.assertTrue(self.worker.publication_complete(job['id']))
++        self.assertEqual(1, self.worker.db.execute('SELECT count(*) FROM jobs').fetchone()[0])
++        self.assertTrue(list((self.root / 'data/work').glob('quarantine-*')))
++
++    def test_manifest_alone_is_not_a_complete_publication(self):
++        job = self.ingest()
++        manifest_path = self.root / 'data/public/items' / job['id'] / 'item.json'
++        manifest = station.read_json(manifest_path)
++        manifest['entries'][0]['original'] = 'items/' + job['id'] + '/../secret.png'
++        station.atomic_json(manifest_path, manifest)
++        self.assertFalse(self.worker.publication_complete(job['id']))
++
++    def test_stop_does_not_consume_attempt(self):
++        self.worker.scan(); self.worker.scan()
++        def interrupt(job):
++            station.STOP.set()
++            raise RuntimeError('service stop')
++        self.worker.process = interrupt
++        self.worker.tick()
++        job = self.worker.db.execute('SELECT * FROM jobs').fetchone()
++        self.assertEqual('pending', job['state'])
++        self.assertEqual(0, job['attempts'])
++
++    def test_completed_publication_recovers_missing_database_commit(self):
++        job = self.ingest()
++        self.worker.db.execute("UPDATE jobs SET state='running'")
++        self.worker.db.commit()
++        self.worker.recover()
++        self.worker.tick()
++        self.assertEqual('done', self.worker.db.execute('SELECT state FROM jobs').fetchone()[0])
++        self.assertEqual(1, len(list((self.root / 'data/public/items').iterdir())))
++
++    def test_worker_forces_automatic_pipeline_processing(self):
++        self.assertTrue(self.worker.patch['satdump_general']['auto_process_products']['value'])
++
++
++if __name__ == '__main__':
++    unittest.main()

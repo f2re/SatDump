@@ -1,0 +1,97 @@
+name: Validate MTVZA repair before updating release branch
+on:
+  push:
+    branches: [work/mtvza-validation-dbf9dca3]
+permissions:
+  contents: write
+jobs:
+  validate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: payload
+      - uses: actions/checkout@v4
+        with:
+          ref: dbf9dca33b8f7ddc24b96c98e4926665c62a9bd3
+          path: source
+      - name: Verify and apply reviewed patch
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, pathlib, subprocess
+          payload = pathlib.Path('payload')
+          manifest = json.loads((payload / 'manifest.json').read_text())
+          actual = subprocess.check_output(['git', '-C', 'source', 'rev-parse', 'HEAD']).decode().strip()
+          assert actual == manifest['base']
+          patch = b''.join((payload / name).read_bytes() for name in manifest['parts'])
+          assert hashlib.sha256(patch).hexdigest() == manifest['patch_sha256']
+          path = pathlib.Path('reviewed.patch').resolve()
+          path.write_bytes(patch)
+          subprocess.run(['git', '-C', 'source', 'apply', '--check', str(path)], check=True)
+          subprocess.run(['git', '-C', 'source', 'apply', str(path)], check=True)
+          for name, digest in manifest['files'].items():
+              assert hashlib.sha256((pathlib.Path('source') / name).read_bytes()).hexdigest() == digest, name
+          PY
+      - name: Build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y build-essential cmake pkg-config python3-pil shellcheck nginx libfftw3-dev libpng-dev libtiff-dev libjemalloc-dev libcurl4-openssl-dev libnng-dev libvolk2-dev
+      - name: Station and documentation regression tests
+        working-directory: source
+        run: |
+          /usr/bin/python3 -m unittest discover -s tests/station -v
+          /usr/bin/python3 -m unittest discover -s tests/docs -v
+          /usr/bin/python3 scripts/docs/check.py
+          node --check services/station/web/app.js
+          /usr/bin/python3 - <<'PY'
+          import ast, pathlib
+          for root in ['services/station', 'scripts/station', 'tests/station']:
+              for path in pathlib.Path(root).rglob('*.py'):
+                  ast.parse(path.read_text(), filename=str(path), feature_version=(3, 5))
+          PY
+      - name: Build native engine and regression executables
+        working-directory: source
+        env:
+          ASTRA_VERSION_OVERRIDE: '1.6'
+        run: |
+          set -o pipefail
+          bash scripts/astra/build.sh --mode native --profile headless --jobs 2 --build-dir "$GITHUB_WORKSPACE/build/native" --prefix "$GITHUB_WORKSPACE/build/install" --install 2>&1 | tee "$GITHUB_WORKSPACE/native-build.log"
+      - name: Verify actual MTVZA pipeline and semantic guards
+        working-directory: source
+        run: |
+          set -o pipefail
+          export LD_LIBRARY_PATH="$GITHUB_WORKSPACE/build/native:$GITHUB_WORKSPACE/build/native/plugins:$GITHUB_WORKSPACE/build/install/lib:${LD_LIBRARY_PATH:-}"
+          mkdir -p "$GITHUB_WORKSPACE/test-results"
+          "$GITHUB_WORKSPACE/build/native/satdump-mtvza-reader-test" "$GITHUB_WORKSPACE/test-results/reader"
+          "$GITHUB_WORKSPACE/build/native/satdump-presentation-semantics-test" resources/presentation/composite_profiles_ru.json resources/fonts/Roboto-Medium.ttf "$GITHUB_WORKSPACE/test-results/semantics"
+          /usr/bin/python3 tests/meteor/test_native_products.py --engine "$GITHUB_WORKSPACE/build/install/bin/satdump" --output "$GITHUB_WORKSPACE/test-results/native"
+      - name: Commit only verified source files to a validation branch
+        env:
+          RESULT_BRANCH: work/mtvza-verified-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, subprocess
+          manifest = json.loads(pathlib.Path('payload/manifest.json').read_text())
+          for name, digest in manifest['files'].items():
+              assert not name.startswith('.github/'), name
+              assert hashlib.sha256((pathlib.Path('source') / name).read_bytes()).hexdigest() == digest, name
+          subprocess.run(['git', '-C', 'source', 'add', '--'] + list(manifest['files']), check=True)
+          changed = subprocess.check_output(['git', '-C', 'source', 'diff', '--cached', '--name-only']).decode().splitlines()
+          assert set(changed) == set(manifest['files'])
+          subprocess.run(['git', '-C', 'source', '-c', 'user.name=SatDump maintenance', '-c', 'user.email=maintenance@users.noreply.github.com', 'commit', '-m', 'Fix MTVZA scan recovery, product integrity and per-instrument publication checks'], check=True)
+          sha = subprocess.check_output(['git', '-C', 'source', 'rev-parse', 'HEAD']).decode().strip()
+          subprocess.run(['git', '-C', 'source', 'push', 'origin', 'HEAD:refs/heads/' + os.environ['RESULT_BRANCH']], check=True)
+          pathlib.Path('test-results/VERIFIED-COMMIT.json').write_text(json.dumps({'sha': sha, 'base': manifest['base'], 'branch': os.environ['RESULT_BRANCH'], 'files': len(changed), 'tests_passed': True}, indent=2))
+          print('Verified commit:', sha)
+          PY
+      - name: Preserve validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mtvza-validation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            native-build.log
+            test-results/
+          if-no-files-found: warn
+          retention-days: 14

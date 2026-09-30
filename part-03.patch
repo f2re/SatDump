@@ -1,0 +1,314 @@
+                 os.replace(str(log_path), str(log_path) + '.previous')
++            native_errors = []
+             if source['kind'] == 'product':
++                for old_report in incoming.rglob('processing-status.json'):
++                    old_report.unlink()
+                 for product in sorted(incoming.rglob('product.cbor')):
+                     for old in product.parent.glob('*_annotated*'):
+                         if old.is_file():
+                             old.unlink()
+-                    self.native([self.engine, 'reprocess', str(product.parent), str(patch_path)], work, log_path)
++                    try:
++                        self.native([self.engine, 'reprocess', str(product.parent), str(patch_path)], work, log_path)
++                    except station.NativeProcessError as error:
++                        if station.STOP.is_set(): raise
++                        native_errors.append(str(error))
+             elif source['kind'] == 'pipeline':
+                 result = work / 'decoded'
+                 argv = [self.engine, source['pipeline'], source['input_level'], str(incoming / path.name), str(result)]
+-                self.native(argv + source.get('options', []) + ['--offline', '--processing_config', str(patch_path)], work, log_path)
++                try:
++                    self.native(argv + source.get('options', []) + ['--offline', '--processing_config', str(patch_path)], work, log_path)
++                except station.NativeProcessError as error:
++                    if station.STOP.is_set(): raise
++                    native_errors.append(str(error))
+             if source['kind'] == 'image':
+                 images = [incoming / path.name]
+             else:
+                 images = sorted(p for p in result.rglob('*.png') if p.is_file() and
+                                 p.name.endswith(('_annotated_presentation.png', '_annotated_minimal.png')))
+-            if not images:
+-                raise RuntimeError('No native presentation PNG/JSON; inspect recipe and native log')
++            quality = product_quality.assess(result, source, images, station.read_json, native_errors)
++            station.atomic_json(self.data / 'logs' / (job_id + '.quality.json'), quality)
++            if not images or quality['missing_required']:
++                missing = ', '.join(quality['missing_required'])
++                raise RuntimeError('No required native presentation PNG/JSON: ' + (missing or 'all products') + '; inspect quality report')
+             if len(images) > 1000:
+                 raise ValueError('More than 1000 presentation products in one pass')
+             publication = work / 'publication'
+             publication.mkdir()
+             entries = [self.prepare_image(p, publication, job_id, i, source, file_time, source['kind'] != 'image')
+                        for i, p in enumerate(images)]
+-            station.atomic_json(publication / 'item.json', {'job_id': job_id, 'entries': entries})
++            for entry in entries:
++                entry['processing_quality'] = quality
++            station.atomic_json(publication / 'item.json', {'job_id': job_id, 'entries': entries, 'quality': quality})
+             archive = self.data / 'archive' / job_id
+             if self.cfg.get('archive_science', True) and not archive.exists():
+                 station.move_tree(result, archive, lambda: self.heartbeat('archiving'))
+diff --git a/services/station/control.py b/services/station/control.py
+index b494a5e047bfb1f6fab34a49a29dd801dc4af86e..c40f5395faefa02eaf617d788878450ef30fe925 100644
+--- a/services/station/control.py
++++ b/services/station/control.py
+@@ -7,6 +7,7 @@ The root-owned base configuration/policy remain the privilege boundary.
+ """
+ from __future__ import print_function
+ import argparse
++import product_quality
+ import copy
+ import fcntl
+ import hashlib
+@@ -37,7 +38,7 @@ MODES = ('auto', 'keep', 'none', 'source', 'flip_vertical', 'vertical',
+ COLORS = ('panel', 'panel_secondary', 'border', 'text', 'muted_text', 'accent',
+           'warning', 'error', 'red_component', 'green_component', 'blue_component')
+ SOURCE_KEYS = ('id', 'kind', 'path', 'enabled', 'patterns', 'require_ready',
+-               'satellite', 'instrument', 'pipeline', 'input_level', 'options')
++               'satellite', 'instrument', 'pipeline', 'input_level', 'options', 'required_instruments')
+ PIPE_OPTIONS = {'--samplerate': r'[0-9]{1,10}', '--baseband_format': r'(cs8|cs16|cf32|cu8|s8|s16|f32|u8)',
+                 '--dc_block': r'(true|false)', '--iq_swap': r'(true|false)',
+                 '--freq_shift': r'-?[0-9]{1,10}'}
+@@ -263,6 +264,7 @@ class Store:
+         seen, paths = set(), []
+         for source in s['sources']:
+             keys(source, SOURCE_KEYS, 'source')
++            product_quality.validate_required(source)
+             require(all(k in source for k in ('id', 'kind', 'path')), 'Нужны id, kind и path')
+             require(isinstance(source['id'], str) and re.match(r'^[A-Za-z0-9_-]{1,64}$', source['id']) and source['id'] not in seen, 'Неуникальный/небезопасный id')
+             seen.add(source['id'])
+diff --git a/services/station/product_quality.py b/services/station/product_quality.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..7da22087cfb832638d0d4b26f1cf17ccc126d99f
+--- /dev/null
++++ b/services/station/product_quality.py
+@@ -0,0 +1,101 @@
++# -*- coding: utf-8 -*-
++"""Per-instrument checks using decoder receipts and actual published assets."""
++import re
++from pathlib import Path
++
++ID = re.compile(r'^[a-zA-Z0-9_-]{1,64}$')
++
++
++def validate_required(source):
++    required = source.get('required_instruments', [])
++    if (not isinstance(required, list) or len(required) > 32 or
++            any(not isinstance(v, str) or not ID.match(v) for v in required) or
++            len(set(required)) != len(required)):
++        raise ValueError('required_instruments: expected unique instrument identifiers')
++    if source.get('kind') == 'image' and required:
++        raise ValueError('required_instruments needs a product or pipeline source')
++    return required
++
++
++def assess(root, source, images, read_json, native_errors=None):
++    required = validate_required(source)
++    rows, warnings = {}, []
++    if source['kind'] == 'image':
++        return {'status': 'external', 'instruments': [], 'warnings': [], 'missing_required': []}
++
++    def row_for(identifier):
++        if not isinstance(identifier, str) or not ID.match(identifier):
++            raise ValueError('Invalid instrument identifier in processing report')
++        return rows.setdefault(identifier, {'id': identifier, 'status': 'ok', 'images': 0})
++
++    def receipt(path, schema):
++        if path.is_symlink():
++            raise ValueError('Symlink processing report')
++        data = read_json(path)
++        if not isinstance(data, dict) or data.get('schema') != schema:
++            raise ValueError('Invalid processing report schema')
++        return data
++
++    for path in sorted(Path(root).rglob('decode-status.json')):
++        report = receipt(path, 'satdump.decode-status/1')
++        if report.get('trailing_bytes', 0):
++            warnings.append('incomplete_input_frame')
++        for entry in report.get('instruments', []):
++            row = row_for(entry.get('instrument'))
++            status = entry.get('status')
++            if status not in ('ok', 'partial', 'no_data'):
++                raise ValueError('Invalid decoder status')
++            lines = entry.get('lines', 0)
++            if type(lines) is not int or not 0 <= lines <= 100000000:
++                raise ValueError('Invalid decoded line count')
++            if status != 'ok':
++                row['status'] = status
++                warnings.append(row['id'] + ':' + status)
++            row['lines'] = row.get('lines', 0) + lines
++    for path in sorted(Path(root).rglob('processing-status.json')):
++        report = receipt(path, 'satdump.processing-status/1')
++        row = row_for(report.get('instrument'))
++        row['images'] += sum(p.parent == path.parent for p in images)
++        if report.get('status') not in ('ok', 'partial', 'no_products'):
++            raise ValueError('Invalid processing status')
++        if report['status'] != 'ok' or not report.get('generated', 0):
++            row['status'] = 'partial' if row['images'] else 'no_products'
++            warnings.append(row['id'] + ':' + row['status'])
++    for path in sorted(Path(root).rglob('dataset-processing.json')):
++        report = receipt(path, 'satdump.dataset-processing/1')
++        if any(v.get('status') == 'failed' for v in report.get('products', [])):
++            warnings.append('instrument_processing_failed')
++    if native_errors:
++        warnings.append('native_processing_error')
++    for row in rows.values():
++        if not row['images']:
++            warnings.append(row['id'] + ':no_presentation')
++    missing = sorted(v for v in required if not rows.get(v, {}).get('images'))
++    warnings.extend(v + ':required_missing' for v in missing)
++    if not rows:
++        warnings.append('instrument_completeness_unverified')
++    return {'status': 'partial' if warnings else 'ok',
++            'instruments': sorted(rows.values(), key=lambda v: v['id']),
++            'warnings': sorted(set(warnings)), 'missing_required': missing}
++
++
++def publication_complete(public, job_id, read_json):
++    root = Path(public) / 'items' / job_id
++    try:
++        if root.is_symlink() or (root / 'item.json').is_symlink():
++            return False
++        manifest = read_json(root / 'item.json')
++        if manifest.get('job_id') != job_id or not manifest.get('entries'):
++            return False
++        for entry in manifest['entries']:
++            for key in ('original', 'preview', 'thumbnail', 'metadata'):
++                value = entry[key]
++                pattern = r'^items/' + re.escape(job_id) + r'/[0-9]{3}(?:-preview|-thumb)?\.(png|jpg|json)$'
++                if not isinstance(value, str) or not re.match(pattern, value):
++                    return False
++                asset = Path(public) / value
++                if asset.is_symlink() or not asset.is_file() or asset.stat().st_size == 0:
++                    return False
++        return True
++    except (OSError, ValueError, KeyError, TypeError, AttributeError):
++        return False
+diff --git a/services/station/station.py b/services/station/station.py
+index f88d593721fd31b05f24f565532d476f8f4ff45e..5ba8682ad0646df79d5922d8c246fd037383ac1b 100644
+--- a/services/station/station.py
++++ b/services/station/station.py
+@@ -34,11 +34,17 @@ APP = Path(__file__).resolve().parent
+ if str(APP) not in sys.path:
+     sys.path.insert(0, str(APP))
+ import timebase
++import product_quality
+ STOP = threading.Event()
+ IMAGE_EXT = (".png", ".jpg", ".jpeg")
+ SCHEMAS = ("satdump.presentation/1", "satdump.presentation/2")
+ 
+ 
++class NativeProcessError(RuntimeError):
++    """A finished process returned an error; unlike a timeout it may have valid outputs."""
++    pass
++
++
+ class InputChanged(ValueError):
+     pass
+ 
+@@ -152,6 +158,7 @@ def load_config(path):
+         if not re.match(r"^[a-zA-Z0-9_-]+$", source["id"]) or source["id"] in ids:
+             raise ValueError("Source ids must be unique safe identifiers")
+         ids.add(source["id"])
++        product_quality.validate_required(source)
+         if source["kind"] not in ("image", "product", "pipeline"):
+             raise ValueError("Unknown source kind")
+         root = Path(source["path"])
+@@ -288,11 +295,16 @@ class Worker:
+         self.db.commit()
+         self.seen = {}
+         self.source_errors = {}
++        try:
++            self.last_result = read_json(self.data / "state/last-result.json")
++        except (OSError, ValueError):
++            self.last_result = {}
+         self.sources = {s["id"]: s for s in cfg["sources"] if s.get("enabled", True)}
+         patch_path = Path(cfg["_config_dir"]) / cfg.get("processing_config", "processing.json")
+         self.patch = read_json(patch_path)
+         self.patch.setdefault("satdump_general", {})["tle_update_interval"] = {"value": "Never"}
+         self.patch["satdump_general"]["log_to_file"] = {"value": False}
++        self.patch["satdump_general"]["auto_process_products"] = {"value": True}
+         self.engine = str(Path(cfg.get("engine", "/opt/satdump-station/current/engine/satdump")).resolve())
+ 
+     def fingerprint(self, source, signature):
+@@ -303,9 +315,32 @@ class Worker:
+     def close(self):
+         self.db.close()
+ 
++    def publication_complete(self, job_id):
++        return product_quality.publication_complete(self.data / "public", job_id, read_json)
++
++    def publication_ready(self, job_id):
++        if self.publication_complete(job_id):
++            return True
++        final = self.data / "public/items" / job_id
++        if final.exists():
++            quarantine = self.data / "work" / ("quarantine-" + job_id + "-" + uuid.uuid4().hex)
++            move_tree(final, quarantine)
++        return False
++
++    def remember_result(self, job, state, quality=None):
++        result = {"job_id": job["id"], "source": job["source"], "state": state}
++        if quality:
++            result.update(quality=quality["status"], instruments=quality["instruments"],
++                          warning_count=len(quality["warnings"]))
++        self.last_result = result
++        atomic_json(self.data / "state/last-result.json", result)
++
+     def recover(self):
+         # Called only after the process lock has been acquired by main().
+         self.db.execute("UPDATE jobs SET state='pending', next_at=0 WHERE state='running'")
++        for row in self.db.execute("SELECT id FROM jobs WHERE state='done'").fetchall():
++            if not self.publication_complete(row['id']):
++                self.db.execute("UPDATE jobs SET state='pending',attempts=0,next_at=0,error='publication_missing' WHERE id=?", (row['id'],))
+         self.db.commit()
+         self.catalog()
+ 
+@@ -378,8 +413,10 @@ class Worker:
+                     if log_path.stat().st_size > self.cfg["max_log_mb"] * 1024 ** 2:
+                         raise RuntimeError("Processing log exceeded limit")
+                     STOP.wait(1)
++                if proc.returncode < 0:
++                    raise RuntimeError("SatDump terminated by signal " + str(-proc.returncode))
+                 if proc.returncode:
+-                    raise RuntimeError("SatDump exit code " + str(proc.returncode))
++                    raise NativeProcessError("SatDump exit code " + str(proc.returncode))
+             finally:
+                 if proc.poll() is None:
+                     os.killpg(proc.pid, signal.SIGTERM)
+@@ -392,9 +429,8 @@ class Worker:
+     def process(self, job):
+         job_id = job["id"]
+         final = self.data / "public/items" / job_id
+-        if (final / "item.json").is_file():
+-            if read_json(final / "item.json")["job_id"] == job_id:
+-                return  # Recovery after atomic publication but before DB commit.
++        if self.publication_ready(job_id):
++            return  # Fully written publication before a missing SQLite commit.
+         source = self.sources[job["source"]]
+         path = Path(job["path"])
+         ready = path / ".ready" if source["kind"] == "product" else Path(str(path) + ".ready")
+@@ -548,7 +584,7 @@ class Worker:
+         counts = dict(self.db.execute("SELECT state, count(*) FROM jobs GROUP BY state").fetchall())
+         status = timebase.heartbeat_fields()
+         status.update(phase=phase, queue=counts, sources=self.source_errors,
+-                      stale_after=max(60, self.cfg["poll_seconds"] * 4))
++                      stale_after=max(60, self.cfg["poll_seconds"] * 4), last_result=self.last_result)
+         atomic_json(self.data / "public/worker.json", status)
+ 
+     def tick(self):
+@@ -563,6 +599,8 @@ class Worker:
+             try:
+                 self.process(job)
+                 self.db.execute("UPDATE jobs SET state='done',error='',finished=? WHERE id=?", (time.time(), job["id"]))
++                quality = read_json(self.data / "public/items" / job["id"] / "item.json").get("quality") if self.publication_complete(job["id"]) else None
++                self.remember_result(job, "done", quality)
+                 LOG.info("Published %s", job["id"])
+             except Exception as error:
+                 LOG.exception("Processing failed: %s", job["id"])
+@@ -572,6 +610,11 @@ class Worker:
+                 self.db.execute("UPDATE jobs SET state=?,error=?,next_at=?,retry_boot=?,retry_at=? WHERE id=?",
+                                 (state, str(error)[:2000], time.time() + delay, self.boot_scope,
+                                  time.monotonic() + delay, job["id"]))
++                if STOP.is_set():
++                    self.db.execute("UPDATE jobs SET state='pending',attempts=?,next_at=0 WHERE id=?",
++                                    (job["attempts"], job["id"]))

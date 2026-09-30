@@ -1,0 +1,283 @@
+             // Products dataset
+             satdump::ProductDataSet dataset;
+             dataset.satellite_name = sat_name;
+-            dataset.timestamp = get_median(msumr_timestamps);
++            std::vector<double> valid_times;
++            for (double t : msumr_timestamps) if (std::isfinite(t) && t > 0) valid_times.push_back(t);
++            dataset.timestamp = valid_times.empty() ? -1 : get_median(valid_times);
++            nlohmann::json decode_status = {{"schema", "satdump.decode-status/1"},
++                {"trailing_bytes", trailing_bytes}, {"instruments", nlohmann::json::array()}};
+ 
+             // Satellite ID
+             {
+@@ -170,7 +180,11 @@ namespace meteor
+                 logger->info("Name  : " + sat_name);
+             }
+ 
++            decode_status["instruments"].push_back({{"instrument", "msu_mr"},
++                {"lines", msumr_reader.lines}, {"status", msumr_reader.lines > 0 ? "ok" : "no_data"}});
++            if (msumr_reader.lines == 0) msumr_status = NO_DATA;
+             // MSU-MR
++            if (msumr_reader.lines > 0)
+             {
+                 msumr_status = SAVING;
+                 std::string directory = d_output_file_hint.substr(0, d_output_file_hint.rfind('/')) + "/MSU-MR";
+@@ -267,6 +281,19 @@ namespace meteor
+                                     ? mtvza_reader2
+                                     : mtvza_reader;
+ 
++                decode_status["instruments"].push_back({{"instrument", "mtvza"},
++                    {"channel_layout", "hrpt30"}, {"lines", mreader.lines},
++                    {"incomplete_scans", mreader.sequence.incomplete_scans},
++                    {"rejected_frames", mreader.sequence.rejected_frames},
++                    {"status", mreader.lines == 0 ? "no_data" :
++                        (mreader.sequence.incomplete_scans ? "partial" : "ok")}});
++                if (mreader.lines == 0)
++                {
++                    mtvza_status = NO_DATA;
++                    logger->warn("MTVZA: no complete scans; product.cbor was not created");
++                }
++                else
++                {
+                 mtvza_status = SAVING;
+                 std::string directory = d_output_file_hint.substr(0, d_output_file_hint.rfind('/')) + "/MTVZA";
+ 
+@@ -278,6 +305,8 @@ namespace meteor
+ 
+                 satdump::ImageProducts mtvza_products;
+                 mtvza_products.instrument_name = "mtvza";
++                mtvza_products.contents["channel_layout"] = "hrpt30";
++                mtvza_products.contents["decode_quality"] = decode_status["instruments"].back();
+                 mtvza_products.has_timestamps = true;
+                 mtvza_products.timestamp_type = satdump::ImageProducts::TIMESTAMP_LINE;
+                 mtvza_products.set_tle(satdump::general_tle_registry.get_from_norad_time(norad, dataset.timestamp));
+@@ -297,6 +326,7 @@ namespace meteor
+                 dataset.products_list.push_back("MTVZA");
+ 
+                 mtvza_status = DONE;
++                }
+             }
+ 
+             // BIS-M
+@@ -316,7 +346,11 @@ namespace meteor
+                 bism_status = DONE;
+             }
+ 
+-            dataset.save(d_output_file_hint.substr(0, d_output_file_hint.rfind('/')));
++            const std::string output_dir = d_output_file_hint.substr(0, d_output_file_hint.rfind('/'));
++            satdump::write_product_status(output_dir + "/decode-status.json", decode_status);
++            dataset.save(output_dir);
++            if (dataset.products_list.empty())
++                throw std::runtime_error("Meteor HRPT: no complete instrument scans; see decode-status.json");
+         }
+ 
+         void MeteorInstrumentsDecoderModule::drawUI(bool window)
+diff --git a/plugins/meteor_support/meteor/module_meteor_xband_instruments.cpp b/plugins/meteor_support/meteor/module_meteor_xband_instruments.cpp
+index f6ad2674106783bb6383f76298a86447767059cf..d7fa2dc58d1805eed60bb9310ba0e9caeb62dbd4 100644
+--- a/plugins/meteor_support/meteor/module_meteor_xband_instruments.cpp
++++ b/plugins/meteor_support/meteor/module_meteor_xband_instruments.cpp
+@@ -6,6 +6,10 @@
+ #include "common/utils.h"
+ #include "meteor.h"
+ #include "products/image_products.h"
++#include "products/product_status.h"
++#include "instruments/mtvza/scan_sequence.h"
++#include <algorithm>
++#include <cmath>
+ #include "common/tracking/tle.h"
+ #include "products/dataset.h"
+ #include "resources.h"
+@@ -115,6 +119,7 @@ namespace meteor
+             filesize = getFilesize(d_input_file);
+             std::ifstream data_in(d_input_file, std::ios::binary);
+ 
++            if (!data_in) throw std::runtime_error("Cannot open Meteor dump: " + d_input_file);
+             logger->info("Using input frames " + d_input_file);
+ 
+             std::string sat_name = "Unknown Meteor";
+@@ -136,24 +141,29 @@ namespace meteor
+             if (d_instrument_mode == DUMP_TYPE_MTVZA)
+             {
+ 
+-                uint8_t frame[380];
++                uint8_t frame[380] = {};
++                mtvza::ScanSequence sequence(1, 51);
++                std::vector<uint16_t> pending[46];
++                for (auto &channel : pending) channel.resize(200);
+ 
+                 std::vector<uint16_t> mtvza_channels[46];
+ 
+                 for (int i = 0; i < 46; i++)
+                     mtvza_channels[i].resize(200);
+ 
+-                double last_timestamp = 0;
++                double last_timestamp = -1;
+                 std::vector<double> timestamps;
+ 
+                 time_t lastTime = 0;
+-                while (!data_in.eof())
++                while (data_in.read((char *)frame, sizeof(frame)))
+                 {
+-                    // Read buffer
+-                    data_in.read((char *)&frame, 380);
+ 
+                     {
+                         int counter = frame[4];
++                        if (counter == 0) sequence.finish();
++                        else if (!sequence.accept(counter)) { last_timestamp = -1; continue; }
++                        if (counter == 1)
++                            for (auto &channel : pending) std::fill(channel.begin(), channel.end(), 0);
+ 
+                         int pos = 10;
+                         for (int c = 0; c < 46; c++)
+@@ -163,17 +173,20 @@ namespace meteor
+                                 uint16_t val = (frame[pos + p * 92 + c * 2 + 0] << 8 | frame[pos + p * 92 + c * 2 + 1]); //+ 32768;
+                                 // int16_t val2 = *((int16_t *)&val);
+                                 if (counter < 51 && counter > 0)
+-                                    mtvza_channels[c][mtvza_lines * 200 + (counter - 1) * 4 + p] = val; // (int)val2; // + 32768;
++                                    pending[c][(counter - 1) * 4 + p] = val; // (int)val2; // + 32768;
+                             }
+                         }
+ 
+                         if (counter == 51)
+                         {
++                            for (int c = 0; c < 46; ++c)
++                                std::copy(pending[c].begin(), pending[c].end(), mtvza_channels[c].begin() + mtvza_lines * 200);
+                             mtvza_lines++;
+ 
+                             for (int i = 0; i < 46; i++)
+                                 mtvza_channels[i].resize((mtvza_lines + 1) * 200);
+                             timestamps.push_back(last_timestamp);
++                            last_timestamp = -1;
+ 
+                             logger->info("Lines %d CNT %d", mtvza_lines, counter);
+                         }
+@@ -208,7 +221,24 @@ namespace meteor
+                     }
+                 }
+ 
++                const auto trailing_bytes = data_in.gcount();
++                if (data_in.bad()) throw std::runtime_error("MTVZA dump read failed");
++                if (trailing_bytes) logger->warn("Ignored incomplete MTVZA dump frame: %d bytes", int(trailing_bytes));
++                sequence.finish();
+                 data_in.close();
++                const std::string output_dir = d_output_file_hint.substr(0, d_output_file_hint.rfind('/'));
++                nlohmann::json quality = {{"instrument", "mtvza"}, {"channel_layout", "dump46"},
++                    {"lines", mtvza_lines}, {"incomplete_scans", sequence.incomplete_scans},
++                    {"rejected_frames", sequence.rejected_frames},
++                    {"status", mtvza_lines == 0 ? "no_data" : (sequence.incomplete_scans ? "partial" : "ok")},
++                    {"timestamp_source", "legacy_onboard_counter_conversion"}};
++                satdump::write_product_status(output_dir + "/decode-status.json",
++                    {{"schema", "satdump.decode-status/1"}, {"trailing_bytes", trailing_bytes}, {"instruments", {quality}}});
++                if (mtvza_lines == 0)
++                {
++                    mtvza_status = NO_DATA;
++                    throw std::runtime_error("MTVZA dump: no complete scans; product.cbor was not created");
++                }
+ 
+ #if 0
+             // Identify satellite, and apply per-sat settings...
+@@ -225,7 +255,9 @@ namespace meteor
+                 // Products dataset
+                 satdump::ProductDataSet dataset;
+                 dataset.satellite_name = sat_name;
+-                dataset.timestamp = time(0); // avg_overflowless(msumr_timestamps);
++                std::vector<double> valid_times;
++                for (double t : timestamps) if (std::isfinite(t) && t > 0) valid_times.push_back(t);
++                dataset.timestamp = valid_times.empty() ? -1 : get_median(valid_times);
+ 
+                 // MTVZA
+                 {
+@@ -240,11 +272,18 @@ namespace meteor
+ 
+                     satdump::ImageProducts mtvza_products;
+                     mtvza_products.instrument_name = "mtvza";
++                    mtvza_products.contents["channel_layout"] = "dump46";
++                    mtvza_products.contents["decode_quality"] = quality;
+                     mtvza_products.has_timestamps = true;
+                     mtvza_products.timestamp_type = satdump::ImageProducts::TIMESTAMP_LINE;
+-                    mtvza_products.set_tle(satdump::general_tle_registry.get_from_norad(norad));
++                    if (dataset.timestamp > 0) mtvza_products.set_tle(satdump::general_tle_registry.get_from_norad_time(norad, dataset.timestamp));
+                     mtvza_products.set_timestamps(timestamps);
+-                    mtvza_products.set_proj_cfg(loadJsonFile(resources::getResourcePath("projections_settings/meteor_m2-3_mtvza_dump.json")));
++                    std::string satellite = d_parameters["satellite_number"].get<std::string>();
++                    std::transform(satellite.begin(), satellite.end(), satellite.begin(), ::tolower);
++                    const std::string projection = "projections_settings/meteor_" + satellite + "_mtvza_dump.json";
++                    if (dataset.timestamp > 0 && resources::resourceExists(projection))
++                        mtvza_products.set_proj_cfg(loadJsonFile(resources::getResourcePath(projection)));
++                    else logger->warn("MTVZA dump: matching geolocation unavailable; keeping unprojected channels");
+ 
+                     for (int i = 0; i < 46; i++)
+                         mtvza_products.images.push_back({"MTVZA-" + std::to_string(i + 1), std::to_string(i + 1), image::Image(mtvza_channels[i].data(), 16, 200, mtvza_lines, 1)});
+diff --git a/resources/descriptions/sounders/MTVZARainfall.md b/resources/descriptions/sounders/MTVZARainfall.md
+index b137dd2e7aba6532ff8b78948a584656075fbc83..c2450aef3ec8dd99a46ba57e09351e7b2cf4eb1b 100644
+--- a/resources/descriptions/sounders/MTVZARainfall.md
++++ b/resources/descriptions/sounders/MTVZARainfall.md
+@@ -1,18 +1,11 @@
+-# MTVZA Rainfall & Convection (Зоны осадков и конвекции)
++# МТВЗА-ГЯ · комбинация 24/27/8
+ 
+-Данный композит использует каналы миллиметрового диапазона прибора МТВЗА-ГЯ (89 ГГц, 91.65 ГГц и 36.5 ГГц) для обнаружения зон выпадения осадков, конвективных штормов и градовых ячеек.
++Экспериментальная визуализация цифровых отсчётов. Формула компонентов: `1 - ch24, 1 - ch27, ch8`. После синтеза выполняется поканальная эквализация контраста.
+ 
+-### Физический принцип
++## Вход
+ 
+-В миллиметровом СВЧ-диапазоне (89–91 ГГц) происходит интенсивное объёмное рассеяние излучения на крупных гидрометеорах верхней части конвективных облаков (град, снежная крупа, замерзающие капли), что приводит к резкому снижению радиояркостной температуры. На частоте 36.5 ГГц регистрируется тепловое излучение жидкой капельной фракции дождя над радиометрически «холодной» водной поверхностью.
++Непустые каналы из `product.cbor` и связанные с ним растры. Идентификаторы `chN` относятся к нумерации конкретного набора, не к универсальной таблице частот. Раскладка записывается как `hrpt30` или `dump46`; для старых наборов она может быть неизвестна.
+ 
+-### Интерпретация цветов
++## Ограничения
+ 
+-* **Красный / оранжевый:** интенсивные ливневые осадки, ядра грозовых конвективных ячеек с высокой вероятностью града.
+-* **Жёлтый:** умеренные обложные осадки, развитая дождевая облачность.
+-* **Зелёный:** зоны мороси, водяные облака высокой водности.
+-* **Тёмно-синий / чёрный:** области без осадков, открытая морская или земная поверхность.
+-
+-### Назначение
+-
+-Оперативный штормовой мониторинг опасных явлений погоды (ливни, град, шквалы) вне зависимости от времени суток и оптической плотности облачности.
++Радиометрическая калибровка и восстановление физических величин не реализованы. Из оттенков нельзя получать интенсивность осадков, наличие града, сплочённость или толщину льда, влажность почвы и биомассу. Старое имя рецепта сохранено для совместимости, не как название измеряемой величины.
+diff --git a/resources/descriptions/sounders/MTVZASeaIce.md b/resources/descriptions/sounders/MTVZASeaIce.md
+index 8f8ed72668f196bb146fc372b34d3e67d6aea32f..565e43a111a270bb7bcec9dabb8e3fe243b1da54 100644
+--- a/resources/descriptions/sounders/MTVZASeaIce.md
++++ b/resources/descriptions/sounders/MTVZASeaIce.md
+@@ -1,18 +1,11 @@
+-# MTVZA Sea Ice (Ледовая обстановка в Арктике)
++# МТВЗА-ГЯ · комбинация 7/8/4
+ 
+-Композит ледовой обстановки использует микроволновые каналы прибора МТВЗА-ГЯ 36.5 ГГц (вертикальной и горизонтальной поляризации) и 18.7 ГГц (вертикальной поляризации) для обнаружения и картирования морского льда.
++Экспериментальная визуализация цифровых отсчётов. Формула компонентов: `ch7, ch8, ch4`. После синтеза выполняется поканальная эквализация контраста.
+ 
+-### Физический принцип
++## Вход
+ 
+-В СВЧ-диапазоне излучательная способность жидкой соленой морской воды крайне низка (~0.4...0.45) из-за высокой диэлектрической проницаемости. При замерзании воды молекулы фиксируются в кристаллической решетке льда, диэлектрическая проницаемость резко падает, а излучательная способность возрастает до ~0.90...0.95. В результате морской лед на радиометрических картах выглядит на 50–80 К «теплее» свободной ото льда морской воды. Кроме того, над водой поляризационная разность (V - H) на 36.5 ГГц достигает 60–80 К, а надо льдом снижается до 10–20 К.
++Непустые каналы из `product.cbor` и связанные с ним растры. Идентификаторы `chN` относятся к нумерации конкретного набора, не к универсальной таблице частот. Раскладка записывается как `hrpt30` или `dump46`; для старых наборов она может быть неизвестна.
+ 
+-### Интерпретация цветов
++## Ограничения
+ 
+-* **Ярко-белый / светло-голубой:** сплошной и многолетний морской лёд (сплочённость 9–10 баллов, толщина более 1 м).
+-* **Бирюзовый / голубовато-серый:** молодой лёд, серо-белый лёд, нилас, разреженный дрейфующий лёд (4–8 баллов).
+-* **Тёмно-синий / чёрный:** открытая морская вода (чистая вода, полыньи, заприпайные прогалины).
+-* **Коричневый / охристый:** суша, острова и береговая линия.
+-
+-### Назначение
+-
+-Круглосуточный и всепогодный мониторинг ледовой обстановки на трассе Северного морского пути, в замерзающих морях Арктики и Дальнего Востока, в том числе в условиях полярной ночи и сплошной слоистой облачности.
++Радиометрическая калибровка и восстановление физических величин не реализованы. Из оттенков нельзя получать интенсивность осадков, наличие града, сплочённость или толщину льда, влажность почвы и биомассу. Старое имя рецепта сохранено для совместимости, не как название измеряемой величины.
+diff --git a/resources/descriptions/sounders/MTVZASoilMoisture.md b/resources/descriptions/sounders/MTVZASoilMoisture.md
+index bafc7f573aaf0a63e6e45f18c920ba29a169d0af..c7f8e5714691a735f2ad6bb870a06ab4b89a7bc8 100644
+--- a/resources/descriptions/sounders/MTVZASoilMoisture.md
++++ b/resources/descriptions/sounders/MTVZASoilMoisture.md
+@@ -1,16 +1,11 @@
+-# Soil Moisture
++# МТВЗА-ГЯ · комбинация 14/13/12
+ 
+-This enhancement uses the MTVZA channels 14, 13 and 12 (48 GHz horizontal and vertical, and 42 GHz horizontal) to detect changes in soil moisture.
++Экспериментальная визуализация цифровых отсчётов. Формула компонентов: `ch14, ch13, ch12`. После синтеза выполняется поканальная эквализация контраста.
+ 
+-### Appearance
++## Вход
+ 
