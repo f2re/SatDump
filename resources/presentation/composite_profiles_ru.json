@@ -209,7 +209,7 @@
     {
       "id": "airmass_rgb",
       "match": {
-        "name_contains": ["airmass"],
+        "name_contains": ["airmass rgb", "mersi airmass", "airmass false color"],
         "description_contains": ["airmass.md", "mersiairmass.md"]
       },
       "title": "Воздушные массы и струйные течения",
@@ -436,8 +436,8 @@
     {
       "id": "snow_ice",
       "match": {
-        "name_contains": ["snow", "ice rgb", "sea ice"],
-        "description_contains": ["snow", "ice"]
+        "name_contains": ["snow", "ice rgb", "snow ice"],
+        "description_contains": ["snow.md"]
       },
       "title": "Снег и лёд",
       "purpose": "Выделение снежного покрова, морского льда и различение их с облачностью",

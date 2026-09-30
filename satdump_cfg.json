@@ -1780,7 +1780,10 @@
                         "description": "descriptions/NDVI.md",
                         "geo_correct": true,
                         "apply_lut": true,
-                        "autogen": true
+                        "autogen": true,
+                        "presentation": {
+                            "profile": "ndvi"
+                        }
                     },
                     "Agriculture": {
                         "equation": "ch3, ch2, ch1",
@@ -1788,7 +1791,10 @@
                         "geo_correct": true,
                         "white_balance": true,
                         "individual_equalize": true,
-                        "autogen": true
+                        "autogen": true,
+                        "presentation": {
+                            "profile": "agriculture"
+                        }
                     },
                     "AVHRR 3a21 False Color": {
                         "equation": "ch3, ch2, ch1",
@@ -4584,13 +4590,19 @@
                         "equation": "ch14,ch13,ch12",
                         "description": "descriptions/sounders/MTVZASoilMoisture.md",
                         "individual_equalize": true,
-                        "autogen": true
+                        "autogen": true,
+                        "presentation": {
+                            "profile": "mtvza_soil_moisture"
+                        }
                     },
                     "Vegetation": {
                         "equation": "ch16, ch15, ch17",
                         "description": "descriptions/sounders/MTVZAVegetation.md",
                         "individual_equalize": true,
-                        "autogen": true
+                        "autogen": true,
+                        "presentation": {
+                            "profile": "mtvza_vegetation"
+                        }
                     },
                     "MTVZA False Color (WIP)": {
                         "equation": "ch17,1-ch16,1-ch15",
@@ -4600,19 +4612,28 @@
                         "equation": "ch30, ch29, ch28",
                         "description": "descriptions/sounders/MicrowaveAirmass.md",
                         "individual_equalize": true,
-                        "autogen": true
+                        "autogen": true,
+                        "presentation": {
+                            "profile": "mtvza_airmass"
+                        }
                     },
                     "Rainfall": {
                         "equation": "1 - ch24, 1 - ch27, ch8",
                         "description": "descriptions/sounders/MTVZARainfall.md",
                         "individual_equalize": true,
-                        "autogen": true
+                        "autogen": true,
+                        "presentation": {
+                            "profile": "mtvza_rainfall"
+                        }
                     },
                     "Sea Ice": {
                         "equation": "ch7, ch8, ch4",
                         "description": "descriptions/sounders/MTVZASeaIce.md",
                         "individual_equalize": true,
-                        "autogen": true
+                        "autogen": true,
+                        "presentation": {
+                            "profile": "mtvza_sea_ice"
+                        }
                     },
                     "550hPa Temperature (~5 km)": {
                         "equation": "ch16",
