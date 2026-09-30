@@ -189,6 +189,28 @@ jobs:
             "${GITHUB_WORKSPACE}/resources/fonts/Roboto-Medium.ttf" \
             "${output}"
 
+      - name: Validate MTVZA gaps, channel integrity and product generation
+        shell: bash
+        run: |
+          sudo apt-get install -y python3-pil
+          build_dir="${GITHUB_WORKSPACE}/build/astra-${{ matrix.astra }}-ci"
+          install_prefix="${GITHUB_WORKSPACE}/build/satdump-install-astra-${{ matrix.astra }}-ci"
+          output="${build_dir}/mtvza-test-output"
+          mkdir -p "${output}"
+          export LD_LIBRARY_PATH="${build_dir}:${build_dir}/plugins:${install_prefix}/lib:${LD_LIBRARY_PATH:-}"
+          "${build_dir}/satdump-mtvza-reader-test" "${output}/reader"
+          /usr/bin/python3 tests/meteor/test_native_products.py \
+            --engine "${install_prefix}/bin/satdump" --output "${output}/native"
+
+      - name: Upload MTVZA regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mtvza-regression-astra-${{ matrix.astra }}
+          path: build/astra-${{ matrix.astra }}-ci/mtvza-test-output/
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Validate installed native tree and launcher
         env:
           ASTRA_VERSION_OVERRIDE: ${{ matrix.astra }}
