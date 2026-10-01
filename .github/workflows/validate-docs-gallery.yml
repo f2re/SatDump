@@ -51,11 +51,12 @@ jobs:
         working-directory: source
         run: |
           set -Eeuo pipefail
-          python3 -m pip install --quiet Pillow
-          python3 -m unittest discover -s tests/station -v 2>&1 | tee "$RUNNER_TEMP/station-tests.log"
-          python3 -m unittest discover -s tests/docs -v 2>&1 | tee "$RUNNER_TEMP/docs-tests.log"
-          python3 scripts/docs/check.py | tee "$RUNNER_TEMP/docs-check.log"
-          python3 - <<'PY'
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq python3-pil
+          /usr/bin/python3 -m unittest discover -s tests/station -v 2>&1 | tee "$RUNNER_TEMP/station-tests.log"
+          /usr/bin/python3 -m unittest discover -s tests/docs -v 2>&1 | tee "$RUNNER_TEMP/docs-tests.log"
+          /usr/bin/python3 scripts/docs/check.py | tee "$RUNNER_TEMP/docs-check.log"
+          /usr/bin/python3 - <<'PY'
           import ast
           from pathlib import Path
           for root in ['scripts/docs', 'tests/docs', 'services/station']:
