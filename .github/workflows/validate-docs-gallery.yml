@@ -1,0 +1,110 @@
+name: Validate documentation and gallery update
+on:
+  push:
+    branches: [work/docs-gallery-validation-a79916ed]
+permissions:
+  contents: write
+jobs:
+  validate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: a79916ed56e5cf76a9f8ded3f84f34619054b2ca
+          path: source
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Apply checksum-verified reviewed source changes
+        run: |
+          set -Eeuo pipefail
+          curl --fail --location --proto '=https' --proto-redir '=https' --retry 2 --max-time 60 \
+            https://backend.composio.dev/api/v3/sl/k3PJOuMojP -o "$RUNNER_TEMP/docs-change.json.gz"
+          python3 - <<'PY'
+          import gzip, hashlib, json, os, subprocess
+          from pathlib import Path
+          raw = (Path(os.environ['RUNNER_TEMP']) / 'docs-change.json.gz').read_bytes()
+          assert hashlib.sha256(raw).hexdigest() == 'a64e24ce0210886a1fe52f4842653b601e3d662f4495c9a2190ee304ac0cc02a'
+          change = json.loads(gzip.decompress(raw))
+          source = Path('source').resolve()
+          assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=str(source)).decode().strip() == change['base'] == 'a79916ed56e5cf76a9f8ded3f84f34619054b2ca'
+          patch = change['patch'].encode('utf-8')
+          assert hashlib.sha256(patch).hexdigest() == change['patch_sha256']
+          patch_path = Path(os.environ['RUNNER_TEMP']) / 'docs-change.patch'
+          patch_path.write_bytes(patch)
+          subprocess.check_call(['git', 'apply', '--check', str(patch_path)], cwd=str(source))
+          subprocess.check_call(['git', 'apply', str(patch_path)], cwd=str(source))
+          files = sorted(change['files'])
+          assert len(files) == 39
+          for name in files:
+              assert not name.startswith(('/', '.github/', 'plugins/', 'src-core/')) and '..' not in Path(name).parts
+              assert hashlib.sha256((source / name).read_bytes()).hexdigest() == change['files'][name], name
+          subprocess.check_call(['git', 'add', '--'] + files, cwd=str(source))
+          staged = subprocess.check_output(['git', 'diff', '--cached', '--name-only'], cwd=str(source)).decode().splitlines()
+          assert sorted(staged) == files
+          subprocess.check_call(['git', 'diff', '--cached', '--check'], cwd=str(source))
+          subprocess.check_call(['git', '-c', 'user.name=SatDump maintenance', '-c', 'user.email=maintenance@users.noreply.github.com', 'commit', '-m', 'Align Station documentation, release status and gallery diagnostics\n\nDocument MTVZA completeness and recovery, correct the LRPT example,\nadd offline help and separate raw passports from processing reports.\nPreserve decoder algorithms and existing release artifacts.'], cwd=str(source))
+          (Path(os.environ['RUNNER_TEMP']) / 'expected-files.json').write_text(json.dumps(change['files']))
+          PY
+      - name: Station and documentation tests
+        working-directory: source
+        run: |
+          set -Eeuo pipefail
+          python3 -m pip install --quiet Pillow
+          python3 -m unittest discover -s tests/station -v 2>&1 | tee "$RUNNER_TEMP/station-tests.log"
+          python3 -m unittest discover -s tests/docs -v 2>&1 | tee "$RUNNER_TEMP/docs-tests.log"
+          python3 scripts/docs/check.py | tee "$RUNNER_TEMP/docs-check.log"
+          python3 - <<'PY'
+          import ast
+          from pathlib import Path
+          for root in ['scripts/docs', 'tests/docs', 'services/station']:
+              for path in Path(root).rglob('*.py'):
+                  ast.parse(path.read_text(encoding='utf-8'), filename=str(path), feature_version=(3, 5))
+          PY
+      - name: Gallery tests and script syntax
+        working-directory: source
+        run: |
+          set -Eeuo pipefail
+          node --check services/station/web/app.js
+          node --check services/station/web/status.js
+          node --test tests/web/*.test.js | tee "$RUNNER_TEMP/gallery-tests.log"
+          bash -n station.sh
+      - name: Validate both handbook exports
+        working-directory: source
+        run: |
+          set -Eeuo pipefail
+          sha=$(git rev-parse HEAD)
+          python3 scripts/docs/export.py --output "$RUNNER_TEMP/handbook" --revision "$sha"
+          python3 scripts/docs/check.py --root "$RUNNER_TEMP/handbook"
+          python3 scripts/docs/export.py --output "$RUNNER_TEMP/embedded-handbook" --revision "$sha" --package
+          python3 scripts/docs/check.py --root "$RUNNER_TEMP/embedded-handbook"
+      - name: Publish only the verified source candidate
+        working-directory: source
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          expected = json.loads((Path(os.environ['RUNNER_TEMP']) / 'expected-files.json').read_text())
+          for path, digest in expected.items():
+              assert hashlib.sha256(Path(path).read_bytes()).hexdigest() == digest, path
+          PY
+          branch="work/docs-gallery-verified-${GITHUB_RUN_ID}"
+          git push origin "HEAD:refs/heads/$branch"
+          printf '%s\n' "$branch" > "$RUNNER_TEMP/candidate-branch.txt"
+          git rev-parse HEAD > "$RUNNER_TEMP/candidate-sha.txt"
+      - name: Preserve test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-gallery-validation-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/station-tests.log
+            ${{ runner.temp }}/docs-tests.log
+            ${{ runner.temp }}/docs-check.log
+            ${{ runner.temp }}/gallery-tests.log
+            ${{ runner.temp }}/candidate-branch.txt
+            ${{ runner.temp }}/candidate-sha.txt
+          retention-days: 14
+          if-no-files-found: warn
