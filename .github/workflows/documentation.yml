@@ -12,6 +12,10 @@ on:
       - 'scripts/docs/**'
       - 'scripts/station/pack.py'
       - 'tests/docs/**'
+      - 'tests/web/**'
+      - 'services/station/web/**'
+      - 'config/station/board-openapi.json'
+      - 'config/station/station.json'
       - '.github/workflows/documentation.yml'
   pull_request:
     branches: [release/1.2.2]
@@ -21,6 +25,10 @@ on:
       - 'scripts/docs/**'
       - 'scripts/station/pack.py'
       - 'tests/docs/**'
+      - 'tests/web/**'
+      - 'services/station/web/**'
+      - 'config/station/board-openapi.json'
+      - 'config/station/station.json'
       - '.github/workflows/documentation.yml'
   workflow_dispatch:
 
@@ -48,6 +56,14 @@ jobs:
               for path in Path(root).rglob('*.py'):
                   ast.parse(path.read_text(encoding='utf-8'), filename=str(path), feature_version=(3, 5))
           PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Test gallery messages and local assets
+        run: |
+          node --check services/station/web/app.js
+          node --check services/station/web/status.js
+          node --test tests/web/*.test.js
       - name: Check curated source documentation
         run: python3 scripts/docs/check.py
       - name: Export standalone offline handbook
