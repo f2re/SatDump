@@ -34,6 +34,9 @@ SatDump Station / BOARD — Astra 1.6, автономная обработка �
 WEB: 127.0.0.1:8090/ — галерея; /api/v1/board — каталог изображений.
 API: 127.0.0.1:8091/api/v1/control/config — токен + ревизии If-Match.
 Прямые команды: worker, once, serve, control, check; параметры: --help.
+Полнота: sources[].required_instruments; отчёт: logs/<job_id>.quality.json.
+Документация: docs/ru/station/README.md; МТВЗА: MTVZA_PROCESSING.md там же.
+В галерее есть локальная справка. done означает публикацию, не научную приёмку.
 EOF
         ;;
     time-status) exec "$PYTHON" "$ROOT/services/station/timebase.py" "$@" ;;

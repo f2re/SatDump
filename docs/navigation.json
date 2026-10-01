@@ -28,12 +28,14 @@
     "docs/ru/station/README.md",
     "docs/ru/station/REFERENCE.md",
     "docs/ru/station/RELEASE_MAINTENANCE.md",
+    "docs/ru/station/RELEASE_NOTES.md",
     "docs/ru/station/TROUBLESHOOTING.md",
     "docs/ru/station/UTC_AND_SCHEDULER.md",
     "docs/ru/station/WEBSITE.md",
     "scripts/docs/README.md",
     "scripts/station/README.md",
     "services/station/README.md",
-    "tests/station/README.md"
+    "tests/station/README.md",
+    "tests/web/README.md"
   ]
 }

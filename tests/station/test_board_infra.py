@@ -439,7 +439,7 @@ class AdapterTests(Fixture):
                 self.assertIn(b'<!doctype html>', response.read().lower())
             with urlopen(base + '/api/v1/board') as response:
                 self.assertEqual('satdump.board/1', json.loads(response.read().decode())['schema'])
-            for path in ('/app.js', '/style.css'):
+            for path in ('/app.js', '/status.js', '/style.css'):
                 with urlopen(base + path) as response:
                     self.assertEqual(200, response.status)
                     self.assertTrue(response.read())

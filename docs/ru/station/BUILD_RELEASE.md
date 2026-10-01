@@ -64,8 +64,10 @@ flowchart LR
     L["Python 3.5 / Pillow в Stretch"] --> P
     P --> O["Распакованный пакет без сети"]
     O --> A["Артефакт"]
-    A --> R["Отдельный prerelease"]
-    A --> D["Явно запрошенный SSH-деплой"]
+    A --> V["Установка systemd: WEB, API, права, nginx, откат"]
+    V --> S["Проверка UTC, галереи и перезапуска"]
+    S --> R["Отдельный prerelease"]
+    S --> D["Явно запрошенный SSH-деплой"]
 ```
 
 Обычные push/PR запускают проверки в пределах фильтров workflow. Дорогая сборка, публикация и установка требуют явного запроса. PR не публикует и не развёртывает пакет. Независимый тест пакета использует Debian Stretch без сети; вариант установки `--no-start` в контейнере не проверяет настоящий systemd целевой Astra.
@@ -91,6 +93,8 @@ git push origin HEAD:release/1.2.2
 Пустой commit или изменение только файла вне фильтра может не запустить workflow. Новый push отменяет устаревший прогон в группе этой ветки. Поэтому не отправляйте косметические изменения поверх активной релизной сборки без необходимости.
 
 `workflow_dispatch` описан в YAML: `build_offline`, `publish`, `deploy_astra16`. Для доступности ручного запуска GitHub требует workflow в default branch; наличие файла только в `release/1.2.2` само по себе не гарантирует кнопку. Менять default branch ради станции не требуется: используйте документированный push-запрос. [Правило GitHub](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_dispatch).
+
+Нативные проверки МТВЗА выполняются в `presentation-1.2.2.yml`: `satdump-mtvza-reader-test` и `tests/meteor/test_native_products.py`. Документационный workflow дополнительно проверяет тексты и сообщения сайта. Ни один из этих запусков сам по себе не создаёт новый установочный релиз. Описание для следующего выпуска хранится в [RELEASE_NOTES.md](RELEASE_NOTES.md).
 
 ## 5. Релизы и доказательства
 

@@ -3,7 +3,7 @@
   const $ = id => document.getElementById(id);
   let all = [], items = [], selected = '', index = 0, token = 0, limit = 60;
   let playing = false, timer = null, lastDigest = '';
-  const displayTime = epoch => Number.isFinite(epoch) ? new Date(epoch * 1000).toLocaleString('ru-RU', {timeZone: 'UTC', hourCycle: 'h23'}) + ' UTC' : '—';
+  const displayTime = StationText.displayTime;
   const safeAsset = url => /^items\/[0-9a-f]{64}\/[0-9]{3}(?:-preview|-thumb)?\.(png|jpg|json)$/.test(url || '') ? url : '';
   const text = (id, value) => { $(id).textContent = value || ''; };
   const clear = element => { while (element.firstChild) element.removeChild(element.firstChild); };
@@ -25,10 +25,12 @@
       $('hero').alt = item.satellite + ': ' + item.title;
       $('hero').hidden = false; $('empty').hidden = true; $('caption').hidden = false; $('loading').hidden = true;
       text('title', item.title); text('instrument', [item.satellite, item.instrument].filter(Boolean).join(' / '));
-      text('time', item.acquisition_time ? 'Наблюдение: ' + item.acquisition_time : 'Время наблюдения не указано · файл изменён ' + displayTime(item.file_mtime));
+      text('time', StationText.observation(item));
       const quality = item.processing_quality;
-      text('quality', quality && quality.status === 'partial' ?
-        'Неполный набор продукции · подробности в паспорте' : '');
+      text('quality', StationText.qualitySummary(quality));
+      text('qualityExplanation', StationText.qualitySummary(quality));
+      text('qualityInstruments', StationText.qualityDetails(quality));
+      text('processingMetadata', quality ? JSON.stringify(quality, null, 2) : 'Отчёт обработки не предоставлен.');
       text('counter', (index + 1) + ' / ' + items.length);
       $('original').href = safeAsset(item.original); $('passport').href = safeAsset(item.metadata);
       text('metadata', 'Чтение паспорта…');
@@ -39,7 +41,7 @@
         const response = await fetch(safeAsset(item.metadata), {cache: 'force-cache'});
         if (!response.ok) throw new Error('Паспорт недоступен');
         const passport = await response.json();
-        if (own === token) text('metadata', (item.native_presentation ? '' : 'Готовое изображение: спектральные каналы и физический смысл цветов не подтверждены.\n\n') + (item.processing_quality ? JSON.stringify(item.processing_quality, null, 2) + '\n\n' : '') + JSON.stringify(passport, null, 2));
+        if (own === token) text('metadata', (item.native_presentation ? '' : 'Готовое изображение: спектральные каналы и физический смысл цветов не подтверждены.\n\n') + JSON.stringify(passport, null, 2));
       } catch (error) { if (own === token) text('metadata', error.message); }
     };
     image.onerror = function () { if (own === token) { $('loading').hidden = false; text('loading', 'Не удалось загрузить снимок. Предыдущий кадр сохранён.'); schedule(); } };
@@ -53,7 +55,9 @@
       const img = document.createElement('img'); img.src = safeAsset(item.thumbnail); img.alt = ''; img.loading = 'lazy';
       const title = document.createElement('strong'); title.textContent = item.title;
       const desc = document.createElement('small'); desc.textContent = item.satellite + ' · ' + (item.acquisition_time || 'Время наблюдения не указано');
-      card.append(img, title, desc); card.onclick = () => { show(i); $('hero').scrollIntoView({block: 'center'}); };
+      const quality = document.createElement('small'); quality.className = 'quality';
+      quality.textContent = StationText.qualitySummary(item.processing_quality);
+      card.append(img, title, desc, quality); card.onclick = () => { show(i); $('hero').scrollIntoView({block: 'center'}); };
       $('grid').appendChild(card);
     });
     $('more').hidden = limit >= items.length;
@@ -68,6 +72,8 @@
       text('emptyTitle', all.length ? 'Ничего не найдено' : 'Архив пока пуст');
       text('emptyText', all.length ? 'Измените фильтры источника, спутника или времени.' : 'Завершённые снимки появятся здесь автоматически.');
       text('metadata', 'Нет продуктов, соответствующих фильтру.');
+      text('qualityExplanation', 'Выберите изображение для проверки набора.');
+      text('qualityInstruments', ''); text('processingMetadata', '');
       return;
     }
     const retained = items.findIndex(x => x.id === selected);
@@ -87,18 +93,19 @@
       const catalog = await response.json();
       if (!['satdump.gallery/1', 'satdump.board/1'].includes(catalog.schema)) throw new Error('Неизвестная версия каталога');
       text('siteTitle', catalog.title); text('updated', 'Каталог: ' + displayTime(catalog.updated_at));
-      const digest = catalog.items.map(x => x.id + ':' + (x.acquisition_start_utc || '')).join(',');
+      if (!Array.isArray(catalog.items)) throw new Error('Каталог не содержит списка изображений');
+      const digest = JSON.stringify(catalog.items);
       if (digest !== lastDigest || !all.length) {
         lastDigest = digest; all = catalog.items; options('source', 'source', 'Все источники'); options('satellite', 'satellite', 'Все спутники'); filter();
       }
     } catch (error) { text('updated', 'Связь с каталогом потеряна · последний снимок сохранён'); }
     try {
       const response = await fetch('health.json', {cache: 'no-store'});
+      if (!response.ok) throw new Error('Состояние сервера недоступно');
       const health = await response.json();
-      text('health', !health.worker_alive ? 'Воркер не отвечает · архив доступен' : Object.keys(health.sources || {}).length ? 'Источник недоступен или недостаточно места' : 'Воркер работает · ошибок: ' + ((health.queue || {}).failed || 0));
-      if (health.worker_alive && health.last_result && health.last_result.quality === 'partial')
-        text('health', 'Последний набор продукции неполный · проверьте приборы и журнал задания');
-    } catch (error) { text('health', 'Нет связи с сервером · показ сохранён'); }
+      text('health', StationText.healthSummary(health));
+      text('lastResult', health.worker_alive === true ? StationText.lastResult(health.last_result) : '');
+    } catch (error) { text('health', 'Нет связи с сервером · показ сохранён'); text('lastResult', ''); }
     setTimeout(refresh, 15000);
   }
   $('play').onclick = () => { playing = !playing; $('play').setAttribute('aria-pressed', String(playing)); $('play').textContent = playing ? 'Ⅱ Пауза' : '▶ Презентация'; document.body.classList.add('presenting'); $('exitPresentation').hidden = false; schedule(); };
@@ -113,10 +120,11 @@
   ['source', 'satellite', 'search', 'date'].forEach(id => $(id).addEventListener('input', () => { limit = 60; filter(); }));
   document.addEventListener('visibilitychange', schedule);
   document.addEventListener('keydown', event => {
-    if (['INPUT','SELECT','TEXTAREA'].includes(document.activeElement.tagName)) return;
+    if (['INPUT','SELECT','TEXTAREA','BUTTON','A','SUMMARY'].includes(document.activeElement.tagName)) return;
     if (event.key === 'ArrowRight') show(index + 1);
     if (event.key === 'ArrowLeft') show(index - 1);
     if (event.key === ' ') { event.preventDefault(); $('play').click(); }
   });
+  $('helpLink').onclick = () => { $('help').open = true; };
   refresh();
 }());

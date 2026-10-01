@@ -10,6 +10,7 @@
 | Выполнить обновление, откат и резервирование | [Эксплуатация](station/OPERATIONS.md) |
 | Собрать полный пакет | [Сборка и выпуск](station/BUILD_RELEASE.md) |
 | Настроить Environment и SSH-развёртывание | [Сборка и автодеплой](station/BUILD_RELEASE.md) |
+| Проверить МТВЗА, неполный набор и восстановление | [Контроль продукции](station/MTVZA_PROCESSING.md) |
 | Разобрать неочевидную ошибку | [Диагностика](station/TROUBLESHOOTING.md) |
 | Проверить параметры конкретной команды | [Справочник](station/REFERENCE.md) |
 
@@ -22,9 +23,9 @@
 ## Минимальный контроль
 
 ```bash
-sudo systemctl is-active satdump-worker satdump-web
+sudo systemctl is-active satdump-worker satdump-web satdump-control
 sudo satdump-station status
-sudo journalctl -u satdump-worker -u satdump-web -n 100 --no-pager
+sudo journalctl --utc -u satdump-worker -u satdump-web -u satdump-control -n 100 --no-pager
 ```
 
 Проверяйте не только активность процессов, но и успешное новое контрольное задание. `health.json` требует анализа JSON; HTTP 200 не гарантирует исправность воркера.

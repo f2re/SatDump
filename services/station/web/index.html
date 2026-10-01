@@ -5,17 +5,46 @@
 <title>Спутниковые наблюдения · SatDump</title><link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header><div><span class="eyebrow">SATDUMP / СТАНЦИЯ ПРИЁМА</span><h1 id="siteTitle">Спутниковые наблюдения</h1></div><p id="health" role="status">Подключение к архиву…</p></header>
+<header><div><span class="eyebrow">SATDUMP / СТАНЦИЯ ПРИЁМА</span><h1 id="siteTitle">Спутниковые наблюдения</h1></div><div class="serviceStatus"><p id="health" role="status">Подключение к архиву…</p><p id="lastResult"></p><a id="helpLink" href="#help">Справка</a></div></header>
 <main>
-<nav aria-label="Фильтры архива"><label>Источник<select id="source"><option value="">Все источники</option></select></label><label>Спутник<select id="satellite"><option value="">Все спутники</option></select></label><label>Поиск<input id="search" type="search" placeholder="Прибор или продукт"></label><label>Дата наблюдения / подпись UTC<input id="date" type="search" placeholder="Фрагмент подписи времени"></label><button id="play" type="button">▶ Презентация</button><button id="exitPresentation" type="button" hidden>К архиву</button><button id="fullscreen" type="button">На весь экран</button></nav>
+<noscript><p>Для просмотра каталога нужен JavaScript. Справка ниже доступна без него.</p></noscript>
+<nav aria-label="Фильтры архива"><label>Источник<select id="source"><option value="">Все источники</option></select></label><label>Спутник<select id="satellite"><option value="">Все спутники</option></select></label><label>Поиск<input id="search" type="search" placeholder="Прибор или продукт"></label><label>Дата наблюдения / подпись UTC<input id="date" type="search" placeholder="2026-09-30 или 30.09.2026"></label><button id="play" type="button">▶ Презентация</button><button id="exitPresentation" type="button" hidden>К архиву</button><button id="fullscreen" type="button">На весь экран</button></nav>
 <section class="stage" aria-label="Просмотр снимка">
 <div id="empty"><h2 id="emptyTitle">Архив пока пуст</h2><p id="emptyText">Завершённые снимки появятся здесь автоматически. Исходные записи не публикуются.</p></div>
 <img id="hero" alt="" hidden><p id="loading" role="status" hidden>Загрузка снимка…</p>
 <div id="caption" hidden><div><span id="instrument" class="eyebrow"></span><h2 id="title"></h2><p id="time"></p><p id="quality" role="status"></p></div><div class="actions"><button id="prev" type="button" aria-label="Предыдущий снимок">←</button><span id="counter"></span><button id="next" type="button" aria-label="Следующий снимок">→</button><a id="original" target="_blank" rel="noopener">Оригинал</a><a id="passport" target="_blank" rel="noopener">Паспорт JSON</a></div></div>
 </section>
-<details id="details"><summary>Паспорт продукта и ограничения интерпретации</summary><pre id="metadata">Выберите снимок.</pre></details>
+<details id="details">
+<summary>Полнота набора и паспорт изображения</summary>
+<h3>Отчёт обработки набора</h3><p id="qualityExplanation">Выберите изображение для проверки набора.</p>
+<pre id="qualityInstruments"></pre>
+<details><summary>Отчёт обработки JSON</summary><pre id="processingMetadata"></pre></details>
+<h3>Исходный паспорт изображения</h3><pre id="metadata">Выберите снимок.</pre>
+</details>
 <section><div class="sectionHead"><h2>Лента продуктов</h2><span id="count"></span></div><div id="grid" class="grid"></div><button id="more" type="button" hidden>Показать ещё</button></section>
+<details id="help">
+<summary>Справка: время, продукция и состояние станции</summary>
+<h3>Что показывает галерея</h3>
+<p>Здесь опубликованы готовые изображения. Полные и компактные варианты могут быть отдельными карточками. «Оригинал» открывает публикационный PNG/JPEG, а не исходную радиозапись или все каналы прибора.</p>
+<p>Фильтры источника, спутника и текста действуют на полученный каталог. Поле даты ищет фрагмент подписи или ISO-даты наблюдения, а не календарный диапазон. «Показать ещё» добавляет карточки из загруженного списка.</p>
+<h3>Время UTC</h3>
+<p>Время наблюдения, изменения файла и обновления каталога — разные значения. Часовой пояс браузера не меняет UTC. Если наблюдение не датировано или дата некорректна, это указано отдельно; время файла не подставляется вместо наблюдения.</p>
+<p>Работающий обработчик не подтверждает точность часов. Синхронизацию проверяют на станции командой <code>satdump-station time-status</code>.</p>
+<h3>Полнота набора</h3>
+<p>«Неполный набор» означает, что опубликована пригодная часть с предупреждениями. Раздел «Полнота набора и паспорт изображения» показывает приборы, число строк и изображений. «Полнота не проверена» означает отсутствие нужных отчётов, а не доказанную потерю данных. Готовый внешний PNG также не подтверждает наличие всех каналов.</p>
+<p>Состояние <code>done</code> означает публикацию задания, не научную приёмку. Обязательные приборы задаются администратором в <code>required_instruments</code>. Если нужной продукции нет, остальные изображения не заменяют её.</p>
+<h3>МТВЗА-ГЯ</h3>
+<p>Продукт МТВЗА состоит из <code>product.cbor</code> и связанных файлов каналов. При отсутствии полных строк новый декодер сообщает <code>no_data</code>. Старый одиночный CBOR не доказывает наличие измерений.</p>
+<p>Микроволновые RGB — экспериментальные комбинации цифровых отсчётов. Без калибровки и проверенного алгоритма их цвета не дают интенсивность осадков, наличие града, сплочённость льда, влажность почвы или биомассу.</p>
+<h3>Просмотр и связь</h3>
+<p>Кнопки и клавиши ←/→ перелистывают изображения. Пробел вне элементов управления включает или приостанавливает презентацию. В скрытой вкладке смена кадров приостанавливается. Полный экран также доступен через F11.</p>
+<p>При потере связи остаётся последний загруженный кадр. После перезагрузки страницы сервер снова должен быть доступен. Работа в локальной сети не требует интернета, но отдельного автономного кеша браузера нет.</p>
+<h3>Настройки и диагностика</h3>
+<p>Эта галерея работает только на чтение. Управляющий API использует отдельный локальный порт и авторизацию; токены не вводятся в публичный сайт. Состояние источников и ошибки очереди показаны независимо от качества последнего набора.</p>
+<p>На станции доступны <code>sudo satdump-station doctor</code>, <code>sudo satdump-station status</code> и <code>sudo satdump-station logs</code>. Руководство пакета: <code>docs/ru/station/README.md</code>. Новая документация в GitHub не обновляет ранее установленный пакет автоматически.</p>
+</details>
 </main>
 <footer><span>Автономный архив · исходный растр не обрезается</span><span id="updated"></span></footer>
+<script src="status.js" defer></script>
 <script src="app.js" defer></script>
 </body></html>

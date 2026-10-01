@@ -81,7 +81,7 @@ inbox/products/
 
 Вся единица задания сначала копируется в `work`. Для каждого продукта вызывается `satdump reprocess`. Перед вызовом из рабочей копии удаляются старые `*_annotated*`, чтобы ранее оформленный PNG не был принят за новый результат. Исходный каталог не меняется.
 
-Публикация BOARD требует хотя бы одного нового `_annotated_presentation.png` или `_annotated_minimal.png` с паспортом `/1` или `/2`. Нулевой код возврата процесса без таких файлов не считается успехом. Если один прибор не дал результата, но другой дал, это ещё не означает полноту всех ожидаемых продуктов: проверяйте журнал и перечень выходов.
+Публикация BOARD требует хотя бы одного нового `_annotated_presentation.png` или `_annotated_minimal.png` с паспортом `/1` или `/2`. Нулевой код возврата процесса без таких файлов не считается успехом. Отчёты прибора и `required_instruments` проверяются отдельно: `done` может содержать пригодную часть с `processing_quality.status=partial`. Отсутствие обязательного прибора блокирует публикацию задания. Сравнивайте отчёты и перечень выходов.
 
 <a id="pipeline"></a>
 ## 5. Записи IQ и кадры
@@ -95,7 +95,7 @@ inbox/products/
   "enabled": false,
   "path": "/var/lib/satdump-station/inbox/meteor_iq",
   "patterns": ["*.cs16"],
-  "pipeline": "meteor_m2x_lrpt",
+  "pipeline": "meteor_m2-x_lrpt",
   "input_level": "baseband",
   "options": ["--samplerate", "1024000", "--baseband_format", "s16"],
   "require_ready": true
@@ -110,6 +110,8 @@ inbox/products/
 engine/satdump PIPELINE INPUT_LEVEL COPIED_INPUT OUTPUT_DIR
   ...options... --offline --processing_config processing.json
 ```
+
+`meteor_m2-x_lrpt` обрабатывает МСУ-МР, не микроволновой МТВЗА. Для МТВЗА нужен соответствующий `meteor_hrpt` или `meteor_m_mtvza_dump`; формат должен совпадать с реальной записью. [Проверка МТВЗА](MTVZA_PROCESSING.md).
 
 Команды из соседних JSON не исполняются. Аргументы выбирает администратор. Поддержка конкретного декодера зависит от набора плагинов `reference` или `meteor`. Воркер не является самостоятельным SDR-приёмником.
 

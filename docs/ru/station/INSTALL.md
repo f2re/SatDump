@@ -25,10 +25,10 @@
 
 ```bash
 ARCHIVE='satdump-1.2.2-astra16-station-ВАШ_COMMIT-x86_64.tar.gz'
-test -f "$ARCHIVE" && test -f "$ARCHIVE.sha256"
-sha256sum -c "$ARCHIVE.sha256"
-tar -xzf "$ARCHIVE"
-cd "${ARCHIVE%.tar.gz}"
+test -f "$ARCHIVE" && test -f "$ARCHIVE.sha256" &&
+sha256sum -c "$ARCHIVE.sha256" &&
+tar -xzf "$ARCHIVE" &&
+cd "${ARCHIVE%.tar.gz}" &&
 ./station.sh help
 ```
 
@@ -48,7 +48,7 @@ cd "${ARCHIVE%.tar.gz}"
 
 `--dry-run` не проверяет весь бинарный комплект, реальное открытие порта и будущий запуск служб. `--no-start` **не выполняет** обычную проверку работоспособности. Это не режим безопасного горячего обновления: активный указатель кода всё равно переключается; на работающей станции сначала остановите службы.
 
-При обычной установке создаются пользователи `satdump-station` и `satdump-web`, каталоги данных, конфигурация, службы и ссылка `/usr/local/bin/satdump-station`. Код размещается в версионном каталоге; `current` переключается после предварительных проверок. Затем установщик проверяет службы и `/health.json`.
+При обычной установке создаются пользователи `satdump-station`, `satdump-web` и `satdump-control`, каталоги данных, конфигурация, службы и ссылка `/usr/local/bin/satdump-station`. Код размещается в версионном каталоге; `current` переключается после предварительных проверок. Затем установщик проверяет обработчик, публичный каталог и авторизованный API, включая отказ в доступе без токена.
 
 > [!WARNING]
 > Параметр `--allow-compatible` предназначен для испытательного Debian-стенда. Он отключает проверку названия ОС, **не превращает** Debian в Astra и не доказывает совместимость произвольной системы.
@@ -58,8 +58,8 @@ cd "${ARCHIVE%.tar.gz}"
 **Где:** установленная станция.
 
 ```bash
-sudo systemctl is-active satdump-worker.service satdump-web.service
-sudo systemctl status satdump-worker.service satdump-web.service --no-pager
+sudo systemctl is-active satdump-worker.service satdump-web.service satdump-control.service
+sudo systemctl status satdump-worker.service satdump-web.service satdump-control.service --no-pager
 sudo satdump-station status
 ```
 
@@ -76,7 +76,9 @@ assert status.get('web_alive') and status.get('worker_alive')
 PY
 ```
 
-При нестандартных адресе и порте замените URL на значения из `/etc/satdump-station/web.env`. Состояние `worker_alive=true` означает свежий сигнал жизнеспособности, а не отсутствие ошибок декодирования. Проверяйте также `queue.failed` и `sources`.
+При нестандартных адресе и порте замените URL на значения из `/etc/satdump-station/web.env`. Состояние `worker_alive=true` означает свежий сигнал жизнеспособности, а не отсутствие ошибок декодирования. Проверяйте также `queue.failed`, `sources` и `last_result`. `done` и `worker_alive` не подтверждают полноту всех приборов. Состояние часов проверяется отдельно: `satdump-station time-status`.
+
+Новые проверки МТВЗА и восстановления не добавляются в старый архив 22 автоматически. До обновления сверяйте ревизию установленного пакета с [таблицей выпусков](../RELEASES.md).
 
 ## 5. Подать первый контрольный снимок
 

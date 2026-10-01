@@ -14,18 +14,21 @@
 
 Сайт по умолчанию: `http://127.0.0.1:8090/`. Для доверенной ЛВС из корня пакета: `sudo ./install.sh --listen 0.0.0.0 --port 8090`.
 
+Для МТВЗА передавайте CBOR вместе с каналами. Контроль обязательных приборов и сообщения о неполном наборе описаны в [руководстве](station/MTVZA_PROCESSING.md); они отсутствуют в старом пакете 22.
+
 ## Что находится где
 
 | Путь | Назначение |
 |---|---|
 | `/opt/satdump-station/current` | Активный код |
-| `/etc/satdump-station` | Активные настройки |
+| `/etc/satdump-station` | Базовая конфигурация и политика доступа |
+| `/var/lib/satdump-station/control/active.json` | Активная ревизия редактируемых настроек API |
 | `/var/lib/satdump-station/inbox` | Входы по умолчанию |
 | `/var/lib/satdump-station/archive` | Приватный научный архив |
 | `/var/lib/satdump-station/public` | Только материалы сайта |
 
 ```bash
-sudo systemctl status satdump-worker satdump-web --no-pager
+sudo systemctl status satdump-worker satdump-web satdump-control --no-pager
 sudo satdump-station status
 sudo satdump-station logs
 ```

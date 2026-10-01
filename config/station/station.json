@@ -36,7 +36,7 @@
       "enabled": false,
       "path": "/var/lib/satdump-station/inbox/meteor_iq",
       "patterns": ["*.cs16"],
-      "pipeline": "meteor_m2x_lrpt",
+      "pipeline": "meteor_m2-x_lrpt",
       "input_level": "baseband",
       "options": ["--samplerate", "1024000", "--baseband_format", "s16"],
       "require_ready": true

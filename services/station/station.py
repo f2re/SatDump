@@ -656,7 +656,7 @@ class GalleryHandler(BaseHTTPRequestHandler):
             health["web_alive"] = True
             self.send_bytes(json.dumps(health).encode("utf-8"), "application/json", body)
             return
-        static = {"/": "index.html", "/index.html": "index.html", "/app.js": "app.js", "/style.css": "style.css"}
+        static = {"/": "index.html", "/index.html": "index.html", "/app.js": "app.js", "/status.js": "status.js", "/style.css": "style.css"}
         if path in static:
             root, relative = APP / "web", static[path]
         elif path in ("/catalog.json", "/worker.json") or re.match(r"^/items/[0-9a-f]{64}/[0-9]{3}(?:-preview|-thumb)?\.(?:png|jpg|json)$", path):

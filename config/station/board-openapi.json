@@ -1,1 +1,863 @@
-{"openapi":"3.0.3","info":{"title":"SatDump Station / BOARD — серверный контракт","version":"1.0.0","description":"Новый интерфейс не входит в поставку. Control слушает loopback; удалённое управление — только через SSH или отдельно настроенный TLS. Токен не передаётся через URL."},"security":[{"bearerAuth":[]}],"paths":{"/api/v1/board":{"get":{"summary":"Публичная продукция BOARD, только чтение","security":[],"responses":{"200":{"description":"Каталог satdump.board/1","content":{"application/json":{"schema":{"type":"object"}}}},"503":{"description":"Ожидание обработчика","content":{"application/json":{"schema":{"type":"object"}}}}}}},"/api/v1/board/status":{"get":{"summary":"Ревизия, фактически принятая обработчиком","security":[],"responses":{"200":{"description":"applied_revision; не requested revision","content":{"application/json":{"schema":{"type":"object"}}}}}}},"/api/v1/control/health":{"get":{"summary":"Авторизованная проверка API","responses":{"200":{"description":"control_alive","content":{"application/json":{"schema":{"type":"object"}}}},"401":{"description":"Токен отсутствует/неверен","content":{"application/json":{"schema":{"type":"object"}}}}}}},"/api/v1/control/capabilities":{"get":{"summary":"Приборы и пресеты установленного движка; root-политика; изменяемые поля","responses":{"200":{"description":"Динамические возможности установленной версии","content":{"application/json":{"schema":{"type":"object"}}}}}}},"/api/v1/control/config":{"get":{"summary":"Настройки с ревизией и ETag","responses":{"200":{"description":"Текущая желаемая конфигурация","content":{"application/json":{"schema":{"type":"object"}}},"headers":{"ETag":{"schema":{"type":"string"},"description":"SHA-256 settings в двойных кавычках"}}}}},"put":{"summary":"Атомарная запись с If-Match; применяется между заданиями","parameters":[{"name":"If-Match","in":"header","required":true,"schema":{"type":"string"},"description":"ETag из GET, включая кавычки"}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/Update"}}}},"responses":{"200":{"description":"Конфигурация не изменилась","content":{"application/json":{"schema":{"type":"object"}}}},"202":{"description":"Записана новая ревизия; не доказательство применения worker","content":{"application/json":{"schema":{"type":"object"}}}},"401":{"description":"Нет авторизации","content":{"application/json":{"schema":{"type":"object"}}}},"403":{"description":"Host/Origin запрещён","content":{"application/json":{"schema":{"type":"object"}}}},"409":{"description":"Нужно подтверждение возможной повторной обработки","content":{"application/json":{"schema":{"type":"object"}}}},"412":{"description":"Конфликт ревизий","content":{"application/json":{"schema":{"type":"object"}}}},"413":{"description":"Тело больше 1 МиБ","content":{"application/json":{"schema":{"type":"object"}}}},"415":{"description":"Нужен application/json","content":{"application/json":{"schema":{"type":"object"}}}},"422":{"description":"Ошибка строгой/семантической валидации","content":{"application/json":{"schema":{"type":"object"}}}},"428":{"description":"Нужен If-Match","content":{"application/json":{"schema":{"type":"object"}}}},"503":{"description":"Ошибка хранилища","content":{"application/json":{"schema":{"type":"object"}}}}}}},"/api/v1/control/validate":{"post":{"summary":"Проверка настроек без записи","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/Update"}}}},"responses":{"200":{"description":"valid и reprocessing_required","content":{"application/json":{"schema":{"type":"object"}}}},"422":{"description":"validation_failed","content":{"application/json":{"schema":{"type":"object"}}}}}}}},"components":{"securitySchemes":{"bearerAuth":{"type":"http","scheme":"bearer"}},"schemas":{"Update":{"type":"object","additionalProperties":false,"required":["settings"],"properties":{"settings":{"$ref":"#/components/schemas/Settings"},"confirm_reprocess":{"type":"boolean","default":false}}},"Settings":{"type":"object","additionalProperties":false,"required":["station","processing","board"],"properties":{"station":{"type":"object","description":"Источники, параметры очереди, лимиты. engine/data_dir/processing_config запрещены для записи; диапазоны в capabilities."},"processing":{"type":"object","description":"Разрешённые поля presentation; существующие пресеты и выражения каналов. Lua, исполняемые пути, произвольные argv запрещены."},"board":{"type":"object","additionalProperties":false,"properties":{"hidden_sources":{"type":"array","items":{"type":"string"}},"hidden_instruments":{"type":"array","items":{"type":"string"}},"hidden_products":{"type":"array","items":{"type":"string"}},"layouts":{"type":"array","items":{"type":"string","enum":["editorial","minimal","external"]}},"max_items":{"type":"integer","minimum":1,"maximum":10000}}}}}}}}
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "SatDump Station / BOARD — серверный контракт",
+    "version": "1.1.0",
+    "description": "Встроенная галерея и справка включены. Публичные маршруты работают только на чтение. Управляющий API слушает loopback и требует Bearer-токен; удалённый доступ настраивается отдельно. Схема описывает текущую ветку, не архив Station 22."
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/v1/board": {
+      "get": {
+        "summary": "Публичная продукция BOARD, только чтение",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Каталог satdump.board/1",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Board"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Ожидание обработчика",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/board/status": {
+      "get": {
+        "summary": "Ревизия, фактически принятая обработчиком",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "applied_revision; не requested revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/control/health": {
+      "get": {
+        "summary": "Авторизованная проверка API",
+        "responses": {
+          "200": {
+            "description": "control_alive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Токен отсутствует/неверен",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/control/capabilities": {
+      "get": {
+        "summary": "Приборы и пресеты установленного движка; root-политика; изменяемые поля",
+        "responses": {
+          "200": {
+            "description": "Динамические возможности установленной версии",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/control/config": {
+      "get": {
+        "summary": "Настройки с ревизией и ETag",
+        "responses": {
+          "200": {
+            "description": "Текущая желаемая конфигурация",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "SHA-256 settings в двойных кавычках"
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Атомарная запись с If-Match; применяется между заданиями",
+        "parameters": [
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ETag из GET, включая кавычки"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Update"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Конфигурация не изменилась",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Записана новая ревизия; не доказательство применения worker",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Нет авторизации",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Host/Origin запрещён",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Нужно подтверждение возможной повторной обработки",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Конфликт ревизий",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Тело больше 1 МиБ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Нужен application/json",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка строгой/семантической валидации",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Нужен If-Match",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Ошибка хранилища",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/control/validate": {
+      "post": {
+        "summary": "Проверка настроек без записи",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Update"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "valid и reprocessing_required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "validation_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health.json": {
+      "get": {
+        "summary": "Состояние веб-службы, обработчика и последнего задания",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "HTTP 200 не означает worker_alive=true; проверяется JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "summary": "Готовность по свежему сигналу обработчика",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Сигнал обработчика свежий; это не NTP и не проверка продукции.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ready": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Свежий сигнал отсутствует; тело ошибки может быть HTML."
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    },
+    "schemas": {
+      "Update": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "settings"
+        ],
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/Settings"
+          },
+          "confirm_reprocess": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "Settings": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "station",
+          "processing",
+          "board"
+        ],
+        "properties": {
+          "station": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "sources"
+            ],
+            "properties": {
+              "poll_seconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 3600
+              },
+              "settle_seconds": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 3600
+              },
+              "timeout_seconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 86400
+              },
+              "max_attempts": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20
+              },
+              "native_threads": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 256
+              },
+              "min_free_mb": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1048576
+              },
+              "max_input_mb": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1048576
+              },
+              "max_log_mb": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1024
+              },
+              "max_image_pixels": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 200000000
+              },
+              "max_items": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10000
+              },
+              "keep_work": {
+                "type": "boolean"
+              },
+              "archive_science": {
+                "type": "boolean"
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 240
+              },
+              "sources": {
+                "type": "array",
+                "maxItems": 64,
+                "items": {
+                  "$ref": "#/components/schemas/Source"
+                }
+              }
+            },
+            "description": "Редактируемая часть конфигурации. engine/data_dir/processing_config/processing_revision остаются в базовом файле администратора; API их не принимает."
+          },
+          "processing": {
+            "type": "object",
+            "description": "Разрешённые поля presentation; существующие пресеты и выражения каналов. Lua, исполняемые пути, произвольные argv запрещены."
+          },
+          "board": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "hidden_sources": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "hidden_instruments": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "hidden_products": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "layouts": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "editorial",
+                    "minimal",
+                    "external"
+                  ]
+                }
+              },
+              "max_items": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10000
+              }
+            }
+          }
+        }
+      },
+      "Source": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "kind",
+          "path"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "image",
+              "product",
+              "pipeline"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "description": "Абсолютный каталог внутри разрешённых input_roots; не пересекается со служебными деревьями."
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "patterns": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "string",
+              "maxLength": 128
+            }
+          },
+          "require_ready": {
+            "type": "boolean",
+            "description": "По умолчанию true для product, false для файловых входов; задавать явно для записи."
+          },
+          "satellite": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "instrument": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "pipeline": {
+            "type": "string",
+            "description": "Точный id из установленного движка и разрешённого списка политики; только kind=pipeline."
+          },
+          "input_level": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Массив разрешённых argv, не команда shell; только kind=pipeline."
+          },
+          "required_instruments": {
+            "type": "array",
+            "maxItems": 32,
+            "uniqueItems": true,
+            "default": [],
+            "items": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9_-]{1,64}$"
+            },
+            "description": "Обязательные приборы только для product/pipeline. Нужны реальные презентационные файлы и отчёт прибора. Например [\"mtvza\"]. Наличие прибора не гарантирует отсутствие потерь строк."
+          }
+        }
+      },
+      "InstrumentResult": {
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "images"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "partial",
+              "no_data",
+              "no_products"
+            ]
+          },
+          "images": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Число полных/компактных презентационных PNG, не спектральных каналов."
+          },
+          "lines": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "ProcessingQuality": {
+        "type": "object",
+        "required": [
+          "status",
+          "instruments",
+          "warnings",
+          "missing_required"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "partial",
+              "external"
+            ],
+            "description": "Программные проверки, не научная приёмка. partial также используется, когда отчёты отсутствуют."
+          },
+          "instruments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InstrumentResult"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "В том числе instrument_completeness_unverified: полнота не проверена, а не доказанная потеря."
+          },
+          "missing_required": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "LastResult": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "done",
+              "pending",
+              "running",
+              "failed",
+              "superseded"
+            ]
+          },
+          "quality": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "partial",
+              "external"
+            ]
+          },
+          "instruments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InstrumentResult"
+            }
+          },
+          "warning_count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "description": "Последнее задание; quality добавляется при наличии сводки публикации. Может быть пустым до первого задания."
+      },
+      "Health": {
+        "type": "object",
+        "required": [
+          "web_alive",
+          "worker_alive"
+        ],
+        "properties": {
+          "web_alive": {
+            "type": "boolean"
+          },
+          "worker_alive": {
+            "type": "boolean",
+            "description": "Свежесть сигнала процесса, не полнота продукции и не NTP."
+          },
+          "last_result": {
+            "$ref": "#/components/schemas/LastResult"
+          },
+          "queue": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "sources": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "timezone": {
+            "type": "string",
+            "enum": [
+              "UTC"
+            ]
+          }
+        }
+      },
+      "BoardEntry": {
+        "type": "object",
+        "required": [
+          "id",
+          "source",
+          "title",
+          "preview",
+          "thumbnail",
+          "original",
+          "metadata"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "satellite": {
+            "type": "string"
+          },
+          "instrument": {
+            "type": "string"
+          },
+          "preview": {
+            "type": "string"
+          },
+          "thumbnail": {
+            "type": "string"
+          },
+          "original": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "string",
+            "description": "Исходный паспорт, без сводки processing_quality."
+          },
+          "layout": {
+            "type": "string",
+            "enum": [
+              "editorial",
+              "minimal",
+              "external"
+            ]
+          },
+          "settings_revision": {
+            "type": "string",
+            "nullable": true
+          },
+          "acquisition_time": {
+            "type": "string"
+          },
+          "acquisition_time_raw": {
+            "type": "string"
+          },
+          "acquisition_start_utc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "acquisition_end_utc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "acquisition_time_status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "missing",
+              "invalid"
+            ]
+          },
+          "file_mtime": {
+            "type": "number"
+          },
+          "published_at": {
+            "type": "number"
+          },
+          "processing_quality": {
+            "$ref": "#/components/schemas/ProcessingQuality"
+          }
+        }
+      },
+      "Board": {
+        "type": "object",
+        "required": [
+          "schema",
+          "items",
+          "total"
+        ],
+        "properties": {
+          "schema": {
+            "type": "string",
+            "enum": [
+              "satdump.board/1"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string",
+            "enum": [
+              "UTC"
+            ]
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "hidden": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "updated_at": {
+            "type": "number"
+          },
+          "settings_revision": {
+            "type": "string",
+            "nullable": true
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BoardEntry"
+            }
+          }
+        }
+      }
+    }
+  }
+}
